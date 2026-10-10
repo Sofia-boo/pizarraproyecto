@@ -1,0 +1,11 @@
+.git
+.venv*
+node_modules
+dist
+datos
+**/__pycache__
+**/*.pyc
+.env*
+copias_antes_*
+paquete_*
+**/*.respaldo*

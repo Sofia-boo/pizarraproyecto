@@ -17,6 +17,13 @@ from pydantic import BaseModel
 from PIL import Image, ImageOps, ImageFilter
 
 app = FastAPI(title='Reconocimiento local de pizarra')
+
+@app.get('/healthz')
+def readiness():
+    with db_connection() as db:
+        db.execute('SELECT 1').fetchone()
+    return {'ok': True}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r'^http://(localhost|127\.0\.0\.1|(?:[0-9]{1,3}\.){3}[0-9]{1,3}):517[3-9]$',
@@ -592,12 +599,20 @@ from datetime import datetime, timezone
 from fastapi import Request as HTTPRequest
 from fastapi.responses import Response
 
-DATA_DIR = Path(__file__).resolve().parent.parent / 'datos'
+from reconocimiento_local.storage_paths import DATA_DIR
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = DATA_DIR / 'pizarras.db'
 
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def db_connection():
-    con = sqlite3.connect(DB_FILE, timeout=15)
+    con = sqlite3.connect(DB_FILE, timeout=15, factory=_ClosingConnection)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA journal_mode=WAL')
     con.execute('PRAGMA foreign_keys=ON')
@@ -685,7 +700,7 @@ def read_board(board_id: str):
     return {'id': row['id'], 'name': row['name'], 'version': row['version'], 'content': json.loads(row['content'])}
 
 @app.put('/api/boards/{board_id}')
-def save_board(board_id: str, item: BoardSave):
+async def save_board(board_id: str, item: BoardSave):
     with db_connection() as db:
         row = db.execute('SELECT version FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')
@@ -695,6 +710,8 @@ def save_board(board_id: str, item: BoardSave):
         db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
                    (json.dumps(item.content, ensure_ascii=False), new_version,
                     datetime.now(timezone.utc).isoformat(), board_id))
+    from reconocimiento_local.live_sync_api import notify_board_saved
+    await notify_board_saved(board_id, new_version)
     return {'version': new_version}
 
 @app.put('/api/boards/{board_id}/info')
@@ -1104,7 +1121,13 @@ from pathlib import Path as _LetterPath
 from PIL import ImageDraw as _LetterDraw
 import math as _letter_math
 
-LETTER_DATA = _LetterPath(__file__).resolve().parent / 'letter_samples.json'
+LETTER_DATA = DATA_DIR / 'letter_samples.json'
+# Seed a new persistent volume once; never replace user-trained samples.
+if not LETTER_DATA.exists():
+    import shutil
+    _seed_letters = _LetterPath(__file__).resolve().parent / 'letter_samples.json'
+    if _seed_letters.exists():
+        shutil.copy2(_seed_letters, LETTER_DATA)
 letter_lock = threading.Lock()
 
 class StrokeRequest(Request):
@@ -1716,3 +1739,15 @@ def recognize_word(payload: StrokeRequest):
     return {'text': result, 'engine': 'letras-personalizado', 'segments': len(chars),
             'samples': len(samples), 'unresolved_positions': unresolved,
             'warning': warning}
+
+
+# Register integrations after the base tables and routes have been defined.
+from reconocimiento_local.excel_bridge import router as excel_router
+from reconocimiento_local.history_api import attach_version_history
+from reconocimiento_local.anonymous_users import attach_anonymous_users
+from reconocimiento_local.live_sync_api import attach_live_sync
+
+app.include_router(excel_router)
+attach_version_history(app, db_connection)
+attach_anonymous_users(app, db_connection, DATA_DIR)
+attach_live_sync(app, db_connection)

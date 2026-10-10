@@ -16,7 +16,8 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-DB = ROOT/'datos'/'pizarras.db'
+from reconocimiento_local.storage_paths import DATA_DIR
+DB = DATA_DIR / 'pizarras.db'
 
 
 def normalize_name(value: str) -> str:
@@ -41,7 +42,7 @@ def main():
         login = normalize_name(row['display_name'])
         exists = con.execute('SELECT id FROM anonymous_users WHERE login_name=? AND id<>?',(login,row['id'])).fetchone()
         if exists: raise SystemExit('Existe otro usuario con ese nombre. No se modificó nada.')
-        backups = ROOT/'datos'/'backups'
+        backups = DATA_DIR / 'backups'
         backups.mkdir(parents=True,exist_ok=True)
         bk = backups/('antes-clave-admin-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.db')
         other = sqlite3.connect(bk)

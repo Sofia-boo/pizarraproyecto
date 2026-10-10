@@ -10,7 +10,8 @@ from pathlib import Path
 from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent
-DB = ROOT / 'datos' / 'pizarras.db'
+from reconocimiento_local.storage_paths import DATA_DIR
+DB = DATA_DIR / 'pizarras.db'
 
 
 def main():
@@ -46,7 +47,7 @@ def main():
         confirmation = input(f'Para confirmar escribí ELIMINAR {user["id"][-6:]}: ').strip()
         if confirmation != 'ELIMINAR '+user['id'][-6:]:
             print('Cancelado. Nada fue eliminado.');return
-        backups=ROOT/'datos'/'backups';backups.mkdir(parents=True,exist_ok=True)
+        backups=DATA_DIR/'backups';backups.mkdir(parents=True,exist_ok=True)
         destination=backups/('antes-eliminar-usuario-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.db')
         other=sqlite3.connect(destination)
         try: con.backup(other)
