@@ -1,0 +1,323 @@
+
+.library-open-button{position:fixed;top:14px;left:14px;z-index:12;padding:10px 16px;border:1px solid #ddd;border-radius:12px;background:white;color:#222;box-shadow:0 3px 12px #0002;cursor:pointer;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-overlay{position:fixed;inset:0;z-index:100;background:#0008;display:flex;justify-content:center;align-items:center;padding:16px}
+.library-panel{background:#fff;color:#222;border-radius:16px;width:min(760px,95vw);height:min(560px,85vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 70px #0005}
+.library-panel header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid #ddd}
+.library-panel h2{margin:0;font-size:22px}.library-panel button{cursor:pointer;color:#222;background:#fff;border:1px solid #ddd;border-radius:8px;padding:9px;text-align:left}
+.library-layout{display:flex;min-height:0;flex:1}.library-layout aside{width:34%;min-width:150px;background:#f5f6fa;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}.library-layout section{flex:1;padding:16px;overflow:auto}
+.library-layout aside button{background:transparent;border:0}.library-layout aside .chosen{background:#e2e8ff;font-weight:600}
+.library-panel .library-create{background:#e9edff;border-color:#a8b7ff;margin-bottom:16px}.library-board{display:flex;align-items:center;gap:6px;margin:7px 0;border-bottom:1px solid #eee;padding-bottom:7px}.library-board .library-board-name{flex:1;border:0;font-weight:500}.library-error{color:#b42318;padding:0 18px}
+@media(max-width:550px){.library-open-button{top:8px;left:8px;font-size:12px;padding:7px}.library-layout aside{min-width:120px;width:38%}.library-panel{height:85vh}}
+
+/* Vista de directorios */
+.library-folder-group{display:flex;flex-direction:column;gap:2px;min-width:0}
+.library-folder-row{display:flex;align-items:center;gap:3px;border-radius:9px;min-width:0}
+.library-layout aside .library-folder-title{display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:10px 8px;text-align:left}
+.library-folder-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-layout aside .library-folder-trash{color:#dc2626;background:transparent;border:0;display:flex;align-items:center;justify-content:center;flex:none;padding:7px;border-radius:8px}
+.library-layout aside .library-folder-trash:hover{color:#991b1b;background:#fee2e2}
+.library-folder-children{display:flex;flex-direction:column;gap:2px;padding-left:21px;border-left:1px solid #d9deeb;margin-left:17px}
+.library-tree-board{min-width:0;border-radius:8px;touch-action:none}
+.library-layout aside .library-tree-board button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;min-width:0;font-size:13px;padding:8px 6px;overflow-wrap:anywhere}
+.library-tree-board:hover{background:#e7ebf7}
+.library-folder-empty{font-size:12px;color:#777;padding:7px}
+.library-section-label{font-size:13px;color:#667085;margin:0 0 10px}
+
+/* Editor de pizarras: controles compactos y selección visual de íconos */
+.library-panel .library-inline-editor {display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:1;min-width:0;padding:10px;background:#f8faff;border:1px solid #e3e8f6;border-radius:12px}
+.library-panel .library-inline-editor input {flex:1 1 180px;min-width:120px}
+.library-panel .library-inline-editor select {flex:1 1 130px;min-width:110px}
+.library-panel .library-inline-editor input,.library-panel .library-inline-editor select,.library-panel .library-create-inline input {padding:10px 12px;border:1px solid #d5dbea;border-radius:9px;background:white;font:inherit;outline:none}
+.library-panel .library-inline-editor input:focus,.library-panel .library-inline-editor select:focus,.library-panel .library-create-inline input:focus {border-color:#818cf8;box-shadow:0 0 0 3px #818cf825}
+.library-panel .library-inline-editor>button {background:#eef2ff;border:1px solid #c7d2fe;border-radius:9px;padding:9px 12px;font-weight:600;white-space:nowrap}
+.library-panel .library-inline-editor>button[title="Guardar cambios"] {background:#4f46e5;color:white;border-color:#4f46e5}
+.library-panel .library-inline-editor>button:hover {filter:brightness(.96)}
+.library-field-label{font-size:12px;color:#667085;font-weight:600;width:100%}
+.library-icon-picker{display:flex;flex-wrap:wrap;gap:5px;width:100%;margin-bottom:5px}
+.library-panel .library-icon-picker button{padding:5px;width:35px;height:35px;border-radius:9px;background:white;border:1px solid #e0e5ef;text-align:center;font-size:19px;display:flex;align-items:center;justify-content:center}
+.library-panel .library-icon-picker button.selected{border:2px solid #6366f1;background:#e9edff}
+.library-panel .library-icon-picker button:hover{background:#f0f3ff}
+.library-board-icon{display:inline-flex;align-items:center;justify-content:center;min-width:24px;font-size:19px}
+.library-active-dot{color:#6366f1;font-size:10px;margin-left:auto}
+.library-panel .library-board-name{display:flex;align-items:center;gap:8px;min-width:0}
+.library-panel .library-board-action,.library-panel .library-board-delete{display:flex;align-items:center;justify-content:center;min-width:38px;min-height:38px;border-radius:10px;font-size:19px;transition:background .15s}
+.library-panel .library-board-delete{color:#dc2626;border-color:#fee2e2}
+.library-panel .library-board-delete:hover{background:#fee2e2}
+.library-layout aside .library-folder-trash{color:#dc2626;font-size:25px;font-weight:400;line-height:1;width:31px;height:31px}
+.library-layout aside .library-folder-trash:hover{background:#fee2e2}
+.library-panel .library-create-inline{display:flex;flex-direction:column;gap:8px;padding:12px;background:#f8faff;border-radius:12px;margin-bottom:12px}
+.library-panel .library-create-inline>div:last-child{display:flex;gap:8px;flex-wrap:wrap}
+.library-panel .library-create-inline>div:last-child button:first-child{background:#4f46e5;color:#fff;border-color:#4f46e5}
+@media(max-width:650px){.library-panel .library-inline-editor{width:100%}.library-panel .library-board{flex-wrap:wrap}.library-panel .library-board-name{min-width:110px}}
+
+/* Puntos de color y selección de pizarra activa */
+.library-color-dot{width:13px;height:13px;min-width:13px;border-radius:50%;display:inline-block;box-shadow:inset 0 0 0 1px #00000016}
+.library-color-picker{display:flex;flex-wrap:wrap;gap:8px;width:100%;margin:4px 0 10px}
+.library-panel .library-color-picker button{width:37px;height:37px;padding:5px;display:flex;align-items:center;justify-content:center;border:2px solid transparent;border-radius:12px;background:#fff}
+.library-panel .library-color-picker button span{width:22px;height:22px;border-radius:50%;display:block}
+.library-panel .library-color-picker button.selected{border-color:#6366f1;background:#eef2ff}
+.library-panel .library-color-picker button:hover{background:#f1f5f9}
+.library-panel .library-board-current{background:rgba(34,197,94,.12);border-radius:10px;box-shadow:inset 0 0 0 1px rgba(34,197,94,.20)}
+.library-panel .library-board-current .library-board-name{background:transparent}
+.library-panel .library-tree-board.library-board-current:hover{background:rgba(34,197,94,.19)}
+.library-panel .library-board-name{cursor:pointer}
+.library-panel .library-board-name:hover{text-decoration:underline}
+
+/* Editor compacto: menos alto, colores en una sola línea. */
+.library-panel .library-inline-editor{
+  flex:0 1 230px;
+  width:230px;
+  min-width:0;
+  padding:8px;
+  gap:6px;
+  align-self:center;
+  border-radius:10px;
+}
+.library-panel .library-inline-editor .library-field-label{font-size:11px;margin:0}
+.library-panel .library-inline-editor .library-color-picker{
+  display:grid;
+  grid-template-columns:repeat(9,minmax(0,1fr));
+  gap:2px;
+  margin:0 0 3px;
+}
+.library-panel .library-inline-editor .library-color-picker button{
+  width:22px;height:24px;padding:2px;border-radius:7px;
+}
+.library-panel .library-inline-editor .library-color-picker button span{
+  width:13px;height:13px;
+}
+.library-panel .library-inline-editor input,
+.library-panel .library-inline-editor select{
+  flex:1 1 100%;width:100%;min-width:0;
+  padding:7px 9px;font-size:13px;border-radius:8px;
+}
+.library-panel .library-inline-editor>button{
+  flex:1 1 calc(50% - 3px);
+  padding:7px 5px;
+  font-size:12px;
+  text-align:center;
+}
+.library-panel .library-board:has(.library-inline-editor){align-items:center}
+@media(max-width:650px){
+  .library-panel .library-inline-editor{width:min(230px,100%);flex:1 1 190px}
+}
+
+/* Confirmación de eliminación integrada al menú, sin diálogos del navegador */
+.library-confirm-backdrop{position:absolute;inset:0;z-index:20;background:rgba(20,25,40,.35);display:flex;align-items:center;justify-content:center;padding:18px}
+.library-confirm-card{width:min(390px,100%);padding:24px;background:#fff;border:1px solid #eceef4;border-radius:17px;box-shadow:0 16px 48px #151c3338;text-align:center}
+.library-confirm-icon{width:42px;height:42px;margin:0 auto 12px;border-radius:50%;background:#fee2e2;color:#dc2626;display:flex;align-items:center;justify-content:center;font-size:29px;font-weight:500}
+.library-confirm-card h3{margin:0 0 9px;font-size:19px;line-height:1.3;color:#1f2937}
+.library-confirm-card p{margin:0 0 20px;font-size:14px;line-height:1.5;color:#64748b;overflow-wrap:anywhere}
+.library-confirm-actions{display:flex;gap:10px;justify-content:center}
+.library-panel .library-confirm-actions button{flex:1;text-align:center;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;background:#f8fafc;border:1px solid #dce1e9;color:#334155}
+.library-panel .library-confirm-actions .library-confirm-danger{background:#dc2626;border-color:#dc2626;color:#fff}
+.library-panel .library-confirm-actions .library-confirm-danger:hover{background:#b91c1c}
+.library-panel .library-confirm-actions button:disabled{opacity:.6;cursor:wait}
+
+/* Calendario: tercera columna del menú, independiente del almacenamiento */
+.library-panel{width:min(1420px,96vw);height:min(700px,90vh)}
+.library-panel .library-layout{flex:1 1 auto;min-width:0}
+.library-panel{position:relative}
+.library-panel>.library-calendar{position:absolute;right:0;top:69px;bottom:0;width:32%;min-width:290px;background:#fff;border-left:1px solid #e5e7eb;padding:24px 22px;overflow:auto}
+.library-panel .library-layout{margin-right:32%}
+.library-panel .library-layout aside{width:43%;min-width:185px}
+.library-panel .library-layout section{min-width:0}
+.library-calendar-heading{display:flex;align-items:center;justify-content:space-between;font-size:20px;font-weight:700;margin-bottom:26px}
+.library-panel .library-calendar-heading button{border:1px solid #d9e1ee;background:#f8fafc;color:#475569;border-radius:9px;font-size:12px;padding:6px 12px}
+.library-calendar-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:20px}
+.library-calendar-nav strong{font-size:16px;text-transform:capitalize;text-align:center}
+.library-panel .library-calendar-nav button{border:0;background:#f1f5f9;width:34px;height:34px;border-radius:9px;text-align:center;font-size:23px;padding:0;display:grid;place-items:center}
+.library-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;text-align:center}
+.library-calendar-weekday{font-size:12px;color:#64748b;font-weight:700;padding:9px 0}
+.library-panel .library-calendar-grid button{width:100%;aspect-ratio:1;border:0;background:transparent;border-radius:11px;text-align:center;padding:0;font-size:14px;display:grid;place-items:center}
+.library-panel .library-calendar-grid button:hover{background:#eef2ff}
+.library-panel .library-calendar-grid button.is-today{box-shadow:inset 0 0 0 2px #4f46e5;color:#4f46e5;font-weight:700}
+.library-panel .library-calendar-grid button.is-selected{background:#4f46e5;color:#fff;box-shadow:none;font-weight:700}
+.library-calendar-selected{margin-top:30px;padding:15px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;display:flex;flex-direction:column;gap:8px}
+.library-calendar-selected span{color:#64748b;font-size:12px}
+.library-calendar-selected strong{text-transform:capitalize;font-size:14px;line-height:1.4}
+@media(max-width:950px){.library-panel{width:96vw}.library-panel>.library-calendar{width:35%;min-width:230px;padding:16px 12px}.library-panel .library-layout{margin-right:35%}.library-panel .library-layout aside{min-width:125px}}
+@media(max-width:680px){.library-panel{overflow:auto;height:92vh}.library-panel .library-layout{margin-right:0;min-height:350px;flex:none}.library-panel>.library-calendar{position:static;width:100%;min-width:0;border-left:0;border-top:1px solid #e5e7eb;padding:20px}.library-calendar-grid{max-width:420px;margin:auto}.library-panel .library-layout aside{min-width:125px}}
+
+/* Calendario anual y eventos */
+.library-calendar-view-switch{display:flex;gap:5px;padding:4px;background:#f1f5f9;border-radius:11px;margin-bottom:14px}
+.library-panel .library-calendar-view-switch button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px 5px;font-size:12px;color:#475569}
+.library-panel .library-calendar-view-switch button.active{background:#fff;color:#4338ca;font-weight:700;box-shadow:0 1px 4px #00000012}
+.library-calendar-year{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.library-panel .library-calendar-year button{background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:12px 4px;display:flex;flex-direction:column;gap:5px;text-align:center;align-items:center;text-transform:capitalize}
+.library-panel .library-calendar-year button.active{border-color:#6366f1;background:#eef2ff}
+.library-calendar-year small{font-size:10px;color:#64748b}
+.library-panel .library-calendar-grid button{position:relative}
+.calendar-event-dot{position:absolute;bottom:2px;width:5px;height:5px;border-radius:50%;background:#f97316}
+.library-panel .library-calendar-grid button.is-selected .calendar-event-dot{background:#fff}
+.library-calendar-event-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:22px}
+.library-panel .library-calendar-event-heading button{border:0;background:#4f46e5;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px}
+.calendar-empty{font-size:12px;color:#94a3b8}
+.calendar-error{font-size:12px;color:#b91c1c;overflow-wrap:anywhere}
+.calendar-event-row{display:flex;align-items:center;gap:5px;border-bottom:1px solid #e2e8f0;padding:6px 0}
+.library-panel .calendar-event-row>button:first-child{flex:1;min-width:0;border:0;background:transparent;text-align:left;padding:6px 2px;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+.calendar-event-row small{color:#64748b;white-space:pre-wrap}
+.library-panel .calendar-event-row .calendar-event-remove{border:0;background:#fff1f2;color:#dc2626;border-radius:7px;padding:4px 9px;font-size:19px}
+.calendar-event-editor{display:flex;flex-direction:column;gap:9px;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;margin-top:12px;border-radius:12px}
+.calendar-event-editor label{font-size:12px;color:#475569;font-weight:600;display:flex;flex-direction:column;gap:4px}
+.library-panel .calendar-event-editor input,.library-panel .calendar-event-editor textarea{width:100%;min-width:0;padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font:inherit;font-size:13px}
+.calendar-event-editor>div{display:flex;gap:8px}
+.library-panel .calendar-event-editor>div button{flex:1;border:1px solid #c7d2fe;background:#eef2ff;border-radius:8px;padding:8px 4px;font-size:12px}
+.library-panel .calendar-event-editor>div button[type=submit]{background:#4f46e5;color:#fff}
+
+/* Colores individuales para eventos del calendario */
+.library-panel .calendar-event-dots{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);display:flex;gap:3px;align-items:center;justify-content:center;pointer-events:none}
+.library-panel .calendar-event-dots .calendar-event-dot{position:static;display:block;flex:none;width:7px;height:7px;border-radius:50%;background:var(--event-color,#f97316);box-shadow:0 0 0 1px rgba(255,255,255,.75)}
+.library-panel .library-calendar-grid button.is-selected .calendar-event-dots .calendar-event-dot{background:var(--event-color,#f97316)}
+.library-panel .calendar-event-list-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.calendar-event-color-field{display:flex;flex-direction:column;gap:6px;color:#475569;font-weight:600;font-size:12px}
+.calendar-event-palette{display:flex;flex-wrap:wrap;gap:5px}
+.library-panel .calendar-event-palette button{width:29px;height:29px;min-width:29px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:center;padding:4px;cursor:pointer}
+.library-panel .calendar-event-palette button.active{border:2px solid #4f46e5;background:#eef2ff}
+.calendar-event-palette button span{display:block;width:17px;height:17px;border-radius:50%}
+
+/* Agenda mensual: fecha visible junto a cada evento */
+.calendar-event-date{width:45px;min-width:45px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:9px;background:#f1f5f9;padding:6px 2px;color:#334155;line-height:1.15}
+.calendar-event-date strong{font-size:17px}
+.calendar-event-date span{font-size:10px;font-weight:700;letter-spacing:.05em;margin-top:3px}
+.library-panel .library-calendar-grid button[title]{cursor:pointer}
+.library-panel .calendar-event-row>button:first-of-type{flex:1;min-width:0}
+
+.calendar-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px}.calendar-tabs button{border:1px solid #dbe2ee;background:#f6f8fc;border-radius:9px;padding:7px 11px;font-size:13px;cursor:pointer}.calendar-tabs button.active{background:#e7e9ff;border-color:#7772f8;color:#3730a3;font-weight:700}.calendar-new-inline{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.calendar-new-inline input{min-width:110px;max-width:200px;flex:1;border:1px solid #dbe2ee;border-radius:8px;padding:8px}.calendar-new-inline button{border:1px solid #dbe2ee;border-radius:8px;padding:8px;background:#fff;cursor:pointer}.library-calendar-selected button{display:block;margin-top:9px;border:0;background:transparent;color:#4f46e5;cursor:pointer}.calendar-event-editor select{width:100%;border:1px solid #cdd6e7;border-radius:10px;padding:10px;background:white}
+
+/* Calendarios compactos en la cabecera */
+.library-calendar-heading{display:flex;align-items:flex-start;gap:10px;justify-content:space-between;margin-bottom:16px}
+.library-calendar-heading>span{flex-shrink:0;padding-top:6px}
+.library-calendar-heading .calendar-tabs{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:5px;margin:0;max-width:78%}
+.calendar-tab{display:flex;align-items:center;border:1px solid #dbe2ee;background:#f6f8fc;border-radius:9px;min-height:33px;max-width:170px}
+.calendar-tab.active{background:#e7e9ff;border-color:#7772f8}
+.library-panel .calendar-tab>button{background:transparent;border:0;padding:6px 7px;font-size:12px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#334155}
+.library-panel .calendar-tab.active>button:first-child{font-weight:700;color:#3730a3}
+.library-panel .calendar-tab .calendar-tab-remove{color:#dc2626;font-size:16px;padding:3px 7px}
+.calendar-tab input{width:105px;min-width:0;font-size:12px;padding:5px;border:1px solid #818cf8;border-radius:7px}
+.library-panel .calendar-tabs .calendar-tab-add{border:1px solid #dbe2ee;background:#f6f8fc;padding:5px 10px;border-radius:9px;font-size:17px}
+.library-calendar-grid>span:not(.library-calendar-weekday){cursor:pointer}
+.library-calendar-weekday{cursor:pointer}
+.library-calendar-event-heading{margin-top:20px}
+@media(max-width:900px){.library-calendar-heading{flex-wrap:wrap}.library-calendar-heading .calendar-tabs{max-width:100%;justify-content:flex-start}}
+
+/* Confirmación integrada para eliminar eventos recurrentes */
+.calendar-delete-dialog{max-width:420px}
+.calendar-delete-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
+.library-panel .calendar-delete-actions button{border:1px solid #dbe2ee;border-radius:10px;padding:10px 12px;background:#f8fafc;color:#334155;cursor:pointer;font-weight:600}
+.library-panel .calendar-delete-actions .calendar-delete-danger{background:#dc2626;color:white;border-color:#dc2626}
+.library-panel .calendar-delete-actions button:disabled{opacity:.5;cursor:wait}
+
+/* Confirmación de evento reconocido a mano */
+.handwriting-calendar-dialog{max-width:470px;width:min(470px,94vw);max-height:88vh;overflow:auto}
+.handwriting-calendar-dialog form{display:flex;flex-direction:column;gap:10px}
+.handwriting-calendar-dialog form>label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600}
+.handwriting-calendar-dialog input,.handwriting-calendar-dialog select,.handwriting-calendar-dialog textarea{font:inherit;padding:9px;border:1px solid #cbd5e1;border-radius:9px;background:white;color:#222}
+.handwriting-color-picker>div{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+.handwriting-color-picker button{width:27px;height:27px;border:2px solid white;border-radius:50%;cursor:pointer}
+.handwriting-color-picker button.chosen{outline:2px solid #4f46e5}
+
+/* Formulario IA -> calendario: compacto y consistente con el tema violeta. */
+.recognition-dialog.handwriting-calendar-dialog{
+  box-sizing:border-box;width:min(520px,calc(100vw - 28px));max-width:520px;
+  max-height:min(88dvh,760px);overflow-y:auto;overscroll-behavior:contain;
+  padding:22px 24px 18px;gap:9px;border-radius:18px;
+}
+.handwriting-calendar-dialog h3{margin:0;font-size:21px;line-height:1.25}
+.handwriting-calendar-dialog>p{margin:0 0 5px;font-size:13px;line-height:1.45;color:#64748b}
+.handwriting-calendar-dialog form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.handwriting-calendar-dialog form>label{gap:4px;font-size:12px;line-height:1.25;color:#334155}
+.handwriting-calendar-dialog form>label:first-child,
+.handwriting-calendar-dialog form>label:nth-child(4),
+.handwriting-calendar-dialog form>label:nth-child(7),
+.handwriting-calendar-dialog form>details,
+.handwriting-calendar-dialog form>.recognition-actions{grid-column:1/-1}
+.handwriting-calendar-dialog input,.handwriting-calendar-dialog select,.handwriting-calendar-dialog textarea{
+  box-sizing:border-box;width:100%;min-width:0;min-height:39px;padding:8px 10px;
+  border:1px solid #d5ddef;border-radius:10px;font-size:14px;
+}
+.handwriting-calendar-dialog textarea{min-height:55px;resize:vertical}
+.handwriting-calendar-dialog :is(input,select,textarea):focus{outline:2px solid #a5b4fc;outline-offset:1px;border-color:#6366f1}
+.handwriting-color-picker{grid-column:1/-1;font-size:12px;color:#334155}
+.handwriting-color-picker>div{margin-top:5px;gap:9px}
+.handwriting-color-picker button{width:25px;height:25px;box-shadow:0 0 0 1px #e2e8f0}
+.handwriting-calendar-dialog details{font-size:12px;color:#64748b}
+.handwriting-calendar-dialog details p{margin:6px 0;overflow-wrap:anywhere}
+.handwriting-calendar-dialog .recognition-actions{
+  display:flex;justify-content:flex-end;gap:9px;margin-top:2px;
+  position:sticky;bottom:-18px;background:#fff;padding:10px 0 2px;
+}
+.handwriting-calendar-dialog .recognition-actions button,
+.handwriting-calendar-dialog>button{
+  border-radius:10px;padding:10px 16px;min-height:40px;font-size:13px;font-weight:650;
+  cursor:pointer;transition:background .15s,border-color .15s;
+}
+.handwriting-calendar-dialog .recognition-actions button[type=submit]{background:#4f46e5;border:1px solid #4f46e5;color:white}
+.handwriting-calendar-dialog .recognition-actions button[type=submit]:hover{background:#4338ca}
+.handwriting-calendar-dialog .recognition-actions button[type=button],
+.handwriting-calendar-dialog>button{background:#f5f6ff;border:1px solid #c7d2fe;color:#334155}
+.handwriting-calendar-dialog .recognition-actions button[type=button]:hover{background:#e9edff}
+.handwriting-calendar-dialog button:disabled{opacity:.55;cursor:wait}
+@media(max-width:420px){
+ .recognition-dialog.handwriting-calendar-dialog{padding:18px 16px 14px}
+ .handwriting-calendar-dialog form{grid-template-columns:1fr}
+ .handwriting-calendar-dialog form>label{grid-column:1/-1}
+ .handwriting-calendar-dialog .recognition-actions{bottom:-14px}
+}
+
+/* Agrupación de pizarras en la vista Todas las pizarras */
+.library-board-group { margin: 0 0 18px; min-width: 0; }
+.library-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 8px; }
+.library-group-count { display: inline-flex; align-items: center; justify-content: center; min-width: 25px; height: 23px; padding: 0 7px; border-radius: 12px; background: #f1f5f9; color: #64748b; font-size: 12px; font-weight: 600; }
+.library-board-group > .library-folder-empty { display: block; padding: 10px 14px; }
+
+/* Búsqueda global compacta, junto al botón Nueva pizarra. */
+.library-panel .library-board-controls{
+  display:flex;align-items:flex-start;gap:9px;flex-wrap:wrap;margin-bottom:14px;
+}
+.library-panel .library-board-controls>.library-create{margin-bottom:0;flex:0 0 auto}
+.library-panel .library-board-controls>.library-create-inline{flex:1 1 240px;min-width:180px;margin-bottom:0}
+.library-panel .library-board-controls .library-global-search{
+  display:flex;align-items:center;flex:0 1 238px;min-width:145px;
+  height:38px;box-sizing:border-box;
+  padding:0 10px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;
+}
+.library-panel .library-board-controls .library-global-search:focus-within{
+  border-color:#818cf8;box-shadow:0 0 0 2px #6366f126;
+}
+.library-panel .library-board-controls .library-global-search input{
+  flex:1;min-width:0;width:100%;border:0;outline:none;
+  padding:7px 0;background:transparent;color:#172033;font:12px system-ui;
+}
+.library-global-results .library-board{display:flex;align-items:center;gap:12px;border-bottom:1px solid #e5e7eb;padding:8px 2px}
+.library-global-results .library-search-folder{max-width:32%;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;color:#64748b;font:12px system-ui}
+@media(max-width:700px){.library-panel header{gap:8px}.library-panel header h2{font-size:20px}.library-panel .library-board-controls{gap:7px}.library-panel .library-board-controls .library-global-search{flex:1 1 150px;min-width:105px}}
+
+/* Buscador compacto en Biblioteca: tema oscuro y modo reposo. */
+.library-panel .library-board-controls .library-global-search {
+  display: flex; align-items: center; box-sizing: border-box;
+  flex: 1 1 190px; min-width: 120px; max-width: 270px;
+  min-height: 40px; padding: 0 10px; border: 1px solid #cbd5e1;
+  border-radius: 9px; background: #f8fafc;
+}
+.library-panel .library-board-controls .library-global-search input[type="search"] {
+  box-sizing: border-box; display: block; width: 100%; min-width: 0;
+  height: 36px; padding: 6px 0; font: 13px system-ui, sans-serif;
+  color: #1e293b; background: transparent; border: 0; outline: 0;
+  box-shadow: none; appearance: none;
+}
+.library-panel .library-board-controls .library-global-search input::placeholder { color: #64748b; opacity: 1; }
+.app[data-theme='dark'] .library-panel .library-board-controls .library-global-search {
+  background: #1b2230; border-color: #59647a;
+}
+.app[data-theme='dark'] .library-panel .library-board-controls .library-global-search input[type="search"] {
+  background: transparent; color: #f3f5ff; caret-color: #f3f5ff;
+}
+.app[data-theme='dark'] .library-panel .library-board-controls .library-global-search input::placeholder {
+  color: #c5cee0;
+}
+.app[data-theme='dark'] .library-panel .library-board-controls .library-global-search:focus-within {
+  outline: 2px solid #9298ff; outline-offset: 1px;
+}
+.app[data-theme='rest'] .library-panel .library-board-controls .library-global-search {background: #fbf5e8; border-color: #b8aa94;}
+.app[data-theme='rest'] .library-panel .library-board-controls .library-global-search input[type="search"] {color: #423a30;background:transparent;}

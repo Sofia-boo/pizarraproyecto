@@ -1,0 +1,63 @@
+.math-dock { position:fixed; right:14px; top:50%; transform:translateY(-50%); z-index:28; display:flex; flex-direction:column; gap:7px; padding:7px; border-radius:15px; background:var(--math-panel-bg,#fff); border:1px solid var(--math-border,#d4d9e2); box-shadow:0 8px 26px #17203420; }
+.math-dock button { width:41px; height:41px; border:0; border-radius:11px; display:grid; place-items:center; background:transparent; color:var(--math-text,#202938); cursor:pointer; }
+.math-dock button.math-dock-active,.math-dock button:hover { background:var(--math-active,#e5e9ff); color:var(--math-accent,#505de3); }
+.math-panel { position:fixed; z-index:27; right:78px; top:50%; transform:translateY(-50%); width:min(340px,calc(100vw - 98px)); max-height:85vh; display:flex; flex-direction:column; background:var(--math-panel-bg,#fff); color:var(--math-text,#202938); border:1px solid var(--math-border,#d4d9e2); border-radius:16px; overflow:hidden; box-shadow:0 14px 38px #15203035; font:13px system-ui,sans-serif; }
+.math-panel-graph { width:min(540px,calc(100vw - 98px)); }
+.math-panel * { box-sizing:border-box; }
+.math-panel-heading { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--math-border,#d4d9e2); }
+.math-panel-heading strong { font-size:15px; }
+.math-panel button { font:inherit; cursor:pointer; }
+.math-panel-close { border:0; background:transparent; color:inherit; padding:4px 5px; display:grid; place-items:center; }
+.math-panel-scroll { min-height:0; overflow:auto; padding:12px; }
+.math-screen { background:var(--math-screen,#f4f6fb); padding:9px; border-radius:10px; border:1px solid var(--math-border,#d4d9e2); margin-bottom:8px; }
+.math-screen-meta { display:flex; justify-content:space-between; color:var(--math-accent,#555fdc); min-height:17px; }
+.math-screen input { width:100%; height:40px; border:0; outline:0; background:transparent; color:inherit; font-size:21px; text-align:right; }
+.math-calculator-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-bottom:8px; }
+.math-calculator-actions button,.math-keys button,.math-graph-topbar button,.math-formula-actions button,.math-graph-export button { background:var(--math-key,#f7f9fc); color:inherit; border:1px solid var(--math-border,#d4d9e2); border-radius:8px; padding:8px 4px; }
+.math-keys { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+.math-keys button { min-height:34px; }
+.math-keys .math-key-equal { grid-column:span 2; background:#505dd8; border-color:#505dd8; color:#fff; font-weight:700; }
+.math-history { margin-top:10px; }
+.math-history button { display:flex; justify-content:space-between; width:100%; border:0; border-bottom:1px solid var(--math-border,#dae0eb); background:transparent; color:inherit; padding:6px; }
+.math-history button span { text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.math-graph-topbar { display:flex; justify-content:flex-end; margin-bottom:8px; }
+.math-graph-topbar button { padding:7px 10px; }
+.math-formula-list { max-height:130px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:2px; }
+.math-formula-row { display:flex; align-items:center; gap:9px; }
+.math-formula-row input { flex:1; min-width:0; color:var(--math-text,#202938); background:var(--math-input,#fff); border:1px solid var(--math-border,#d4d9e2); border-radius:8px; padding:9px 10px; font:14px Consolas,ui-monospace,monospace; }
+.math-formula-toggle { width:23px; height:23px; flex:0 0 23px; border:2px solid var(--swatch,#4f46e5); border-radius:50%; padding:0!important; cursor:pointer; }
+.math-formula-toggle.is-on { background:var(--swatch,#4f46e5); box-shadow:inset 0 0 0 3px white; }
+.math-formula-toggle.is-off { background:transparent; }
+.math-formula-actions { display:flex; justify-content:flex-start; padding:8px 0 10px; }
+.math-formula-actions button { display:inline-flex; align-items:center; gap:5px; padding:7px 10px; }
+.math-graph-preview { width:100%; height:340px; border:1px solid #d4d9e2; border-radius:10px; overflow:hidden; }
+.math-graph-export { display:flex; gap:8px; padding-top:10px; }
+.math-graph-export button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.math-graph-export button:last-child { cursor:grab; }
+.math-panel-error { padding:8px 10px; border-radius:7px; background:#fff0f1; color:#b42332; margin:7px 0; }
+.app[data-theme='dark'] { --math-panel-bg:#222938; --math-text:#eef3fc; --math-border:#495469; --math-key:#303a4d; --math-screen:#1b2231; --math-input:#222938; --math-active:#3b4672; --math-accent:#abb8ff; }
+.app[data-theme='rest'] { --math-panel-bg:#fffaf0; --math-text:#4a4030; --math-border:#dbd1bc; --math-key:#fbf5e8; --math-screen:#f7f0e2; --math-active:#f1e4c6; --math-input:#fffaf0; }
+@media(max-width:680px){ .math-panel { top:12px; transform:none; max-height:calc(100dvh - 28px); right:65px; width:calc(100vw - 75px); } .math-graph-preview { height:270px; } .math-dock { bottom:80px; top:auto; transform:none; right:7px; } }
+/* Tres modos compactos: cálculo, raíces y sistemas lineales. */
+.math-calc-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; margin-bottom:10px; }
+.math-calc-tabs button { min-width:0; padding:9px 4px; border:1px solid var(--math-border,#d4d9e2); border-radius:9px; background:var(--math-key,#f7f9fc); color:var(--math-text,#202938); cursor:pointer; font-size:12px; }
+.math-calc-tabs button.active { color:var(--math-accent,#4355d4); background:var(--math-active,#e5e9ff); border-color:#7786eb; font-weight:700; }
+.math-solver h4 { font-size:15px; margin:8px 0 5px; }
+.math-solver-label { display:block; font-size:12px; font-weight:600; margin-bottom:6px; }
+.math-solver-input { display:block; width:100%; padding:13px 11px; background:var(--math-input,#fff); color:var(--math-text,#202938); border:1px solid var(--math-border,#d4d9e2); border-radius:9px; outline-offset:2px; font:15px ui-monospace,Consolas,monospace; }
+.math-solver-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin:12px 0; }
+.math-solver-actions button { min-height:38px; padding:9px 6px; background:var(--math-key,#f7f9fc); color:var(--math-text,#202938); border:1px solid var(--math-border,#d4d9e2); border-radius:9px; cursor:pointer; }
+.math-solver-actions button.math-solver-solve { color:white; background:#505dd8; border-color:#505dd8; font-weight:700; }
+.math-solver-output { border-radius:10px; border:1px solid var(--math-border,#d4d9e2); background:var(--math-screen,#f4f6fb); padding:12px; font-size:13px; line-height:1.6; }
+.math-solver-output>strong { display:block; margin-bottom:5px; }
+.math-solver-answers { font-size:17px; font-weight:650; color:var(--math-text,#202938); overflow-wrap:anywhere; margin:8px 0; }
+/* Sistemas de 2 y 3 incógnitas: matriz compacta de coeficientes. */
+.math-system-dimensions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:10px 0 14px; }
+.math-system-dimensions button { padding:9px 6px; border-radius:9px; border:1px solid var(--math-border,#d4d9e2); background:var(--math-key,#f7f9fc); color:var(--math-text,#202938); cursor:pointer; font-size:12px; }
+.math-system-dimensions button.active { border-color:#7786eb; background:var(--math-active,#e5e9ff); color:var(--math-accent,#4355d4); font-weight:700; }
+.math-system-grid-scroll { width:100%; overflow-x:auto; padding:2px 0 5px; }
+.math-system-grid { display:grid; gap:6px 4px; align-items:center; width:100%; }
+.math-system-header, .math-system-rowlabel, .math-system-equals { display:block; text-align:center; font-size:12px; color:var(--math-text,#202938); }
+.math-system-header { font-weight:700; }
+.math-system-rowlabel { opacity:.65; }
+.math-system-grid .math-system-cell { width:100%; min-width:0; height:42px; padding:8px 3px; text-align:center; font-size:13px; border-radius:7px; background:var(--math-input,#fff); }

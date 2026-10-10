@@ -1,0 +1,42 @@
+/* Avatares mínimos en la esquina inferior derecha, sobre el perfil y el zoom. */
+.live-presence{position:fixed;z-index:24;bottom:124px;right:14px;display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap-reverse;max-width:min(260px,calc(100vw - 24px));width:max-content;padding:7px;background:var(--ui-surface,#fff);border:1px solid var(--ui-border,#d9dfeb);border-radius:24px;box-shadow:0 5px 17px #13213b22;pointer-events:none}
+.live-presence-avatar{display:grid;place-items:center;width:35px;height:35px;flex:none;border-radius:50%;font:20px system-ui,sans-serif;line-height:1;background:#6366f1;border:2px solid #fff;box-shadow:0 1px 5px #0002;pointer-events:auto;cursor:default;user-select:none}
+.live-presence-self{outline:2px solid var(--ui-text,#303949);outline-offset:1px}
+.live-presence-state{width:7px;height:7px;flex:none;border-radius:50%;background:#10b981;align-self:center}
+.live-presence-state.disconnected{background:#f59e0b}
+.live-presence-empty{font-size:12px;color:var(--ui-muted,#64748b)}
+@media(max-width:760px){.live-presence{right:9px;bottom:120px;padding:5px;gap:4px;max-width:min(204px,calc(100vw - 18px))}.live-presence-avatar{width:30px;height:30px;font-size:18px}}
+
+/* Junto al perfil, sin tapar el dock matemático a la derecha ni el zoom abajo. */
+.live-presence{right:75px;bottom:126px;padding:4px 6px;gap:3px;max-width:min(200px,calc(100vw - 92px));border-radius:20px;z-index:17}
+.live-presence-avatar{width:23px;height:23px;font-size:15px;border-width:1px}
+.live-presence-state{width:5px;height:5px}
+@media(max-width:680px){.live-presence{right:72px;bottom:123px;padding:3px 5px;gap:3px;max-width:min(164px,calc(100vw - 88px))}.live-presence-avatar{width:22px;height:22px;font-size:14px}}
+
+/* PRESENCIA_ARRIBA_MAX_3_V1: máximo 3 avatares y un indicador +N. */
+.live-presence{
+  position:fixed;top:19px;bottom:auto;right:155px;left:auto;
+  z-index:18;display:flex;flex-direction:row;flex-wrap:nowrap;
+  align-items:center;gap:4px;width:max-content;max-width:calc(100vw - 170px);
+  padding:5px 8px;border-radius:22px;
+}
+.live-presence-avatar,.live-presence-more{
+  display:grid;place-items:center;flex:0 0 auto;
+  width:27px;height:27px;box-sizing:border-box;border-radius:50%;
+  font:16px/1 system-ui,sans-serif;user-select:none;
+}
+.live-presence-more{
+  padding:0 3px;border:1px solid var(--ui-border,#cbd5e1);
+  background:var(--ui-surface,#fff);color:var(--ui-text,#334155);
+  font:600 11px/1 system-ui,sans-serif;
+  pointer-events:auto;cursor:help;
+}
+.live-presence-state{width:6px;height:6px}
+@media(max-width:680px){
+  .live-presence{top:15px;bottom:auto;right:140px;max-width:calc(100vw - 151px);padding:4px 6px;gap:3px}
+  .live-presence-avatar,.live-presence-more{width:24px;height:24px;font-size:14px}
+  .live-presence-more{font-size:10px}
+}
+@media(max-width:390px){
+  .live-presence{top:68px;right:12px;max-width:calc(100vw - 24px)}
+}

@@ -1,0 +1,115 @@
+/* Menú de formas compacto, adaptable a tablet y computadora. */
+.shapes-popover { min-width: 294px; padding: 12px !important; overflow: visible !important; }
+.shapes-choice-grid { display: grid; grid-template-columns: repeat(6, minmax(34px, 1fr)); gap: 5px; }
+.toolbar .shapes-choice-grid button { display: flex; justify-content: center; align-items: center; height: 41px; padding: 2px 0; font-family: system-ui, sans-serif; font-size: 25px; font-weight: 400; line-height: 1; border: 1px solid #cbd5e1; border-radius: 7px; background: transparent; }
+.toolbar .shapes-choice-grid button:hover, .toolbar .shapes-choice-grid button.chosen { border-color: #6366f1; background: #e0e7ff; color: #3730a3; }
+.shapes-popover small { display: block; padding: 9px 2px 0; font-size: 12px; color: #64748b; white-space: normal; }
+/* Editor de celdas con referencias A1 y acciones reales de copiar/exportar. */
+.excel-dialog-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(15,23,42,.58); display: flex; align-items: center; justify-content: center; padding: 15px; }
+.excel-dialog { width: min(96vw, 1080px); max-height: min(92vh, 820px); background: #fff; color: #1e293b; border: 1px solid #cbd5e1; box-shadow: 0 18px 58px rgba(0,0,0,.29); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; font: 14px system-ui,sans-serif; }
+.excel-dialog-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:15px; padding:18px 22px 12px; }
+.excel-dialog-heading h3 { font-size: 20px; margin:0 0 3px; }
+.excel-dialog-heading p { margin:0; color: #64748b; }
+.excel-dialog button { border: 1px solid #cbd5e1; background:#fff; border-radius: 8px; padding: 9px 12px; color: #0f172a; cursor: pointer; }
+.excel-dialog button:hover { background:#f1f5f9; }
+.excel-dialog button:disabled { opacity:.4; cursor:not-allowed; }
+.excel-name { padding: 0 22px 15px; display:flex; align-items:center; gap:12px; font-weight:600; }
+.excel-name input { width:min(350px,100%); border: 1px solid #cbd5e1; border-radius:8px; padding:8px 11px; font: inherit; }
+.excel-table-scroll { overflow: auto; flex:1; border-block: 1px solid #dbe2ee; min-height:100px; }
+.excel-grid-editor { border-collapse: separate; border-spacing: 0; table-layout: fixed; white-space:nowrap; }
+.excel-grid-editor th { position:sticky; top:0; z-index:1; text-align:center; background:#e9eef8; border: 1px solid #cbd5e1; min-width:42px; font-weight:600; }
+.excel-grid-editor tbody th { position:sticky; left:0; background:#f1f5f9; z-index:1; }
+.excel-grid-editor thead th:first-child { left:0; z-index:2; }
+.excel-grid-editor td { padding:0; border-right:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; height:36px; }
+.excel-grid-editor td input { width:152px; border:0; outline:0; border-radius:0; padding:8px 10px; background:#fff; color:#111827; font: 13px ui-monospace,Consolas,monospace; }
+.excel-grid-editor td input:focus { box-shadow: inset 0 0 0 2px #6366f1; background: #eef2ff; }
+.excel-actions { padding:14px 20px 0; display:flex; gap:9px; flex-wrap:wrap; }
+.excel-dialog .excel-finish { background: #4f46e5; color: white; border-color: #4f46e5; margin-left: auto; }
+.excel-dialog .excel-finish:hover { background: #4338ca; }
+.excel-help { margin: 10px 22px 18px; font-size: 12px; color:#64748b; line-height:1.4; }
+.excel-notice { margin: 8px 22px 0; font-size:13px; color:#1d4ed8; }
+@media (max-width:650px) { .excel-dialog { max-height: 97vh; } .excel-dialog-heading { padding: 12px; } .excel-name { padding: 0 12px 10px; } .excel-actions {padding:10px; } .excel-help {margin:8px 12px 12px} }
+
+/* Edición directa de tablas, anclada a las coordenadas del canvas. */
+.sheet-inline-anchor { position: fixed; z-index: 32; transform-origin: top left; color: #1e293b; font-family: system-ui,sans-serif; box-sizing: border-box; border: 1px solid #818cf8; box-shadow: 0 2px 13px #1e293b27; background: #fff; overflow: visible; }
+.sheet-inline-toolbar { position:absolute; bottom:calc(100% + 12px); left:0; display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #c7d2fe; border-radius:10px; padding:7px 9px; width:max-content; max-width:900px; box-shadow:0 5px 24px #0002; }
+.sheet-inline-toolbar .sheet-inline-name { box-sizing:border-box; width:110px; min-width:50px; height:30px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:5px; color:#1e293b; background:#fff; font:13px system-ui; }
+.sheet-inline-toolbar label { display:flex; align-items:center; gap:5px; white-space:nowrap; font:12px system-ui; cursor:pointer; }
+.sheet-inline-toolbar input[type=color] { appearance:auto; border:0; background:transparent; padding:0; width:31px; height:30px; cursor:pointer; }
+.sheet-inline-toolbar button { border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1e293b; font:12px system-ui; height:30px; padding:0 10px; cursor:pointer; }
+.sheet-inline-toolbar button:hover { background:#eef2ff; border-color:#818cf8; }
+.sheet-inline-viewport { box-sizing:border-box; background:#fff; }
+.sheet-inline-title { display:flex; align-items:center; padding:0 12px; box-sizing:border-box; background:#e8edff; color:#111827; font-size:14px; font-weight:600; overflow:hidden; white-space:nowrap; }
+.sheet-inline-cells { display:grid; background:#fff; }
+.sheet-inline-heading,.sheet-inline-corner { box-sizing:border-box; display:flex; align-items:center; justify-content:center; background:#f1f5f9; border-right:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; font:12px system-ui; color:#475569; user-select:none; }
+.sheet-inline-corner { background:#e2e8f0; }
+.sheet-inline-cell { display:block; min-width:0; min-height:0; width:100%; height:100%; box-sizing:border-box; border:0; border-right:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; border-radius:0; padding:0 8px; outline:none; font:12px system-ui; text-align:left; }
+.sheet-inline-cell:focus { outline:2px solid #4f46e5; outline-offset:-2px; z-index:2; }
+.sheet-inline-cell.sheet-inline-selected { box-shadow:inset 0 0 0 2px #818cf8; }
+.sheet-inline-add-col,.sheet-inline-add-row { position:absolute; display:flex; align-items:center; justify-content:center; border:1px solid #a5b4fc; background:#e0e7ff; color:#3730a3; border-radius:9px; font:bold 22px system-ui; width:30px; height:30px; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .12s; }
+.sheet-inline-anchor:hover .sheet-inline-add-col,.sheet-inline-anchor:hover .sheet-inline-add-row { opacity:1; pointer-events:auto; }
+.sheet-inline-add-col { left:calc(100% - 8px); top:50%; transform:translateY(-50%); }
+.sheet-inline-add-row { left:50%; top:calc(100% - 8px); transform:translateX(-50%); }
+.sheet-inline-add-col:disabled,.sheet-inline-add-row:disabled { opacity:.3; cursor:not-allowed; }
+.sheet-inline-notice { position:absolute; top:calc(100% + 47px); left:0; padding:6px 11px; background:#eef2ff; color:#312e81; border-radius:6px; white-space:nowrap; font:12px system-ui; box-shadow:0 3px 9px #0002; }
+
+/* Los botones + de tablas no seleccionadas aparecen al pasar el mouse
+   sobre el lienzo. El contenedor es transparente a los eventos; solo los
+   propios botones reciben clics y no activan la herramienta de dibujo. */
+.sheet-hover-controls { position:fixed; z-index:31; pointer-events:none; }
+.sheet-hover-add-col, .sheet-hover-add-row {
+  position:absolute; display:flex; align-items:center; justify-content:center;
+  width:30px; height:30px; padding:0;
+  border:1px solid #a5b4fc; border-radius:9px;
+  color:#3730a3; background:#e0e7ff; font:bold 22px system-ui;
+  cursor:pointer; pointer-events:auto;
+  box-shadow:0 3px 10px #1e293b24;
+}
+.sheet-hover-add-col { left:calc(100% - 8px); top:50%; transform:translateY(-50%); }
+.sheet-hover-add-row { left:50%; top:calc(100% - 8px); transform:translateX(-50%); }
+.sheet-hover-add-col:hover, .sheet-hover-add-row:hover { background:#c7d2fe; }
+.sheet-hover-add-col:disabled, .sheet-hover-add-row:disabled { opacity:.3; cursor:not-allowed; }
+
+/* Selección tipo Excel: valor calculado en la celda y fórmula en la barra fx. */
+.sheet-inline-toolbar { gap: 7px; }
+.sheet-address { display:flex; justify-content:center; align-items:center; height:30px; min-width:52px; padding:0 7px; border:1px solid #cbd5e1; border-radius:5px; background:#f8fafc; color:#334155; font:600 12px system-ui; }
+.sheet-fx { color:#64748b; font:italic 600 18px Georgia,serif; padding:0 1px; }
+.sheet-formula-bar { box-sizing:border-box; height:30px; width:260px; min-width:150px; padding:4px 9px; border:1px solid #cbd5e1; border-radius:5px; outline:none; color:#1e293b; background:#fff; font:13px Consolas,monospace; }
+.sheet-formula-bar:focus { border-color:#6366f1; box-shadow:0 0 0 1px #818cf8; }
+.sheet-inline-cells:focus { outline:none; }
+.sheet-display-cell { position:relative; box-sizing:border-box; overflow:visible; min-width:0; min-height:0; display:flex; align-items:center; padding:0 8px; border-right:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; user-select:none; cursor:cell; font:12px system-ui; }
+.sheet-display-cell.sheet-inline-selected { box-shadow:inset 0 0 0 9999px #818cf81a; }
+.sheet-display-cell.sheet-active-cell { outline:2px solid #6366f1; outline-offset:-2px; z-index:1; }
+.sheet-display-cell.sheet-reference-cell { box-shadow:inset 0 0 0 9999px #22c55e22; outline:2px dashed #22a06b; outline-offset:-2px; }
+.sheet-display-value { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none; width:100%; }
+.sheet-edit-input { box-sizing:border-box; width:100%; height:100%; border:0; outline:0; border-radius:0; color:inherit; background:inherit; font:12px Consolas,monospace; padding:0; position:relative; z-index:3; }
+.sheet-edit-input:focus { outline:none; }
+@media(max-width:900px){.sheet-formula-bar{width:170px}.sheet-inline-toolbar{flex-wrap:wrap;max-width:640px}}
+
+/* Arrastrar la tabla desde su encabezado, sin bloquear la edición de celdas. */
+.sheet-inline-drag-handle { cursor: grab; touch-action: none; user-select: none; }
+.sheet-inline-drag-handle:active { cursor: grabbing; }
+
+/* Al aumentar el tamaño de una tabla, también escala su contenido. Se aplica
+   tanto al editor como a la vista estática, evitando tipografía microscópica. */
+.sheet-inline-cells .sheet-display-cell,
+.sheet-inline-cells .sheet-inline-heading,
+.sheet-inline-cells .sheet-inline-cell,
+.sheet-inline-cells .sheet-edit-input {
+  font-size:var(--sheet-font-size,12px);
+}
+
+/* Tabla ampliada: también aumenta el menú de edición y los encabezados.
+   El zoom inverso evita que la barra quede ilegible a 30 % de pizarra. */
+.sheet-inline-toolbar {
+  transform: scale(var(--sheet-toolbar-scale, 1));
+  transform-origin: left bottom;
+  max-width: min(900px, 92vw);
+}
+.sheet-inline-cells .sheet-inline-heading,
+.sheet-inline-cells .sheet-inline-corner {
+  font-size: var(--sheet-chrome-font-size, 12px);
+  font-weight: 600;
+}
+.sheet-inline-title { line-height: 1.15; }
+.sheet-inline-cells .sheet-display-cell { padding-inline: clamp(8px, 1.5%, 24px); }

@@ -1,0 +1,38 @@
+.graph-plot-stage { width:100%; height:100%; min-height:0; position:relative; overflow:hidden; background:#fff; color:#202938; }
+.graph-plot-canvas { position:absolute; inset:0; width:100%; height:100%; }
+.graph-plot-controls { position:absolute; right:12px; top:12px; z-index:4; display:flex; gap:5px; pointer-events:auto; }
+.graph-plot-controls button { width:30px; height:30px; border:1px solid #d8dfeb; border-radius:8px; background:#fff; color:#374151; display:grid; place-items:center; cursor:pointer; box-shadow:0 1px 5px #11182718; padding:0; }
+.graph-plot-controls button:hover { background:#e8edff; }
+.graph-plot-status,.graph-plot-error { position:absolute; z-index:3; left:15px; bottom:14px; padding:7px 9px; border-radius:7px; font:12px system-ui,sans-serif; background:#ffffffed; color:#475569; pointer-events:none; }
+.graph-plot-error { color:#b91c1c; background:#fff2f2f5; max-width:90%; }
+.graph-plot-stage:fullscreen { width:100vw; height:100vh; background:#fff; }
+.graph-plot-stage:fullscreen .graph-plot-controls button { width:42px; height:42px; }
+/* Menú de análisis matemático. Los controles funcionan también en gráficos incrustados. */
+.graph-plot-menu-anchor { position:absolute; top:12px; left:12px; z-index:9; pointer-events:auto; }
+.graph-plot-menu-button { display:grid; place-items:center; width:31px; height:31px; border:1px solid #d8dfeb; border-radius:8px; background:#fff; color:#374151; cursor:pointer; box-shadow:0 1px 5px #11182718; }
+.graph-plot-menu-button:hover { background:#eef2ff; }
+.graph-plot-menu { position:absolute; top:38px; left:0; width:240px; max-height:min(380px,70vh); overflow:auto; padding:11px; display:flex; flex-direction:column; gap:9px; background:#fff; border:1px solid #cbd5e1; color:#1f2937; box-shadow:0 10px 27px #0003; border-radius:11px; font:12px system-ui,sans-serif; }
+.graph-plot-menu strong { font-size:12px; }
+.graph-plot-menu label { display:flex; align-items:center; gap:8px; cursor:pointer; }
+.graph-plot-menu label input[type=checkbox] { width:15px; height:15px; accent-color:#4f46e5; }
+.graph-plot-menu-divider { border-top:1px solid #e5e7eb; margin:2px 0; }
+.graph-plot-menu code { font-size:11px; padding:5px; background:#f1f5f9; border-radius:5px; }
+.graph-plot-menu button:not(.graph-plot-menu-button) { border:1px solid #cbd5e1; background:#f8fafc; color:#334155; padding:5px 7px; border-radius:6px; cursor:pointer; }
+.graph-plot-point-inputs { display:flex; align-items:center; gap:5px; }
+.graph-plot-point-inputs input { width:70px; min-width:0; border:1px solid #cbd5e1; border-radius:5px; padding:5px 3px; color:#1f2937; background:#fff; }
+.graph-plot-point-inputs button { display:grid; place-items:center; }
+.graph-plot-sliders { position:absolute; left:11px; bottom:10px; z-index:6; display:flex; flex-direction:column; gap:6px; width:min(290px,65%); max-height:33%; overflow:auto; padding:8px 10px; background:#ffffffeb; border:1px solid #dbe2eb; border-radius:9px; box-shadow:0 2px 12px #11182718; }
+.graph-plot-slider { display:flex; align-items:center; gap:7px; font:11px system-ui,sans-serif; }
+.graph-plot-slider label { display:flex; flex:1; align-items:center; gap:9px; min-width:0; }
+.graph-plot-slider label strong { min-width:66px; white-space:nowrap; }
+.graph-plot-slider input[type=range] { flex:1; width:70px; min-width:0; accent-color:#6366f1; cursor:pointer; }
+.graph-plot-slider input[type=number] { width:48px; flex:0 0 48px; border:1px solid #cbd5e1; border-radius:5px; padding:4px 2px; color:#1e293b; background:#fff; }
+.graph-plot-stage:fullscreen .graph-plot-sliders { left:22px; bottom:22px; }
+.graph-plot-param-range { display:flex; align-items:center; gap:4px; font-size:11px; }
+.graph-plot-param-range b { width:18px; }
+.graph-plot-param-range input { width:62px; min-width:0; padding:5px 4px; border:1px solid #cbd5e1; border-radius:5px; background:white; color:#1e293b; }
+
+/* El menú vive fuera del gráfico y nunca queda recortado por su tamaño. */
+.graph-plot-menu-floating { position:fixed; z-index:99999; width:252px; box-sizing:border-box; overflow-y:auto; overscroll-behavior:contain; min-height:0; }
+.graph-plot-menu-header { position:sticky; top:-11px; z-index:1; display:flex; align-items:center; justify-content:space-between; background:#fff; margin:-11px -11px 4px; padding:11px; border-bottom:1px solid #e5e7eb; }
+.graph-plot-menu-header button { display:grid; place-items:center; width:26px; height:26px; border:0!important; background:transparent!important; cursor:pointer; }

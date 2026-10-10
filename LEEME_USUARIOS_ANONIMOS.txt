@@ -1,0 +1,81 @@
+PIZARRA - Invitados anónimos, bibliotecas privadas e invitaciones (etapas 1-3)
+=============================================================================
+
+QUÉ INCLUYE
+- Crear un invitado SIN CORREO, con nombre y clave de recuperación.
+- Recuperar identidad desde otro dispositivo o un enlace distinto de Cloudflare.
+- Biblioteca privada: pizarras, carpetas y calendarios por usuario.
+- Cuenta administradora que hereda los datos existentes.
+- Invitaciones para compartir UNA pizarra, con permiso de lectura o edición.
+- Protección de HTTP, historial, recursos y WebSocket por usuario/permiso.
+- Guardado y avisos de versiones existentes entre dispositivos.
+
+QUÉ TODAVÍA NO INCLUYE
+- Mezcla automática de dos ediciones concurrentes sobre el mismo documento.
+  No editen ambos AL MISMO TIEMPO hasta instalar la siguiente etapa.
+- Cursores de colores de otros participantes ni trazo transmitido punto a punto.
+- Bloqueo visual de todas las herramientas a lectores (el servidor SÍ bloquea el guardado).
+- Alta disponibilidad permanente: la notebook y el túnel deben estar encendidos.
+
+INSTALACIÓN (WINDOWS/POWERSHELL)
+1. Detené tu pizarra y tu túnel con Ctrl+C en ambas terminales.
+2. Hacé una copia de respaldo de tu carpeta 'datos' (sin enviarla a nadie).
+3. Descomprimí TODO este ZIP en la raíz del proyecto, junto a package.json.
+   Conservá tanto el instalador como la carpeta 'paquete_usuarios'.
+4. Ejecutá desde PowerShell/VS Code, ubicado en el proyecto:
+      .\.venv\Scripts\python.exe .\instalar_usuarios_anonimos.py
+   Si no usás .venv, podés usar:
+      python .\instalar_usuarios_anonimos.py
+5. Si el instalador indica éxito, compilá:
+      npm.cmd run build
+6. Reiniciá la aplicación:
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_pizarra.ps1
+7. IMPORTANTE: al iniciar por primera vez, el servidor crea:
+      datos\CLAVE_ADMINISTRADOR.txt
+   Leé su contenido EN TU PC. En la pantalla nueva elegí
+   'Recuperar identidad' y pegá la clave admin-... de ese archivo.
+   NO compartas esta clave ni el archivo.
+8. Confirmá que podés ver tus pizarras anteriores como administrador.
+9. Reiniciá el túnel sin correo:
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_tunel_sin_correo.ps1
+10. Abrí el nuevo enlace HTTPS desde la tablet, seleccioná 'Nuevo invitado',
+    elegí un nombre y GUARDÁ la clave de recuperación que aparece una sola vez.
+
+PRUEBA CON DOS USUARIOS
+- En la notebook, recuperá tu sesión de administrador usando su clave.
+- Abrí el enlace HTTPS en una ventana privada o segundo navegador.
+- Registrá un nuevo invitado y comprobá que su biblioteca esté vacía.
+- Como admin creá una pizarra de prueba. Tocá tu avatar abajo a la derecha y
+  seleccioná 'Compartir pizarra actual'. Elegí lectura o edición.
+- Copiá el enlace, abrilo en la sesión del invitado. Esa pizarra aparecerá
+  en la biblioteca del invitado, pero no las demás pizarras privadas.
+- Podés retirar al participante desde el mismo panel de Compartir.
+- Probá cambios guardados por turnos, no trazos simultáneos todavía.
+
+DATOS Y RESPALDOS
+- El instalador respalda los archivos que cambia en copias_antes_usuarios/.
+- En la primera ejecución, la migración guarda una copia consistente de SQLite
+  bajo datos/backups/pizarras-antes-usuarios-*.db.
+- No borres datos/pizarras.db ni datos/CLAVE_ADMINISTRADOR.txt.
+- Evitá incluir datos/, claves y respaldos en repositorios o ZIP públicos.
+- El servidor no borra los contenidos preexistentes; los asigna al administrador.
+
+SEGURIDAD Y LIMITACIONES
+- Un usuario sin invitación NO puede leer pizarras ajenas.
+- Los enlaces de invitación expiran al cabo de 7 días, pero los participantes
+  autorizados siguen siendo miembros hasta que el dueño los retire.
+- El enlace general de Cloudflare es público: cualquiera que lo conozca puede
+  crear una identidad anónima y su propia biblioteca. NO lo difundas masivamente.
+- Hay límites básicos de altas y documentos, pero esto no sustituye
+  autenticación fuerte, monitoreo, cuotas de recursos y límites de CPU.
+- Los invitados no verifican identidad real; sus nombres son seudónimos.
+- Para 10-15 usuarios reales conviene usar un dominio estable y después
+  agregar controles de cupos/invitaciones al servidor completo.
+
+PROBLEMAS
+- Si el instalador marca un archivo diferente, DETENETE. No reemplaces
+  archivos manualmente: mandá el mensaje de error.
+- Si falla npm.cmd run build, NO publiques el túnel; mandá el error TS.
+- Si falta la clave admin, comprobá que el servidor arrancó sin errores.
+- Si hay conflicto al guardar una pizarra compartida, cerrá o recargá la
+  sesión que quedó desactualizada; todavía no hay fusión concurrente.

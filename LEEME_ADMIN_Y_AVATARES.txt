@@ -1,0 +1,52 @@
+PIZARRA - AVATARES COMPACTOS Y ADMINISTRACIÓN DE INVITADOS
+=======================================================
+
+CAMBIOS
+- Avatar de perfil: solo un emoji pequeño; el nombre se lee al pasar el mouse o abrir el menú.
+- Participantes: avatares de 22-23 px en la esquina inferior derecha, desplazados a la izquierda del dock matemático. La calculadora conserva mayor prioridad visual.
+- Dentro del menú de perfil del administrador: «Administrar usuarios».
+- El listado enseña usuarios, avatares y cantidad de pizarras, carpetas y eventos.
+- Para borrar un invitado: «Eliminar», escribir ELIMINAR y confirmar.
+- El servidor verifica que quien hace la petición es administrador (nunca se permite borrar la cuenta administradora).
+- Cada eliminación crea un respaldo consistente de SQLite en datos/backups.
+- Se borran las pizarras y sesiones propias del invitado eliminado, sin borrar las de otros usuarios.
+
+QUÉ PERMISOS TIENE EL ADMINISTRADOR
+- Puede listar y eliminar invitados. No puede borrarse a sí mismo.
+- Conserva la propiedad de la biblioteca original.
+- Puede entrenar el reconocedor compartido de escritura.
+- No abre automáticamente las pizarras privadas de otros invitados: la propiedad y los enlaces siguen definiendo el acceso.
+
+INSTALACIÓN
+1. Detené los procesos de la pizarra y Cloudflare (Ctrl+C).
+2. Conservá una copia de seguridad de datos/.
+3. Extraé TODO este ZIP en la carpeta raíz donde está package.json.
+4. Ejecutá:
+   .\.venv\Scripts\python.exe .\instalar_avatar_compacto_admin.py
+5. Compilá:
+   npm.cmd run build
+6. Iniciá el servidor y Cloudflare con los scripts habituales.
+7. Recargá la computadora y la Lenovo con la nueva página.
+
+USO
+- Abrí la pizarra como Administrador.
+- Tocá el emoji pequeño de tu perfil (a la izquierda de las herramientas matemáticas).
+- Elegí «Administrar usuarios».
+- Los invitados no verán esa opción y el servidor también bloquea sus peticiones.
+- Para eliminar definitivamente una cuenta confirmá escribiendo ELIMINAR.
+- Ante un borrado erróneo, detené FastAPI y consultá el respaldo en datos/backups.
+
+ARCHIVOS MODIFICADOS
+  src/AnonymousGate.tsx
+  src/anonymous_users.css
+  src/live_presence.css
+  reconocimiento_local/anonymous_users.py
+
+El instalador NO modifica src/App.tsx, SQLite ni los trazos/gestos.
+Hace copias de los archivos modificados y comprueba sus hashes, con tolerancia LF/CRLF.
+Si cancela por archivo distinto, NO saltees la comprobación: enviá la versión actual.
+
+SEGURIDAD
+El enlace temporal de Cloudflare sin correo es accesible públicamente para quien lo obtenga.
+La lista/borrado de usuarios tiene autorización por sesión admin en el servidor.
+Usá una contraseña fuerte en la cuenta de administrador; las sesiones permanecen activas por 90 días.

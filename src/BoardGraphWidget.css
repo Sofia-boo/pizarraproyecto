@@ -1,0 +1,20 @@
+.board-graph-layer { position:absolute; inset:0 auto auto 0; z-index:9; width:0; height:0; pointer-events:none; transform-origin:0 0; }
+.board-live-graph { pointer-events:auto; position:absolute; border:1px solid #aebbd0; border-radius:11px; background:#fff; color:#202938; box-shadow:0 7px 22px #14233928; display:flex; flex-direction:column; overflow:hidden; }
+.board-live-graph-header { flex:0 0 35px; height:35px; display:flex; align-items:center; gap:8px; padding:0 8px 0 12px; background:#e9edfa; border-bottom:1px solid #cbd5e1; font:12px system-ui,sans-serif; cursor:grab; user-select:none; touch-action:none; }
+.board-live-graph-header:active { cursor:grabbing; }
+.board-live-graph-header strong { flex:1; font-weight:600; }
+.board-live-graph-header span { font-size:11px; color:#64748b; }
+.board-live-graph-header button { border:0; background:transparent; color:#475569; padding:4px; display:grid; place-items:center; cursor:pointer; }
+.board-live-graph-content { flex:1; min-height:0; }
+.board-live-graph-resize { position:absolute; z-index:11; right:0; bottom:0; width:26px; height:26px; display:grid; place-items:center; color:#64748b; cursor:nwse-resize; touch-action:none; background:#ffffffc9; border-top-left-radius:9px; }
+
+.board-live-graph-editor { position:absolute; left:10px; top:44px; z-index:12; width:min(310px,calc(100% - 20px)); max-height:45%; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:10px; background:#ffffffed; border:1px solid #cbd5e1; border-radius:9px; box-shadow:0 8px 18px #0002; }
+.board-live-graph-formula { display:flex; align-items:center; gap:6px; }
+.board-live-graph-formula button { height:19px; width:19px; flex:0 0 19px; border:2px solid; border-radius:50%; cursor:pointer; }
+.board-live-graph-formula input { flex:1; min-width:0; padding:7px; font:12px Consolas,monospace; border:1px solid #cbd5e1; border-radius:6px; }
+.board-live-graph-editor>button { align-self:flex-start; background:#eef2ff; border:1px solid #c7d2fe; border-radius:7px; color:#283593; padding:5px 9px; display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+/* Los gráficos son seleccionables como cualquier otro objeto de la pizarra. */
+.board-live-graph-selected { border:2px solid #6366f1; box-shadow:0 0 0 3px #6366f12b,0 7px 22px #14233928; }
+.board-live-graph-eraser { cursor:crosshair; }
+.board-live-graph-eraser * { cursor:crosshair !important; }

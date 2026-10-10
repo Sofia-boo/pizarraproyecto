@@ -1,0 +1,49 @@
+CORRECCIÓN MÍNIMA PARA LA COMPILACIÓN DE TU PIZARRA
+================================================
+
+Este paquete contiene:
+  src/biblioteca.ts
+
+Cambio realizado:
+  Se sustituyó la declaración del campo de HttpError dentro de
+  los parámetros del constructor por una propiedad explícita.
+  Así se evita el error TS1294 con erasableSyntaxOnly: true.
+
+NO se modificaron tus archivos SQLite, imágenes, bibliotecas,
+calendarios, el código del backend ni el sistema de guardado.
+
+INSTALACIÓN EN WINDOWS
+----------------------
+1. Detené iniciar_pizarra.ps1 con Ctrl+C.
+2. Hacé una copia completa de tu proyecto o, como mínimo, guardá
+   copias de src/biblioteca.ts y datos/pizarras.db.
+3. Extraé el contenido del ZIP en la raíz de pizarraproyecto,
+   conservando la carpeta src. Reemplazá solo src/biblioteca.ts.
+4. NO ejecutes corregir_build.py otra vez: sus patrones antiguos
+   ya aparecen corregidos en los archivos más recientes recibidos.
+5. Desde PowerShell, en la raíz del proyecto, ejecutá:
+       npm.cmd run build
+6. Si el build termina sin errores, iniciá:
+       powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_pizarra.ps1
+7. Abrí http://127.0.0.1:8765 y recargá con Ctrl+F5.
+
+Si la compilación falla, conservá el texto completo de la terminal
+para revisar los errores nuevos antes de modificar otros archivos.
+
+PROTECCIÓN DE DATOS
+-------------------
+- No borres datos/pizarras.db ni sus posibles archivos -wal y -shm.
+- No vacíes el almacenamiento del navegador para localhost:5173:
+  la versión anterior incluía IndexedDB 'mi-pizarra-db'.
+- No intentes guardar sobre la pizarra vacía si estás recuperando apuntes.
+- No publiques el túnel a terceros antes de confirmar carga, edición,
+  guardado y controles de acceso por usuario.
+
+VERIFICACIÓN REALIZADA
+----------------------
+- Diff auditado: solo cambia el constructor de HttpError.
+- Sintaxis de Python del backend: correcta.
+- Pruebas API con copia aislada de la base: 200 para listado, carga,
+  historial y health; 404 esperado para la pizarra 'principal'.
+- Compilación TypeScript completa NO ejecutada en este entorno:
+  faltan dependencias node_modules y no se pudo instalarlas.

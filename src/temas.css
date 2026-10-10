@@ -1,0 +1,84 @@
+/* Temas globales: todas las capas de la interfaz heredan la paleta. */
+.app[data-theme='dark'] {
+  --ui-bg:#171b24; --ui-surface:#232936; --ui-subtle:#2d3545;
+  --ui-text:#e8edf7; --ui-muted:#b0bbcc; --ui-border:#465165;
+  --ui-accent:#344568; --ui-hover:#354158; --ui-input:#1b2230;
+  --ui-danger:#ff9d9d;
+  background:var(--ui-bg); color:var(--ui-text);
+}
+.app[data-theme='rest'] {
+  --ui-bg:#eee5d3; --ui-surface:#f6efdf; --ui-subtle:#e8dcc4;
+  --ui-text:#423a30; --ui-muted:#6c6255; --ui-border:#c8baa1;
+  --ui-accent:#dfd1ae; --ui-hover:#e9ddc6; --ui-input:#fbf5e8;
+  --ui-danger:#9b3e37;
+  background:var(--ui-bg); color:var(--ui-text);
+}
+/* Evitar modificar los colores propios de los dibujos y las muestras de color. */
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar,.toolbar-popover,.library-open-button,.library-panel,.recognition-dialog,
+  .status,.zoom-controls,.importing,.library-confirm-card,.library-drag-preview,
+  .theme-switcher-trigger,.theme-switcher-menu
+) { background:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .library-layout aside,.library-calendar,.library-calendar-heading,.library-calendar-nav,
+  .library-calendar-event-heading,.library-calendar-grid,.library-calendar-year,
+  .library-calendar-view-switch,.library-calendar-event-row,.calendar-event-editor,
+  .library-create-inline,.library-inline-editor,.library-board,.library-folder-row,
+  .calendar-tab,.recognition-preview,.library-confirm-icon
+) { background-color:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar button,.toolbar select,.toolbar-popover button,.library-panel button,
+  .library-panel input,.library-panel select,.library-panel textarea,
+  .recognition-dialog button,.recognition-dialog input,.recognition-dialog textarea,
+  .zoom-controls button,.library-calendar button,.library-calendar input,
+  .library-calendar select,.library-calendar textarea,.theme-switcher-menu button
+) { color:var(--ui-text); border-color:var(--ui-border); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar select,.library-panel input,.library-panel select,.library-panel textarea,
+  .recognition-dialog input,.recognition-dialog textarea,.library-calendar input,
+  .library-calendar select,.library-calendar textarea
+) { background:var(--ui-input); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar button,.toolbar-popover button,.library-panel button,.recognition-dialog button,
+  .library-calendar button,.zoom-controls button
+) { background-color:transparent; }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar button:hover,.toolbar-popover button:hover,.library-panel button:hover,
+  .library-calendar button:hover,.zoom-controls button:hover,.theme-switcher-menu button:hover
+) { background-color:var(--ui-hover); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar button.active,.library-layout aside .chosen,.library-panel .library-create,
+  .calendar-tab.active,.library-calendar-view-switch .active,
+  .library-calendar-grid .is-selected,.theme-switcher-menu [aria-checked='true']
+) { background-color:var(--ui-accent); color:var(--ui-text); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar .separator,.library-panel header,.library-board,.library-folder-children,
+  .library-calendar-event-row
+) { border-color:var(--ui-border); }
+.app[data-theme]:not([data-theme='light']) :is(
+  .toolbar-popover label,.color-code,.zoom-controls span,.library-section-label,
+  .library-field-label,.library-folder-empty,.calendar-empty,.library-calendar small,
+  .library-calendar-event-row small,.status
+) { color:var(--ui-muted); }
+.app[data-theme]:not([data-theme='light']) :is(.recognition-error,.library-error,.calendar-error) { color:var(--ui-danger); }
+.app[data-theme]:not([data-theme='light']) .toolbar .separator { background:var(--ui-border); }
+.app[data-theme]:not([data-theme='light']) .library-panel .library-inline-editor,
+.app[data-theme]:not([data-theme='light']) .library-panel .library-create-inline,
+.app[data-theme]:not([data-theme='light']) .library-panel .library-board-current,
+.app[data-theme]:not([data-theme='light']) .calendar-event-editor { background:var(--ui-subtle); }
+.app[data-theme]:not([data-theme='light']) .recognition-overlay,
+.app[data-theme]:not([data-theme='light']) .library-overlay,
+.app[data-theme]:not([data-theme='light']) .library-confirm-backdrop { background:rgba(0,0,0,.65); }
+.app[data-theme]:not([data-theme='light']) .recognition-preview { background:var(--ui-subtle); }
+.app[data-theme]:not([data-theme='light']) .toolbar button.color-trigger { background:transparent; }
+/* Los botones con significado semántico mantienen contraste legible. */
+.app[data-theme='dark'] .library-panel :is(.library-confirm-danger,.calendar-delete-danger) { color:#ffb6b6; }
+.app[data-theme='rest'] .library-panel :is(.library-confirm-danger,.calendar-delete-danger) { color:#922d29; }
+.theme-switcher { position:fixed; z-index:30; top:18px; right:20px; }
+.theme-switcher-trigger { display:flex; align-items:center; gap:7px; padding:10px 13px; background:#fff; color:#242424; border:1px solid #e5e7eb; border-radius:13px; box-shadow:0 4px 16px #00000016; cursor:pointer; font:500 13px system-ui,sans-serif; }
+.theme-switcher-menu { position:absolute; top:calc(100% + 8px); right:0; width:205px; padding:7px; background:white; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 12px 30px #0003; }
+.theme-switcher-menu button { display:flex; width:100%; align-items:center; justify-content:space-between; padding:11px 10px; border:0; border-radius:8px; background:transparent; color:inherit; cursor:pointer; text-align:left; font:500 13px system-ui,sans-serif; }
+.theme-switcher-menu button:hover { background:#f1f3f5; }
+.theme-switcher-menu button[aria-checked='true'] { font-weight:700; }
+@media(max-width:850px) { .theme-switcher { top:70px; right:14px; } }
+@media(max-width:500px) { .theme-switcher-name { display:none; } .theme-switcher-trigger { padding:8px; } }

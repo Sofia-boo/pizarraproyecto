@@ -1,0 +1,16 @@
+PIZARRA - AUTOCORRECTOR ESPAÑOL
+
+1. Cerrá el servidor Python anterior (Ctrl+C).
+2. Copiá src/App.tsx a tu proyecto/src/App.tsx.
+3. Copiá reconocimiento_local/server.py a tu proyecto/reconocimiento_local/server.py.
+4. En PowerShell, desde la carpeta del proyecto:
+   .\.venv\Scripts\python.exe -m pip install symspellpy wordfreq
+5. Iniciá el servidor:
+   .\.venv\Scripts\python.exe -m uvicorn reconocimiento_local.server:app --host 0.0.0.0 --port 8765
+6. Recargá la página de la pizarra. Seleccioná "hola mundo" y elegí IA > Reconocer texto.
+
+La sugerencia es opcional y solo se aplica cuando pulsás "Usar".
+Para probar solo el autocorrector, en otra terminal PowerShell:
+Invoke-RestMethod -Uri http://127.0.0.1:8765/suggest/text -Method Post -ContentType 'application/json' -Body '{"text":"hola muhdo"}'
+
+No se modifican los datos guardados de la pizarra.

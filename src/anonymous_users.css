@@ -1,0 +1,183 @@
+.anon-screen,.anon-loading{position:fixed;inset:0;z-index:10050;display:grid;place-items:center;background:#171b24;color:#e8edf7;font:15px system-ui,sans-serif;padding:18px;overflow:auto}
+.anon-entry{width:min(450px,100%);padding:27px;background:#232936;border:1px solid #48546a;border-radius:18px;box-shadow:0 18px 70px #0006;display:flex;flex-direction:column;gap:11px}
+.anon-symbol{font-size:32px;color:#a5b4fc}.anon-entry h1{font-size:26px;margin:0}.anon-entry h2{font-size:17px;margin:5px 0 0}.anon-entry p{color:#b8c5db;line-height:1.45;margin:0 0 9px}.anon-entry label,.anon-modal label{font-size:13px;font-weight:650;color:#d4dced}
+.anon-entry input,.anon-entry textarea,.anon-modal textarea,.anon-modal select{width:100%;box-sizing:border-box;border:1px solid #65748b;background:#151d2b;color:#fff;padding:11px 13px;border-radius:10px;font:inherit}
+.anon-entry button,.anon-modal button{cursor:pointer;padding:11px 13px;border-radius:10px;border:1px solid #7b86a3;font-weight:600}
+.anon-primary{background:#4f46e5;color:white;border-color:#4f46e5!important}.anon-secondary{background:#313b4d;color:#fff}.anon-entry button:disabled,.anon-modal button:disabled{opacity:.6}
+.anon-tabs{display:flex;gap:5px;padding:4px;background:#161d2b;border-radius:11px}.anon-tabs button{flex:1;background:transparent;color:#c6d0e1;border:0}.anon-tabs button.active{background:#3c465c;color:white}
+.anon-secret{display:block;color:#c7d2fe;background:#121825;border:1px solid #48546a;padding:14px;overflow-wrap:anywhere;border-radius:8px;user-select:all}
+.anon-error{color:#ffb4b4!important;font-size:13px}
+.anon-profile{position:fixed;z-index:80;bottom:75px;right:16px;font:13px system-ui,sans-serif}.anon-profile-button{display:flex;gap:8px;align-items:center;cursor:pointer;padding:6px 10px;border-radius:24px;border:1px solid #cbd5e1;background:#fff;color:#172033;box-shadow:0 3px 13px #0002}.anon-avatar{width:27px;height:27px;display:grid;place-items:center;color:#fff;border-radius:50%;font-weight:700}.anon-profile-menu{position:absolute;right:0;bottom:calc(100% + 8px);width:235px;padding:12px;background:#202839;color:#f2f5ff;border:1px solid #475569;border-radius:13px;box-shadow:0 10px 35px #0006}.anon-profile-menu p{font-size:12px;color:#a6b5ce}.anon-profile-menu button{width:100%;border:1px solid #5f718a;background:#2d3a50;color:white;padding:10px;margin-top:5px;border-radius:8px;cursor:pointer}
+.anon-modal-backdrop{position:fixed;inset:0;z-index:11000;display:grid;place-items:center;background:#0009;padding:16px}.anon-modal{width:min(440px,100%);max-height:90vh;overflow:auto;padding:25px;border-radius:15px;background:#232936;color:#fff;display:flex;flex-direction:column;gap:12px;font:14px system-ui,sans-serif}.anon-modal h2{margin:0}.anon-modal p{margin:0;color:#c8d2e2}.anon-toast{position:fixed;z-index:100;left:20px;bottom:20px;padding:13px;background:#fee2e2;color:#7f1d1d;border-radius:10px;max-width:350px}
+@media(max-width:550px){.anon-profile{bottom:72px;right:10px}.anon-profile-button{padding:5px}.anon-profile-button>span:last-child{display:none}.anon-entry{padding:22px}}
+
+.anon-members{display:flex;flex-direction:column;gap:7px;border-top:1px solid #465165;padding-top:10px}.anon-member{display:flex;align-items:center;justify-content:space-between;gap:10px}.anon-member button{padding:5px 9px;border-radius:6px;background:#3b455a;color:#fff}
+/* Registro con contraseña propia y avatares emoji. */
+.anon-entry{max-height:94dvh;overflow-y:auto;}
+.anon-tabs{gap:3px}.anon-tabs button{padding:9px 4px;font-size:12px;line-height:1.2}
+.anon-optional{font-weight:400;color:#93a4bf}
+.anon-emoji-grid{display:flex;gap:5px;flex-wrap:wrap;padding:7px 0 10px;max-width:100%}
+.anon-emoji-grid button{display:grid;place-items:center;width:36px;height:36px;padding:0;background:#172031;color:#fff;border:1px solid #56677e;border-radius:10px;font:22px system-ui,sans-serif;cursor:pointer}
+.anon-emoji-grid button.selected{background:#3d437b;border:2px solid #a5b4fc}
+.anon-emoji-grid button:hover{background:#303f59}
+.anon-emoji-menu{max-height:168px;overflow-y:auto}
+.anon-profile-menu{max-height:min(70dvh,450px);overflow:auto}
+.anon-profile-menu>label{display:block;margin:12px 0 6px;font-size:12px;color:#c7d2fe}
+.anon-profile-menu>input{width:100%;padding:9px;border:1px solid #61708d;border-radius:8px;color:#fff;background:#151d2b;font:inherit;box-sizing:border-box}
+.anon-profile-menu .anon-emoji-grid button{width:35px;margin:0;padding:0;border:1px solid #56677e;background:#172031}
+.anon-success{color:#bbf7d0!important}
+.anon-avatar{font-size:18px}
+@media(max-width:520px){.anon-entry{padding:17px}.anon-tabs button{font-size:11px}.anon-emoji-grid button{width:33px;height:33px;font-size:20px}}
+
+/* Acceso compacto: sin icono decorativo ni barra interna visible.
+   Si la pantalla es muy pequeña, sigue siendo posible desplazar con tacto. */
+.anon-screen { box-sizing:border-box; min-height:100dvh; padding:12px; }
+.anon-entry { width:min(420px,100%); padding:21px; gap:9px; max-height:calc(100dvh - 24px);
+  box-sizing:border-box; overflow-y:auto; scrollbar-width:none; }
+.anon-entry::-webkit-scrollbar {display:none;}
+.anon-entry h1 {font-size:25px;line-height:1.25;}
+.anon-entry p {margin:0 0 4px;line-height:1.35;}
+.anon-tabs {margin:5px 0;}
+.anon-tabs button {font-size:14px;padding:9px 8px;}
+.anon-entry input,.anon-entry .anon-emoji-select {min-height:42px;}
+.anon-emoji-select { width:100%;box-sizing:border-box;border:1px solid #65748b;background:#151d2b;
+ color:#fff;padding:8px 12px;border-radius:10px;font:inherit; }
+.anon-entry .anon-primary {min-height:43px;}
+@media (max-height:650px) { .anon-entry {gap:6px;padding:15px;} .anon-entry h1{font-size:22px} }
+
+/* Perfil realmente compacto. Menú arriba, fuera de la calculadora. */
+.anon-profile{bottom:82px;right:76px;z-index:18}
+.anon-profile.anon-profile-open{z-index:40}
+.anon-profile-button{padding:2px;gap:0;width:31px;height:31px;border-radius:50%;display:grid;place-items:center}
+.anon-profile-button .anon-avatar{width:25px;height:25px;font-size:17px;line-height:1;background:transparent!important}
+.anon-profile-menu{bottom:calc(100% + 9px);max-height:min(65dvh,390px);overflow-y:auto}
+.anon-admin-modal{width:min(490px,100%)}
+.anon-admin-list{display:flex;flex-direction:column;gap:6px;max-height:40dvh;overflow-y:auto}
+.anon-admin-row{display:flex;gap:9px;align-items:center;justify-content:space-between;padding:8px 9px;border:1px solid #455269;border-radius:10px}
+.anon-admin-user{display:flex;align-items:center;gap:9px;min-width:0;overflow-wrap:anywhere}
+.anon-admin-user>span:first-child{font-size:22px}
+.anon-admin-user small{display:block;color:#a6b5ce;font-size:11px;margin-top:3px}
+.anon-modal button.anon-danger{background:#8d2535;color:#fff;border-color:#b94a58;padding:8px 10px}
+.anon-admin-confirm{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid #bf5661;border-radius:10px}
+.anon-admin-confirm label{display:block}
+.anon-admin-confirm input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #64748b;border-radius:8px;background:#111827;color:#fff;font:inherit}
+.anon-admin-actions{display:flex;gap:8px;justify-content:flex-end}
+@media(max-width:680px){.anon-profile{right:71px;bottom:81px}.anon-profile-button{width:29px;height:29px}.anon-profile-button .anon-avatar{width:24px;height:24px;font-size:16px}.anon-profile-menu{width:min(238px,calc(100vw - 85px))}}
+
+/* PERFIL_MOVIDO_DERECHA_V1: sobre los controles de zoom, lejos de la calculadora. */
+.anon-profile{position:fixed;top:auto;bottom:121px;right:18px;z-index:18}
+.anon-profile.anon-profile-open{z-index:70}
+.anon-profile-menu{top:auto;bottom:calc(100% + 9px);right:0}
+@media(max-width:680px){
+  .anon-profile{top:auto;bottom:112px;right:12px}
+  .anon-profile-menu{width:min(238px,calc(100vw - 28px))}
+}
+
+/* PERFIL_ABAJO_Y_SELECTOR_CUADRICULA_V2
+   El perfil no puede flotar por encima del calendario ni de diálogos. */
+.anon-profile,
+.anon-profile.anon-profile-open {
+  position:fixed;
+  top:auto;
+  bottom:95px;
+  right:18px;
+  left:auto;
+  z-index:35;
+}
+.anon-profile.anon-profile-open {z-index:45}
+.anon-profile-button {
+  width:auto;
+  height:38px;
+  min-width:83px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  padding:4px 12px 4px 6px;
+  background:var(--ui-surface,#fff);
+  color:var(--ui-text,#172033);
+  border:1px solid var(--ui-border,#cbd5e1);
+  border-radius:24px;
+}
+.anon-profile-button .anon-avatar {
+  width:27px;
+  height:27px;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+  flex-shrink:0;
+}
+.anon-profile-button>span.anon-profile-label:last-child {
+  display:inline;
+  font:600 13px/1 system-ui,sans-serif;
+  white-space:nowrap;
+}
+.anon-profile-menu {
+  right:0;
+  bottom:calc(100% + 9px);
+  top:auto;
+  box-sizing:border-box;
+  width:min(260px,calc(100vw - 28px));
+}
+/* La biblioteca/calendario pertenece al lienzo; el perfil es un hermano
+   en el DOM. Ocultarlo impide el error de capas independientemente del z-index. */
+body:has(.library-overlay, .recognition-overlay, .version-history-backdrop,
+          .anon-modal-backdrop, .handwritten-event-overlay) .anon-profile {
+  display:none;
+}
+/* Sustituir el selector HTML apilado por una cuadrícula desplegable. */
+.anon-emoji-picker {display:flex;flex-direction:column;gap:8px;min-width:0}
+.anon-emoji-trigger {
+  width:100%;min-height:43px;display:flex;align-items:center;gap:10px;
+  border:1px solid #65748b;background:#151d2b;color:#fff;
+  border-radius:10px;padding:7px 12px;text-align:left;font:inherit;
+}
+.anon-emoji-current {font:23px/1 system-ui,sans-serif}
+.anon-emoji-caret {margin-left:auto;color:#a5b4fc}
+.anon-emoji-grid,
+.anon-emoji-registration,
+.anon-profile-menu .anon-emoji-grid {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:6px;
+  width:100%;
+  box-sizing:border-box;
+  padding:7px;
+  border-radius:12px;
+}
+.anon-emoji-registration {background:#151d2b;border:1px solid #485872}
+.anon-emoji-grid button,
+.anon-profile-menu .anon-emoji-grid button {
+  width:100%;height:37px;min-width:0;margin:0;padding:0;
+  display:grid;place-items:center;
+  background:#222e43;color:#fff;
+  border:1px solid #596b87;
+  border-radius:9px;font:21px/1 system-ui,sans-serif;
+}
+.anon-emoji-grid button.selected,
+.anon-profile-menu .anon-emoji-grid button.selected {
+  background:#3d437b;border:2px solid #a5b4fc;
+}
+.anon-emoji-menu {
+  max-height:none;
+  overflow-y:visible;
+}
+@media(max-width:680px) {
+  .anon-profile,.anon-profile.anon-profile-open {right:12px;bottom:93px}
+  .anon-profile-button {height:36px;padding:4px 10px 4px 5px;gap:5px}
+  .anon-profile-button>span.anon-profile-label:last-child {display:inline}
+  .anon-profile-menu {width:min(250px,calc(100vw - 24px))}
+}
+@media(max-width:360px) {
+  .anon-emoji-grid,.anon-emoji-registration,.anon-profile-menu .anon-emoji-grid {gap:4px;padding:5px}
+  .anon-emoji-grid button,.anon-profile-menu .anon-emoji-grid button {height:34px;font-size:19px}
+}
+
+/* PERFIL: no tapar ningún panel de cálculo, gráficos ni diálogos. */
+body:has(.math-panel, .library-overlay, .version-history-backdrop, .recognition-overlay,
+          .anon-modal-backdrop, .handwritten-event-overlay) .anon-profile {display:none !important}
+
+/* La calculadora y el editor de gráficos tienen prioridad visual. */
+.anon-profile,.anon-profile.anon-profile-open{z-index:20}
+body:has(.math-panel) .anon-profile {display:none !important}

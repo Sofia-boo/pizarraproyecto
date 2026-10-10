@@ -1,0 +1,67 @@
+PIZARRA MULTIUSUARIO: AVATARES, CURSORES Y CONTRASEÑAS ELEGIDAS
+================================================================
+
+REQUISITOS
+- Haber instalado las actualizaciones anteriores: invitados anónimos y trazos en vivo.
+- Python del entorno virtual y Node/npm funcionales.
+- Tener el backend y el túnel cerrados durante la instalación.
+
+IMPORTANTE
+El instalador comprueba las versiones de los seis archivos que reemplaza. Si alguno
+no coincide con la última versión conocida, cancela todo antes de realizar cambios.
+En ese caso NO borres tus archivos; compartí el archivo discrepante para adaptar la mejora.
+La base SQLite NO se borra ni se reemplaza.
+
+INSTALACIÓN (Windows PowerShell, en la raíz del proyecto)
+1. Cerrá pizarra y túnel (Ctrl+C en sus terminales).
+2. Hacé copia de la carpeta datos, incluido pizarras.db, por seguridad.
+3. Descomprimí este ZIP en la raíz del proyecto, junto a package.json.
+   Deben quedar instalar_perfiles_y_cursores.py y paquete_perfiles/.
+4. Ejecutá:
+   .\.venv\Scripts\python.exe .\instalar_perfiles_y_cursores.py
+5. Compilá:
+   npm.cmd run build
+6. Iniciá:
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_pizarra.ps1
+7. Abrí otra terminal y lanzá el túnel:
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_tunel_sin_correo_corregido.ps1
+8. Recargá la pizarra en ambos dispositivos.
+
+NOVEDADES
+- Participantes activos: únicamente círculos emoji pequeños en esquina inferior
+  derecha, sobre controles actuales. Pasar el cursor muestra el nombre.
+- Movimiento del puntero (mouse/lápiz): los demás lo ven en directo, con nombre
+  y emoji. Se actualiza varias veces por segundo y sigue el zoom de cada uno.
+- Registro: nombre + contraseña elegidos por vos (mínimo 8 caracteres) + emoji
+  opcional. Si no elegís emoji, el backend elige uno al azar.
+- Para iniciar sesión desde otra URL/diferente dispositivo, usá Ingresar.
+- Para cuentas antiguas, «Clave antigua» sigue permitiendo recuperar identidad.
+  Después usá tu menú de perfil para establecer una contraseña a esa cuenta.
+- Para cambiar emoji después de registrarte: perfil > Cambiar emoji.
+
+DÓNDE SE GUARDAN
+  datos\pizarras.db
+  anonymous_users: identidad, emoji, y datos de verificación de contraseña.
+  anonymous_sessions: sesiones activas.
+  boards, folders, board_members, share_links: documentos y permisos.
+Las contraseñas no se guardan como texto: se guardan como hash PBKDF2-SHA256
+con sal aleatoria por usuario. Las cookies se usan para mantener la sesión.
+
+ELIMINAR USUARIOS DE PRUEBA
+Detené FastAPI y Cloudflare. Luego ejecutá:
+   .\.venv\Scripts\python.exe .\administrar_usuarios.py
+El script lista usuarios y sus documentos, pide número y confirmación específica,
+crea una copia consistente de SQLite en datos\backups y elimina la cuenta y datos
+propios. NO permite borrar el administrador. No alteres manualmente SQLite.
+
+ALCANCE Y SEGURIDAD
+- El canal WebSocket recibe solo a quien tiene permisos en esa pizarra.
+- Los espectadores autorizados pueden mover su cursor, pero no dibujar.
+- La sincronización del trazo sigue usando las operaciones visuales temporales;
+  la escritura definitiva sigue siendo por versiones. Editar simultáneamente
+  diferentes objetos NO está resuelto aún por CRDT; pueden existir conflictos.
+- El túnel público sin correo permite llegar a la pantalla de inicio de sesión,
+  por eso usá contraseñas robustas y no difundas enlaces de edición.
+- Las cuentas creadas con contraseña no generan una contraseña automática visible.
+  Si olvidás la contraseña, no hay recuperación por correo; asegurate de guardarla
+  en tu administrador de contraseñas.

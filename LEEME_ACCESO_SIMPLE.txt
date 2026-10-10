@@ -1,0 +1,42 @@
+ACTUALIZACION DE ACCESO - TU PIZARRA
+==================================
+
+MODIFICACIONES
+- Pantalla sin lapiz decorativo.
+- Elimina la pestaña visible «Clave antigua» y su formulario.
+- Deja las opciones «Crear usuario» e «Ingresar».
+- Sustituye la cuadrícula extensa de emojis por una lista desplegable; sigue habiendo selección y emoji aleatorio.
+- Diseño más compacto, sin barra de desplazamiento visual en el cuadro de acceso.
+  En pantallas chicas aún es posible desplazarse para no ocultar botones.
+- Contraseña elegida por la persona: permite 1 carácter o más (máximo técnico de 4096 bytes UTF-8 para prevenir abusos).
+- Actualiza las validaciones tanto en React como en FastAPI; también permite cambiar la contraseña del perfil con un único carácter.
+- No modifica App.tsx, sincronización, cursores, gestos ni datos/pizarras.db.
+- La ruta de recuperación heredada del backend continúa por compatibilidad con cuentas anteriores, pero ya no aparece en la pantalla.
+
+INSTALACION
+1. Detené FastAPI y Cloudflare con Ctrl+C.
+2. Hacé respaldo de datos/pizarras.db (o de la carpeta datos completa).
+3. Extraé TODO este ZIP en la raíz del proyecto (junto a package.json), manteniendo paquete_acceso/.
+4. Ejecutá:
+   .\.venv\Scripts\python.exe .\instalar_acceso_simple.py
+5. Compilá:
+   npm.cmd run build
+6. Iniciá la aplicación y luego el túnel con tus scripts habituales.
+7. Abrí la página y recargá con Ctrl+F5 en la computadora y la tablet.
+
+CUENTAS VIEJAS Y ADMINISTRADOR
+La antigua cuenta Administrador pudo haber sido creada únicamente con una clave de recuperación,
+sin contraseña. Si ya tenés la sesión iniciada, podés establecer una contraseña desde tu perfil.
+Si no podés entrar a esa cuenta, con FastAPI APAGADO ejecutá en tu notebook:
+   .\.venv\Scripts\python.exe .\configurar_password_admin.py
+Elegí una contraseña y usá «Administrador» como nombre en la pestaña «Ingresar».
+El script hace un respaldo de SQLite antes de modificar la contraseña del administrador.
+NO compartas los archivos datos/CLAVE_ADMINISTRADOR.txt ni datos/pizarras.db.
+
+SEGURIDAD
+Aunque se permite una contraseña de un solo carácter, no se recomienda para un sitio accesible
+mediante Cloudflare. Usá una contraseña larga y exclusiva.
+
+SI FALLA EL INSTALADOR
+No elimines sus comprobaciones. Si indica que un archivo contiene cambios nuevos,
+mandá la versión actual de ese archivo para adaptar el parche.
