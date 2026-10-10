@@ -12,13 +12,18 @@ import math
 import re
 import time
 import uuid
+import os
+import secrets
+from urllib.parse import urlsplit, quote
 from collections import deque
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import JSONResponse
 
 # {board_id: {websocket: {uid, client_id, name, color, role, active, points, traffic}}}
 _clients: dict[str, dict[WebSocket, dict]] = {}
 _locks: dict[WebSocket, asyncio.Lock] = {}
 _permission_db = None
+_tickets: dict[str, tuple[str, str, float]] = {}
 # Estado efímero de reproducción por pizarra/video (no se guarda en SQLite).
 _video_states: dict[str, dict[str, dict]] = {}
 
@@ -88,10 +93,41 @@ def attach_live_sync(app, db_connection):
     global _permission_db
     _permission_db = db_connection
 
+    @app.get('/api/boards/{board_id}/live-ticket')
+    async def live_ticket(request: Request, board_id: str):
+        from reconocimiento_local.anonymous_users import find_user, COOKIE, can_board
+        with db_connection() as db:
+            user = find_user(db, request.cookies.get(COOKIE))
+            if not user or not can_board(db,user['id'],board_id):
+                raise HTTPException(403,'Sin permisos para esta pizarra')
+            uid = user['id']
+        now = time.monotonic()
+        for token, (owner, bid, expires) in list(_tickets.items()):
+            if expires < now or (owner == uid and bid == board_id):
+                _tickets.pop(token,None)
+        if len(_tickets) >= 2048:
+            raise HTTPException(429,'Demasiadas conexiones pendientes')
+        token = secrets.token_urlsafe(32)
+        _tickets[token] = (uid,board_id,now+30)
+        origin = urlsplit(os.environ.get('PIZARRA_WS_ORIGIN') or str(request.base_url))
+        if origin.scheme not in ('http','https') or not origin.netloc:
+            raise HTTPException(503,'Conexión en vivo sin configurar')
+        scheme = 'wss' if origin.scheme=='https' else 'ws'
+        return JSONResponse({'url':f'{scheme}://{origin.netloc}/api/live/{quote(board_id,safe="")}?ticket={token}'},
+                            headers={'Cache-Control':'private, no-store'})
+
     @app.websocket('/api/live/{board_id}')
     async def board_live(websocket: WebSocket, board_id: str):
         from reconocimiento_local.anonymous_users import websocket_allowed, board_role
-        allowed, user_id = websocket_allowed(websocket, board_id, db_connection)
+        token = websocket.query_params.get('ticket')
+        ticket_uid = None
+        if token:
+            ticket = _tickets.pop(token,None)
+            if not ticket or ticket[1] != board_id or ticket[2] < time.monotonic():
+                await websocket.close(code=1008)
+                return
+            ticket_uid = ticket[0]
+        allowed, user_id = websocket_allowed(websocket, board_id, db_connection, ticket_uid)
         if not allowed or user_id is None:
             await websocket.close(code=1008)
             return

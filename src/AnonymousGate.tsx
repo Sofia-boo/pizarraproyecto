@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import App from './App'
-import { getActiveBoardId, getLibrary } from './biblioteca'
+import { getActiveBoardId, getLibrary, privateBoard, setStorageSession, requestPersistentStorage } from './biblioteca'
 import './anonymous_users.css'
 
 type Profile = {id:string; display_name:string; color:string; is_admin:number; emoji:string}
@@ -11,7 +11,7 @@ type ManagedUser = {id:string;display_name:string;emoji:string;is_admin:number;b
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const root = import.meta.env.DEV ? `${location.protocol}//${location.hostname}:8765` : location.origin
-  const resp = await fetch(root+path, {...init,credentials:'include'})
+  const resp = await fetch(root+path, {...init,credentials:'include',signal:AbortSignal.timeout(10000)})
   if (!resp.ok) {
     const info = await resp.json().catch(()=>({detail:`HTTP ${resp.status}`})) as {detail?:string}
     throw new Error(info.detail ?? `Error ${resp.status}`)
@@ -24,6 +24,7 @@ function post<T>(path:string,data:unknown):Promise<T> {
 
 export default function AnonymousGate(){
   const [profile,setProfile]=useState<Profile|null>(null)
+  const [localMode,setLocalMode]=useState(sessionStorage.getItem('pizarra-modo-local')==='1')
   const [loading,setLoading]=useState(true)
   const [joining,setJoining]=useState(false)
   const [inviteProcessed,setInviteProcessed]=useState(!new URLSearchParams(location.search).has('invite'))
@@ -51,15 +52,28 @@ export default function AnonymousGate(){
   const [targetUser,setTargetUser]=useState<ManagedUser|null>(null)
 
   useEffect(()=>{
+    if(localMode) {
+      let saved: Profile | null = null
+      try { saved=JSON.parse(localStorage.getItem('pizarra-perfil-copia')||'null') as Profile|null } catch { /* Perfil local inválido. */ }
+      setStorageSession(saved?.id??null,false)
+      setProfile(saved??{id:'device',display_name:'Este dispositivo',color:'#6366f1',is_admin:0,emoji:'💻'})
+      setInviteProcessed(true)
+      setLoading(false)
+      return
+    }
     let alive=true
-    void api<Profile>('/api/auth/me').then(u=>{if(alive)setProfile(u)})
+    void api<Profile>('/api/auth/me').then(u=>{if(alive){
+      setStorageSession(u.id)
+      localStorage.setItem('pizarra-perfil-copia',JSON.stringify(u))
+      setProfile(u)
+    }})
       .catch(()=>{if(alive)setProfile(null)})
       .finally(()=>{if(alive)setLoading(false)})
     return ()=>{alive=false}
-  },[])
+  },[localMode])
 
   useEffect(()=>{
-    if(!profile || inviteProcessed) return
+    if(!profile || inviteProcessed || localMode) return
     const token = new URLSearchParams(location.search).get('invite')
     if(!token) { setInviteProcessed(true); return }
     let alive=true
@@ -74,7 +88,13 @@ export default function AnonymousGate(){
       .catch(e=>{if(alive)setInviteMessage('No se pudo aceptar la invitación: '+String(e))})
       .finally(()=>{if(alive){setJoining(false);setInviteProcessed(true)}})
     return ()=>{alive=false}
-  },[profile,inviteProcessed])
+  },[profile,inviteProcessed,localMode])
+
+  function enterLocal() {
+    sessionStorage.setItem('pizarra-modo-local','1')
+    void requestPersistentStorage()
+    setLocalMode(true)
+  }
 
   async function createGuest(){
     if(!name.trim() || !password)return
@@ -82,6 +102,9 @@ export default function AnonymousGate(){
     try {
       const created=await post<Profile>('/api/auth/guest',{name:name.trim(),password,emoji:emoji||null,color:'#6366f1'})
       localStorage.removeItem('pizarra_activa')
+      setStorageSession(created.id)
+      localStorage.setItem('pizarra-perfil-copia',JSON.stringify(created))
+      void requestPersistentStorage()
       setProfile(created)
       setPassword('')
     }catch(e){setError(String(e))}finally{setBusy(false)}
@@ -92,6 +115,9 @@ export default function AnonymousGate(){
     try{
       const u=await post<Profile>('/api/auth/login',{name:name.trim(),password})
       localStorage.removeItem('pizarra_activa')
+      setStorageSession(u.id)
+      localStorage.setItem('pizarra-perfil-copia',JSON.stringify(u))
+      void requestPersistentStorage()
       setProfile(u)
       setPassword('')
     }catch(e){setError(String(e))}finally{setBusy(false)}
@@ -114,13 +140,17 @@ export default function AnonymousGate(){
     }catch(e){setError(String(e))}finally{setBusy(false)}
   }
   async function logout(){
-    await api<{ok:boolean}>('/api/auth/logout',{method:'POST'}).catch(()=>null)
+    if(!localMode)await api<{ok:boolean}>('/api/auth/logout',{method:'POST'}).catch(()=>null)
     localStorage.removeItem('pizarra_activa')
+    localStorage.removeItem('pizarra-perfil-copia')
+    sessionStorage.removeItem('pizarra-modo-local')
+    setStorageSession(null,false)
     window.location.reload()
   }
   async function openSharing(){
     setShareError('');setShareUrl('');setMenuOpen(false)
     try{
+      if(privateBoard())throw new Error('Esta pizarra es privada en tu dispositivo. En Mis pizarras podés publicar una copia compartida.')
       const library=await getLibrary()
       const selected=library.boards.find(b=>b.id===getActiveBoardId()) as BoardRecord|undefined
       setShareBoard(selected??null)
@@ -169,7 +199,8 @@ export default function AnonymousGate(){
   if(!profile)return <div className="anon-screen">
     <section className="anon-entry">
       <h1>Tu pizarra</h1>
-      <p>Creá un usuario o ingresá a tu espacio privado.</p>
+      <p>Las privadas se guardan en este dispositivo. Ingresá para usar las compartidas.</p>
+      <button className="anon-secondary" onClick={enterLocal}>Abrir privadas y copias de este dispositivo</button>
       <div className="anon-tabs">
         <button className={mode==='guest'?'active':''} onClick={()=>{setMode('guest');setError('')}}>Crear usuario</button>
         <button className={mode==='login'?'active':''} onClick={()=>{setMode('login');setError('')}}>Ingresar</button>
@@ -210,16 +241,19 @@ export default function AnonymousGate(){
         <span className="anon-profile-label">Perfil</span>
       </button>
       {menuOpen&&<div className="anon-profile-menu">
-        <strong>{profile.is_admin?'Administrador':'Invitado anónimo'}</strong>
-        <p>Tu biblioteca es privada.</p>
-        <button onClick={()=>setChangeEmoji(v=>!v)}>Cambiar emoji</button>
+        <strong>{localMode?'Modo local':profile.is_admin?'Administrador':profile.display_name}</strong>
+        <p>Privadas: este dispositivo. Compartidas: servidor y copia local.</p>
+        {localMode&&<button onClick={()=>{sessionStorage.removeItem('pizarra-modo-local');window.location.reload()}}>Conectar con el servidor / ingresar</button>}
+        {!localMode&&<button onClick={()=>setChangeEmoji(v=>!v)}>Cambiar emoji</button>}
         {changeEmoji&&<div className="anon-emoji-grid anon-emoji-menu" role="group" aria-label="Emoji de perfil">{EMOJIS.map(item=><button type="button" key={item} disabled={busy} title={item} onClick={()=>void updateEmoji(item)}>{item}</button>)}</div>}
-        <button onClick={()=>void openSharing()}>Compartir pizarra actual</button>
-        {Boolean(profile.is_admin)&&<button onClick={()=>void openUserAdministration()}>Administrar usuarios</button>}
+        {!localMode&&<button onClick={()=>void openSharing()}>Compartir pizarra actual</button>}
+        {!localMode&&Boolean(profile.is_admin)&&<button onClick={()=>void openUserAdministration()}>Administrar usuarios</button>}
+        {!localMode&&<>
         <label htmlFor="anon-new-password">Elegir o cambiar contraseña</label>
         <input id="anon-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)}/>
         <button disabled={busy||!newPassword} onClick={()=>void setChosenPassword()}>Guardar contraseña</button>
         {passwordMessage&&<p className="anon-success">{passwordMessage}</p>}
+        </>}
         {error&&<p className="anon-error" role="alert">{error}</p>}
         <button onClick={()=>void logout()}>Cambiar de usuario / salir</button>
       </div>}
@@ -227,7 +261,7 @@ export default function AnonymousGate(){
     {managingUsers&&<div className="anon-modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!busy)setManagingUsers(false)}}>
       <section className="anon-modal anon-admin-modal" role="dialog" aria-modal="true" aria-label="Administrar usuarios">
         <h2>Administrar usuarios</h2>
-        <p>Solo el administrador puede eliminar invitados y sus pizarras privadas.</p>
+        <p>Solo el administrador puede eliminar invitados y sus pizarras alojadas en el servidor.</p>
         <div className="anon-admin-list">
           {managedUsers.map(user=><div className="anon-admin-row" key={user.id}>
             <span className="anon-admin-user"><span aria-hidden="true">{user.emoji||'🙂'}</span><span>{user.display_name}<small>{user.is_admin?'Administrador':`${user.boards_count} pizarra(s) · ${user.folders_count} carpeta(s) · ${user.events_count} evento(s)`}</small></span></span>

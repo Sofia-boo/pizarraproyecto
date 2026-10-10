@@ -1,56 +1,87 @@
-# Publicar la pizarra con guardado permanente
+# Vercel + tu computadora + copias en cada dispositivo
 
-La aplicación necesita un proceso Python, WebSockets y un disco persistente.
-El Dockerfile sirve la web y la API juntos para que las sesiones funcionen en
-el mismo dominio. `render.yaml` configura un servicio Starter con disco de 1 GB;
-ese servicio y su disco son pagos. No se crean recursos hasta activar el Blueprint.
+La página permanece en **https://pizarraproyecto.vercel.app**. No requiere Render.
 
-## Render
+- **Privadas:** se crean y guardan en IndexedDB, en el navegador del usuario.
+  No se envían al servidor. Se abren con «Abrir privadas y copias de este dispositivo».
+- **Compartidas:** la copia principal se guarda en `datos/pizarras.db` de tu PC.
+  Al abrir una, se descarga su contenido e imágenes al navegador de ese usuario.
+  Al guardar o recibir una versión nueva, también se actualiza esa copia local.
+- **Servidor apagado:** se pueden abrir las privadas y las compartidas descargadas.
+  Los cambios en compartidas quedan pendientes localmente. Al reconectar se usa
+  la versión original para evitar reemplazar cambios ajenos. Si hay conflicto,
+  «Guardar copia como privada» permite conservar una versión independiente.
 
-1. Subí estos archivos al repositorio de GitHub.
-2. En https://dashboard.render.com seleccioná **New > Blueprint** y conectá
-   `Sofia-boo/pizarraproyecto`. Revisá el precio antes de crear el servicio.
-3. Esperá a que termine el despliegue y abrí la URL HTTPS que Render asigne.
-   `/healthz` debe devolver 200 y `/api/auth/me`, sin sesión, 401 (nunca 404).
-4. En la consola del servicio ejecutá `python configurar_password_admin.py`
-   para elegir la contraseña del usuario `Administrador`.
-5. Probá crear un usuario, entrar, crear una pizarra y recargarla.
+Una copia local no convierte las computadoras de los usuarios en servidores:
+otros participantes siguen necesitando tu PC conectada para colaborar y sincronizar.
+Cada copia pertenece a ese navegador y dominio. No se guarda automáticamente en
+una carpeta visible del explorador de archivos. «Descargar respaldo» exporta un
+archivo JSON con contenido e imágenes; «Importar respaldo» lo abre como privada.
+No se pueden retirar copias que otro usuario ya descargó.
 
-SQLite, imágenes, sesiones, respaldos y letras entrenadas quedan en `/app/datos`.
-Mantené un solo proceso y una instancia: la presencia en vivo usa memoria local.
-No cambies `PIZARRA_DATA_DIR` ni borres el disco al actualizar la aplicación.
+## Primera conexión con Vercel
 
-## Conectar el enlace de Vercel
+1. Desde PowerShell, en esta carpeta, ejecutá:
 
-Con la URL real del servicio, ejecutá desde la raíz del proyecto:
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\conectar_pc_vercel.ps1
+   ```
+
+2. El script compila, inicia Python y un túnel HTTPS temporal de Cloudflare,
+   y genera `vercel.json`. Los procesos quedan en segundo plano; sus logs están
+   en `logs/`. Si el puerto 8765 está ocupado, cerrá el servidor anterior primero.
+3. Subí los cambios y `vercel.json` a GitHub. Vercel publica desde `main`.
+4. Abrí el enlace de Vercel. Las privadas funcionan sin iniciar sesión.
+   Para crear o editar compartidas, ingresá o creá una cuenta.
+5. En Mis pizarras elegí «Privada en este dispositivo» o «Compartida en el servidor
+   + copia local». «Publicar copia compartida» conserva la privada original.
+   Después, desde Perfil, creá la invitación para otros participantes.
+
+La conexión temporal cambia al reiniciar el túnel: hay que regenerar y subir
+`vercel.json`. Para usar una dirección fija, configurá un túnel con hostname
+estable en Cloudflare y ejecutá:
 
 ```powershell
-node scripts/conectar-vercel.mjs https://TU-SERVICIO.onrender.com
+node scripts/conectar-vercel.mjs https://TU-HOSTNAME-FIJO
 ```
 
-Subí el `vercel.json` generado a GitHub. Vercel redirigirá el enlace existente
-al servicio completo. La dirección del navegador cambiará a Render y todos
-los accesos, cookies y WebSockets usarán ese mismo dominio.
+Reiniciá `iniciar_pizarra.ps1` para cargar `hosting.local.json` y subí el
+`vercel.json` generado. La página sigue alojada en Vercel: solo `/api/` y
+`/recognize/` se reenvían a tu PC. La conexión en vivo usa tickets de un solo uso
+para acceder al túnel sin compartir cookies entre dominios.
 
-## Datos existentes
+## Apagar la conexión
 
-El primer despliegue crea una base nueva. Los usuarios, contraseñas y pizarras
-locales no se suben a GitHub. Para conservarlos, detené las escrituras y transferí
-una copia consistente de `datos/pizarras.db` al disco del servicio antes de usarlo.
-Usá la API de backup de SQLite, no copies solo el `.db` mientras hay escrituras WAL.
-Transferí también `datos/letter_samples.json` si existe; en caso contrario se
-usan una sola vez las muestras iniciales de `reconocimiento_local/letter_samples.json`.
-No compartas la base ni `CLAVE_ADMINISTRADOR.txt` en un repositorio público.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\detener_pc_vercel.ps1
+```
 
-## Reconocimiento opcional
+Tu PC debe estar encendida y conectada mientras haya colaboración. Apagarla
+no borra `datos/` ni las copias descargadas en los navegadores.
 
-La imagen incluye reconocimiento con muestras entrenadas y autocorrección.
-Los motores locales pesados TrOCR, EasyOCR y pix2tex requieren dependencias
-adicionales y más memoria; no están incluidos en el servicio base.
-Las claves opcionales `GEMINI_API_KEY`, `GROQ_API_KEY` y `HF_TOKEN` se configuran
-en el panel del servidor, nunca en el frontend ni en GitHub.
+## Datos anteriores
 
-## Uso local
+No se borran ni se publican `datos/pizarras.db`, usuarios o contraseñas.
+Las pizarras existentes en el servidor se mantienen allí; las nuevas son privadas
+locales por defecto. Las versiones antiguas que usaban IndexedDB se recuperan
+una sola vez como «Pizarra local recuperada», si existen en ese navegador y dominio.
+No se pueden leer automáticamente los datos guardados bajo otro dominio o puerto.
 
-`iniciar_pizarra.ps1` sigue compilando y ejecutando la aplicación con `.venv`.
-Sin `PIZARRA_DATA_DIR` los datos siguen guardándose en `datos/` del proyecto.
+El navegador puede borrar datos si el usuario limpia el sitio o bajo presión de
+almacenamiento. Se solicita almacenamiento persistente, pero conviene descargar
+respaldos. Cambiar de navegador, dominio o dispositivo no traslada las privadas.
+
+## Verificación
+
+```powershell
+npm.cmd test
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+npm.cmd run build
+npm.cmd run test:browser
+```
+
+Las pruebas de navegador usan Chrome instalado. Las pruebas Python usan una
+base temporal; no modifican las pizarras reales.
+
+Documentación: https://vercel.com/docs/routing/rewrites y
+https://developers.cloudflare.com/tunnel/get-started/

@@ -6,6 +6,9 @@ import * as pdfjs from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   loadBoard, saveBoard, saveAsset, loadAsset, getLibrary, fetchBoardForLiveSync, acceptBoardLiveVersion, getActiveBoardVersion, addFolder, addBoard, renameBoard, removeBoard, removeFolder, selectBoard, getActiveBoardId,
+  privateBoard, storageNotice, hasPendingShared, duplicateAsPrivate, publishPrivateCopy, exportBoardBackup, importBoardBackup, canUseServer,
+  liveSocketUrl,
+  usingOfflineCopy,
 } from './biblioteca'
 import type { Point, Stroke, TextItem, MediaItem, Folder, BoardInfo } from './biblioteca'
 import './App.css'
@@ -132,7 +135,7 @@ type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:
 // PERFILES_Y_CURSORES_V1
 type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
 // TRAZOS_Y_PRESENCIA_V2
-type SaveStatus = 'loading' | 'saved' | 'pending' | 'error'
+type SaveStatus = 'loading' | 'saved' | 'pending' | 'error' | 'local' | 'copy'
 type Camera = { x: number; y: number; zoom: number }
 type EditingText = { id: string; x: number; y: number; value: string; color: string; fontSize: number }
 type ShapeKind = 'line' | 'arrow' | 'double-arrow' | 'rectangle' | 'rounded' | 'ellipse' | 'circle' | 'diamond' | 'triangle' | 'triangle-down' | 'cylinder' | 'hexagon'
@@ -939,6 +942,14 @@ function App() {
   const [fontSize, setFontSize] = useState(24)
   const [zoomLabel, setZoomLabel] = useState(100)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading')
+  const [deviceNotice,setDeviceNotice] = useState(storageNotice())
+  const [newBoardStorage,setNewBoardStorage] = useState<'private'|'shared'>('private')
+  const backupInputRef = useRef<HTMLInputElement>(null)
+  useEffect(()=>{
+    const update = () => setDeviceNotice(storageNotice())
+    window.addEventListener('pizarra-storage',update)
+    return ()=>window.removeEventListener('pizarra-storage',update)
+  },[])
   const [, setSelection] = useState<Selection | null>(null)
   const selectedRef = useRef<Selection | null>(null)
   const [boardSearchOpen,setBoardSearchOpen] = useState(false)
@@ -999,6 +1010,7 @@ function App() {
   const [handwrittenBusy, setHandwrittenBusy] = useState(false)
   const [eventDeleteTarget, setEventDeleteTarget] = useState<{ id: string; title: string; occurrenceDate: string; recurring: boolean } | null>(null)
   async function reloadEvents() {
+    if (!canUseServer()) {setCalendarError('Conectá el servidor para usar los calendarios.');return}
     try {
       const response = await fetch(calendarsApi())
       if (response.ok) {
@@ -1905,8 +1917,8 @@ function App() {
       camera: { ...cameraRef.current, youtubeVideos: structuredClone(videosRef.current) },
     }
     try {
-      await saveBoard(data)
-      setSaveStatus(dirtyRef.current ? 'pending' : 'saved')
+      const result = await saveBoard(data)
+      setSaveStatus(dirtyRef.current ? 'pending' : result.pending ? 'local' : 'saved')
     } catch (error) {
       dirtyRef.current = true
       setSaveStatus('error')
@@ -1992,7 +2004,7 @@ function App() {
         loadedRef.current = true
         setLiveBoardId(getActiveBoardId())
         void refreshLibrary().catch(console.error)
-        setSaveStatus('saved')
+        setSaveStatus(await hasPendingShared() ? 'local' : usingOfflineCopy() ? 'copy' : 'saved')
         setZoomLabel(Math.round(cameraRef.current.zoom * 100))
         redraw()
         hydrateMedia(mediaRef.current)
@@ -2018,7 +2030,7 @@ function App() {
   // El servidor notifica las versiones nuevas. HTTP conserva la fuente de verdad.
   // La camara es local durante la sesion: un pellizco en tablet NO mueve la PC.
   useEffect(() => {
-    if (!liveBoardId) return
+    if (!liveBoardId || privateBoard(liveBoardId) || !canUseServer()) return
     const boardId = liveBoardId
     let stopped = false
     setVideoSignals({})
@@ -2062,7 +2074,7 @@ function App() {
           (content as typeof content & {videos?:YouTubeItem[]}).videos) ?? []
         setVideos([...videosRef.current])
         // No modificar cameraRef.current: cada pantalla puede navegar libremente.
-        acceptBoardLiveVersion(boardId, snapshot.version)
+        await acceptBoardLiveVersion(boardId, snapshot.version, snapshot.content)
         // Los trazos terminados ya estan en SQLite; los activos siguen como vista previa.
         for (const [key, remote] of remoteStrokesRef.current)
           if (remote.done) remoteStrokesRef.current.delete(key)
@@ -2091,6 +2103,10 @@ function App() {
     async function checkMissedEvents() {
       if (stopped || !loadedRef.current) return
       try {
+        if (await hasPendingShared()) {
+          if (!localIsBusy()) { dirtyRef.current=true;await persistBoard() }
+          return
+        }
         const library = await getLibrary()
         if (stopped) return
         const found = library.boards.find(b => b.id === boardId)
@@ -2098,12 +2114,11 @@ function App() {
       } catch { /* El WebSocket se reconecta; no bloquear el dibujo. */ }
     }
 
-    function connect() {
+    async function connect() {
       if (stopped) return
-      const secure = location.protocol === 'https:'
-      const host = import.meta.env.DEV ? `${location.hostname}:8765` : location.host
-      const url = `${secure ? 'wss' : 'ws'}://${host}/api/live/${encodeURIComponent(boardId)}`
       try {
+        const url = await liveSocketUrl(boardId)
+        if (stopped) return
         socket = new WebSocket(url)
         liveSocketRef.current = socket
         socket.onopen = () => { if (!stopped) setLiveConnected(true) }
@@ -4149,6 +4164,21 @@ function App() {
         }}>
           <header><h2>Mis pizarras</h2>
             <button title="Cerrar" onClick={() => setLibraryOpen(false)}>✕</button></header>
+          <div className="device-storage-panel" role="status">
+            <p>{deviceNotice || 'Las privadas se guardan en este dispositivo; las compartidas también conservan una copia local.'}</p>
+            <button onClick={()=>void libraryAction(async()=>{await flushBoardForHistory();await exportBoardBackup()})}>Descargar respaldo</button>
+            <button onClick={()=>backupInputRef.current?.click()}>Importar respaldo</button>
+            <input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={e=>{
+              const file=e.target.files?.[0];e.target.value=''
+              if(file)void libraryAction(async()=>{const id=await importBoardBackup(file);await switchBoard(id)})
+            }}/>
+            {privateBoard()&&canUseServer()&&<button onClick={()=>void libraryAction(async()=>{await flushBoardForHistory();const id=await publishPrivateCopy();await switchBoard(id)})}>Publicar copia compartida</button>}
+            {!privateBoard()&&<button onClick={()=>void libraryAction(async()=>{
+              if(dirtyRef.current)await persistBoard()
+              const id=await duplicateAsPrivate();dirtyRef.current=false;syncConflictRef.current=false
+              selectBoard(id);window.location.reload()
+            })}>Guardar copia como privada</button>}
+          </div>
           <div className="library-layout">
             <aside>
               <button data-library-drop-folder="" className={`${folderFilter === null ? 'chosen' : ''} ${dropFolderId === '' ? 'library-drop-target' : ''}`} onClick={() => setFolderFilter(null)}>Todas las pizarras</button>
@@ -4180,9 +4210,15 @@ function App() {
               {creatingBoard ? (
                 <div className="library-create-inline">
                   <label className="library-field-label">Elegí un color</label>
+                  <label className="library-field-label">Dónde guardar
+                    <select aria-label="Dónde guardar la pizarra" value={newBoardStorage} onChange={e=>setNewBoardStorage(e.target.value as 'private'|'shared')}>
+                      <option value="private">Privada en este dispositivo</option>
+                      <option value="shared" disabled={!canUseServer()}>Compartida en el servidor + copia local</option>
+                    </select>
+                  </label>
                   <div className="library-color-picker">{BOARD_COLORS.map(c => <button key={c} type="button" className={newBoardColor === c ? 'selected' : ''} onClick={() => setNewBoardColor(c)} aria-label={`Color ${c}`} aria-pressed={newBoardColor === c}><span style={{ backgroundColor: c }} /></button>)}</div>
-                  <input autoFocus aria-label="Nombre de la nueva pizarra" placeholder="Nombre de la pizarra" value={newBoardName} onChange={e => setNewBoardName(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setCreatingBoard(false); if (e.key === 'Enter' && newBoardName.trim()) void libraryAction(async () => { const board = await addBoard(boardWithColor(newBoardName, newBoardColor), folderFilter); setNewBoardName(''); setCreatingBoard(false); await switchBoard(board.id) }) }} />
-                  <div><button onClick={() => { if (newBoardName.trim()) void libraryAction(async () => { const board = await addBoard(boardWithColor(newBoardName, newBoardColor), folderFilter); setNewBoardName(''); setCreatingBoard(false); await switchBoard(board.id) }) }}>Crear</button><button onClick={() => setCreatingBoard(false)}>Cancelar</button></div>
+                  <input autoFocus aria-label="Nombre de la nueva pizarra" placeholder="Nombre de la pizarra" value={newBoardName} onChange={e => setNewBoardName(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setCreatingBoard(false); if (e.key === 'Enter' && newBoardName.trim()) void libraryAction(async () => { const board = await addBoard(boardWithColor(newBoardName, newBoardColor), folderFilter,newBoardStorage); setNewBoardName(''); setCreatingBoard(false); await switchBoard(board.id) }) }} />
+                  <div><button onClick={() => { if (newBoardName.trim()) void libraryAction(async () => { const board = await addBoard(boardWithColor(newBoardName, newBoardColor), folderFilter,newBoardStorage); setNewBoardName(''); setCreatingBoard(false); await switchBoard(board.id) }) }}>Crear</button><button onClick={() => setCreatingBoard(false)}>Cancelar</button></div>
                 </div>
               ) : <button className="library-create" onClick={() => { setNewBoardName(''); setNewBoardColor('#64748b'); setCreatingBoard(true) }}>＋ Nueva pizarra</button>}
               <div className="library-global-search" role="search">
@@ -4210,7 +4246,7 @@ function App() {
                   </div>
                   {boards.filter(board => (board.folder_id || null) === group.id).map(b => (
                     <div key={b.id} className={`library-board library-draggable ${b.id === getActiveBoardId() ? 'library-board-current' : ''} ${draggingBoardId === b.id ? 'library-dragging' : ''}`} onPointerDown={e => boardDragStart(e, b.id)} onPointerMove={boardDragMove} onPointerUp={boardDragEnd} onPointerCancel={boardDragEnd}>
-                <button className="library-board-name" onClick={() => openBoardUnlessDragged(b.id)}><BoardDot name={b.name} /><span>{boardTitle(b.name)}</span></button>
+                <button className="library-board-name" onClick={() => openBoardUnlessDragged(b.id)}><BoardDot name={b.name} /><span>{boardTitle(b.name)}<small className="device-board-label">{b.storage==='private'?'Privada · este dispositivo':'Compartida · copia local al abrir'}</small></span></button>
                 {editingBoardId === b.id ? (
                   <div className="library-inline-editor">
                     <label className="library-field-label">Color del punto</label>
@@ -4512,9 +4548,11 @@ function App() {
         </div>
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
-      <div className="status">
+      <div className="status" title={deviceNotice}>
         {saveStatus === 'loading' && 'Cargando...'}
-        {saveStatus === 'saved' && '✓ Guardado'}
+        {saveStatus === 'saved' && (privateBoard()?'✓ Guardada en este dispositivo':'✓ Guardada · servidor y copia local')}
+        {saveStatus === 'local' && '✓ Copia local · pendiente de sincronizar'}
+        {saveStatus === 'copy' && '✓ Copia local · servidor desconectado'}
         {saveStatus === 'pending' && 'Guardando...'}
         {saveStatus === 'error' && '⚠ Error de almacenamiento'}
       </div>

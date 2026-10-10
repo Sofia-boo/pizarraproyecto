@@ -254,6 +254,9 @@ def origin_ok(origin: str | None, host: str) -> bool:
     if not origin:
         return True  # Herramientas de terminal no envían Origin; requieren sesión igualmente.
     parsed = urlsplit(origin)
+    configured = {item.strip().rstrip('/') for item in os.environ.get('PIZARRA_PUBLIC_ORIGINS','').split(',') if item.strip()}
+    if origin.rstrip('/') in configured and parsed.scheme == 'https':
+        return True
     incoming_host = host.split(':', 1)[0].lower()
     site_host = (parsed.hostname or '').lower()
     if parsed.scheme not in ('http', 'https'):
@@ -747,12 +750,13 @@ def attach_anonymous_users(app, db_connection, data_dir):
         return await call_next(request)
 
 
-def websocket_allowed(websocket: WebSocket, board_id: str, db_connection) -> tuple[bool,str|None]:
+def websocket_allowed(websocket: WebSocket, board_id: str, db_connection, ticket_user_id: str | None = None) -> tuple[bool,str|None]:
     host = websocket.headers.get('host','')
     if not origin_ok(websocket.headers.get('origin'), host):
         return False,None
     with db_connection() as db:
-        user=find_user(db,websocket.cookies.get(COOKIE))
+        user=(db.execute('SELECT id FROM anonymous_users WHERE id=?',(ticket_user_id,)).fetchone()
+              if ticket_user_id else find_user(db,websocket.cookies.get(COOKIE)))
         if not user or not can_board(db,user['id'],board_id,'viewer'):
             return False,None
         return True,user['id']

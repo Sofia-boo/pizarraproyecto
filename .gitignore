@@ -41,3 +41,6 @@ datos/
 copias_antes_*/
 *.respaldo*
 paquete_*/
+hosting.local.json
+test-results/
+playwright-report/

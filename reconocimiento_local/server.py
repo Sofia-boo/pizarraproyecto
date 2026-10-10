@@ -1751,3 +1751,10 @@ app.include_router(excel_router)
 attach_version_history(app, db_connection)
 attach_anonymous_users(app, db_connection, DATA_DIR)
 attach_live_sync(app, db_connection)
+
+@app.middleware('http')
+async def private_response_cache(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith(('/api/', '/recognize/')):
+        response.headers['Cache-Control'] = 'private, no-store'
+    return response

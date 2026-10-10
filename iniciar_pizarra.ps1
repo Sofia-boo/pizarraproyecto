@@ -2,6 +2,11 @@
 # Ejecución desde PowerShell: powershell -NoProfile -ExecutionPolicy Bypass -File .\iniciar_pizarra.ps1
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+if (Test-Path -LiteralPath '.\hosting.local.json') {
+    $pizarraHosting = Get-Content -LiteralPath '.\hosting.local.json' -Raw | ConvertFrom-Json
+    $env:PIZARRA_PUBLIC_ORIGINS = $pizarraHosting.publicOrigin
+    $env:PIZARRA_WS_ORIGIN = $pizarraHosting.backendOrigin
+}
 if (-not (Test-Path '.\.venv\Scripts\python.exe')) { throw 'No encontré .venv\Scripts\python.exe' }
 if (-not (Test-Path '.\package.json')) { throw 'No encontré package.json. Colocá estos archivos en la carpeta raíz.' }
 if (-not (Test-Path '.\reconocimiento_local\server.py')) { throw 'No encontré reconocimiento_local\server.py' }

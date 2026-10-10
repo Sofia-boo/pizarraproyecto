@@ -321,3 +321,7 @@
 }
 .app[data-theme='rest'] .library-panel .library-board-controls .library-global-search {background: #fbf5e8; border-color: #b8aa94;}
 .app[data-theme='rest'] .library-panel .library-board-controls .library-global-search input[type="search"] {color: #423a30;background:transparent;}
+.device-storage-panel { padding: 12px 18px; border-bottom: 1px solid #64748b55; }
+.device-storage-panel p { margin: 0 0 8px; font-size: 13px; }
+.device-storage-panel button { margin: 3px 8px 3px 0; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.device-board-label { display: block; font-size: 11px; opacity: .75; font-weight: normal; }

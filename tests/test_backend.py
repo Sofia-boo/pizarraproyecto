@@ -49,6 +49,16 @@ class BackendTest(unittest.TestCase):
             with client.websocket_connect(f'wss://testserver/api/live/{board_id}') as socket:
                 self.assertEqual(socket.receive_json()['type'], 'board_version')
                 self.assertEqual(socket.receive_json()['type'], 'presence')
+            ticket = client.get(f'/api/boards/{board_id}/live-ticket')
+            self.assertEqual(ticket.status_code,200,ticket.text)
+            self.assertIn('no-store',ticket.headers['cache-control'])
+            from starlette.websockets import WebSocketDisconnect
+            with TestClient(self.app, base_url='https://testserver') as no_cookies:
+                with no_cookies.websocket_connect(ticket.json()['url']) as socket:
+                    self.assertEqual(socket.receive_json()['type'],'board_version')
+                with self.assertRaises(WebSocketDisconnect):
+                    with no_cookies.websocket_connect(ticket.json()['url']):
+                        pass
             client.post('/api/auth/logout')
             self.assertEqual(client.get('/api/auth/me').status_code, 401)
             bad = client.post('/api/auth/login', json={'name': 'Prueba persistencia', 'password': 'wrong'})
@@ -60,6 +70,7 @@ class BackendTest(unittest.TestCase):
                     'name': 'Otra persona', 'password': 'another-password', 'color': '#6366f1'})
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(other.get(f'/api/boards/{board_id}').status_code, 403)
+                self.assertEqual(other.get(f'/api/boards/{board_id}/live-ticket').status_code, 403)
 
         # A fresh interpreter reopens the same persistent storage and sessions.
         result = subprocess.run([sys.executable, '-c',
