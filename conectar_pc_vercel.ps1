@@ -49,9 +49,9 @@ try {
 } catch {
     if ($pizarraServer -and -not $pizarraServer.HasExited) {
         foreach ($pizarraChild in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($pizarraServer.Id)")) {
-            if ($pizarraChild.CommandLine -match 'uvicorn web_host:app') { Stop-Process -Id $pizarraChild.ProcessId }
+            if ($pizarraChild.CommandLine -match 'uvicorn web_host:app') { Stop-Process -Id $pizarraChild.ProcessId -ErrorAction SilentlyContinue }
         }
-        Stop-Process -Id $pizarraServer.Id
+        Stop-Process -Id $pizarraServer.Id -ErrorAction SilentlyContinue
     }
     if (-not $pizarraTunnel.HasExited) { Stop-Process -Id $pizarraTunnel.Id }
     throw

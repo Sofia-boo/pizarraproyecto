@@ -6,9 +6,9 @@ foreach ($pizarraProcessId in @($pizarraConnection.ServidorPID,$pizarraConnectio
     $pizarraProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $pizarraProcessId" -ErrorAction SilentlyContinue
     if ($pizarraProcess -and ($pizarraProcess.CommandLine -match 'uvicorn web_host:app' -or $pizarraProcess.CommandLine -match 'cloudflared.*tunnel.*127.0.0.1:8765')) {
         foreach ($pizarraChild in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $pizarraProcessId")) {
-            if ($pizarraChild.CommandLine -match 'uvicorn web_host:app') { Stop-Process -Id $pizarraChild.ProcessId }
+            if ($pizarraChild.CommandLine -match 'uvicorn web_host:app') { Stop-Process -Id $pizarraChild.ProcessId -ErrorAction SilentlyContinue }
         }
-        Stop-Process -Id $pizarraProcessId
+        Stop-Process -Id $pizarraProcessId -ErrorAction SilentlyContinue
     }
 }
 Write-Host 'Conexión de esta PC detenida. Las pizarras siguen guardadas.'
