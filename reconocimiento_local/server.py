@@ -1768,6 +1768,8 @@ from reconocimiento_local.local_handwriting import attach_local_math
 attach_local_math(app)
 from reconocimiento_local.judge0_api import attach_judge0
 attach_judge0(app, DATA_DIR)
+from reconocimiento_local.datalab_api import attach_datalab
+attach_datalab(app, db_connection, DATA_DIR)
 
 @app.middleware('http')
 async def private_response_cache(request, call_next):

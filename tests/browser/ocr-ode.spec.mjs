@@ -1,0 +1,47 @@
+import {test,expect} from '@playwright/test'
+
+async function openLocal(page) {
+  await page.route('**/api/**',route=>route.fulfill({status:503,body:'offline'}))
+  await page.goto('/')
+  await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
+}
+async function content(page) {
+  return page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    const boards=await new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').getAll();r.onsuccess=()=>resolve(r.result)})
+    db.close();return boards.find(b=>b.id===localStorage.getItem('pizarra_activa'))?.content
+  })
+}
+test('ODE fields and numerical solutions can be inserted without formulas and survive reload',async({page})=>{
+  await openLocal(page)
+  await page.getByRole('button',{name:'Graficar funciones',exact:true}).click()
+  await page.getByRole('textbox',{name:'Fórmula 1',exact:true}).fill('')
+  await page.getByRole('button',{name:'Opciones del gráfico',exact:true}).click()
+  await page.getByRole('checkbox',{name:'Activar EDO',exact:true}).check()
+  await page.getByRole('textbox',{name:'Función de la EDO',exact:true}).fill('y')
+  await expect.poll(()=>page.locator('.graph-plot-canvas').evaluate(el=>el.data?.map(t=>t.name)??[])).toContain('Solución numérica de la EDO')
+  await page.getByRole('button',{name:'Cerrar opciones',exact:true}).click()
+  await page.getByRole('button',{name:'Insertar gráfico',exact:true}).click()
+  await expect.poll(async()=>(await content(page))?.graphs?.[0]?.settings?.ode?.expression).toBe('y')
+  await page.reload()
+  await expect(page.locator('.board-live-graph')).toBeVisible()
+  await expect.poll(()=>page.locator('.board-live-graph .graph-plot-canvas').evaluate(el=>el.data?.map(t=>t.name)??[])).toContain('Campo direccional')
+  await page.screenshot({path:'test-results/edo-campo-direccional.png'})
+})
+
+test('OCR polls a document, shows incomplete pages and inserts editable text while preserving ink',async({page})=>{
+  await openLocal(page)
+  await page.route('**/api/ocr/documents',route=>route.fulfill({json:{id:'ocr-test',status:'processing'}}))
+  await page.route('**/api/ocr/documents/ocr-test',route=>route.fulfill({json:{id:'ocr-test',status:'complete',text:'# Documento completo\nÚltima página',page_count:3,warning:'No se pudo transcribir la página 2.'}}))
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  await page.getByRole('menuitem',{name:'OCR Datalab · PDF completo o imagen…',exact:true}).click()
+  await page.getByLabel('Documento para transcribir').setInputFiles({name:'document.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-test')})
+  await page.getByRole('button',{name:'Transcribir con Datalab',exact:true}).click()
+  await expect(page.getByRole('textbox',{name:'Transcripción completa'})).toHaveValue('# Documento completo\nÚltima página')
+  await expect(page.getByRole('alert')).toContainText('página 2')
+  const download=page.waitForEvent('download')
+  await page.getByRole('button',{name:'Descargar transcripción',exact:true}).click()
+  expect((await download).suggestedFilename()).toBe('transcripcion.md')
+  await page.getByRole('button',{name:'Insertar texto en pizarra',exact:true}).click()
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toContain('Última página')
+})

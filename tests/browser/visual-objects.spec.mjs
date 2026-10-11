@@ -214,6 +214,7 @@ test('the real text handwriting menu reaches its registered POST route and recog
   await page.getByRole('button',{name:'Seleccionar área',exact:true}).click();await page.keyboard.press('Control+a')
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   const response=page.waitForResponse(r=>r.url().endsWith('/recognize/text-local'))
+  await page.getByText('Reconocimiento local (opcional)',{exact:true}).click()
   await page.getByRole('menuitem',{name:/Reconocer texto con espacios/}).click()
   expect((await response).status()).toBe(200)
   await expect(page.locator('#recognized-latex')).not.toHaveValue('')

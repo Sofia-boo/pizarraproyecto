@@ -12,6 +12,7 @@ export type GraphFeatures = {
   linearFit?: boolean
 }
 export type GraphSettings = {
+  ode?: import('./ode').OdeSettings
   features?: GraphFeatures
   parameters?: Record<string, GraphParameter>
   points?: GraphPoint[]

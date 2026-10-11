@@ -4,6 +4,7 @@ import { FiMinus, FiPlus, FiMaximize, FiMenu, FiX } from 'react-icons/fi'
 import { compileGraphExpression, compilePiecewise, parametersInFormulas, analyzeCurves, linearFit, defaultFeatures, defaultParameter } from './GraphFeatures'
 import type { GraphSettings, GraphFeatures, Curve } from './GraphFeatures'
 import './GraphPlot.css'
+import { defaultOde, odeFunction, solveOde, directionField } from './ode'
 
 /** Los gráficos son datos de la pizarra, no capturas de pantalla. */
 export type GraphFormula = { id: string; expr: string; color: string; enabled: boolean }
@@ -175,7 +176,7 @@ export function GraphPlot({formulas,initialViewport,onViewportChange,settings,on
     if(mounted.current)setBusy(true)
     try{
       const active=formulasRef.current.filter(f=>f.enabled&&f.expr.trim())
-      if(!active.length && !(settingsRef.current.points?.length)){ 
+      if(!active.length && !(settingsRef.current.points?.length) && !settingsRef.current.ode?.enabled){
         if(runtime.current)runtime.current.purge(node)
         listenerAttached.current=false
         if(mounted.current)setError('Activá una función para verla.')
@@ -194,6 +195,21 @@ export function GraphPlot({formulas,initialViewport,onViewportChange,settings,on
       const v=viewport.current
       const xspan=v.xmax-v.xmin
       const yspan=v.ymax-v.ymin
+      const ode=settingsRef.current.ode
+      if(ode?.enabled){
+        if(type!=='2d')throw new Error('Las EDO se dibujan en un gráfico 2D.')
+        const f=odeFunction(ode.expression,scopeValues)
+        if(ode.field)traces.push({type:'scatter',mode:'lines',name:'Campo direccional',...directionField(f,v),
+          line:{color:'#94a3b8',width:1.4},hoverinfo:'skip',connectgaps:false})
+        if(ode.solution){
+          f(ode.x0,ode.y0)
+          const left=solveOde(f,ode.x0,ode.y0,Math.min(ode.x0,v.xmin)),right=solveOde(f,ode.x0,ode.y0,Math.max(ode.x0,v.xmax))
+          const points=[...left.reverse(),...right.slice(1)]
+          traces.push({type:'scatter',mode:'lines',name:'Solución numérica de la EDO',x:points.map(p=>p.x),y:points.map(p=>p.y),
+            line:{color:'#e11d48',width:3},connectgaps:false})
+          traces.push({type:'scatter',mode:'markers',name:'Condición inicial',x:[ode.x0],y:[ode.y0],marker:{color:'#e11d48',size:9}})
+        }
+      }
       if(type==='2d'){
         // Regenerar puntos en el intervalo que se está viendo, incluso al alejar o desplazar.
         const n=Math.max(500,Math.min(2200,Math.round((node.clientWidth||500)*2.2)))
@@ -387,6 +403,17 @@ export function GraphPlot({formulas,initialViewport,onViewportChange,settings,on
         <div className="graph-plot-menu-header"><strong>Herramientas</strong><button type="button" title="Cerrar opciones" aria-label="Cerrar opciones" onClick={()=>setMenuOpen(false)}><FiX/></button></div>
         {([['roots','Mostrar raíces'],['extrema','Mostrar extremos'],['intersections','Intersecciones'],['points','Mostrar puntos'],['linearFit','Ajuste lineal'],['sliders','Deslizadores en el gráfico']] as [keyof GraphFeatures,string][]).map(([key,label])=>
           <label key={key}><input type="checkbox" checked={Boolean(options[key])} onChange={()=>changeFeature(key)}/>{label}</label>)}
+        <div className="graph-plot-menu-divider"/>
+        <strong>Ecuaciones diferenciales</strong>
+        <p>Primer orden: dy/dx = f(x,y). Solución numérica con condición inicial.</p>
+        <label><input type="checkbox" checked={Boolean(activeSettings.ode?.enabled)} onChange={e=>updateSettings({ode:{...defaultOde(),...activeSettings.ode,enabled:e.target.checked}})}/>Activar EDO</label>
+        {activeSettings.ode?.enabled&&<>
+          <label>dy/dx = <input aria-label="Función de la EDO" value={activeSettings.ode.expression} onChange={e=>updateSettings({ode:{...activeSettings.ode!,expression:e.target.value}})}/></label>
+          <label>x inicial <input type="number" step="any" aria-label="X inicial de la EDO" value={activeSettings.ode.x0} onChange={e=>{if(Number.isFinite(e.target.valueAsNumber))updateSettings({ode:{...activeSettings.ode!,x0:e.target.valueAsNumber}})}}/></label>
+          <label>y inicial <input type="number" step="any" aria-label="Y inicial de la EDO" value={activeSettings.ode.y0} onChange={e=>{if(Number.isFinite(e.target.valueAsNumber))updateSettings({ode:{...activeSettings.ode!,y0:e.target.valueAsNumber}})}}/></label>
+          <label><input type="checkbox" checked={activeSettings.ode.field} onChange={e=>updateSettings({ode:{...activeSettings.ode!,field:e.target.checked}})}/>Campo direccional</label>
+          <label><input type="checkbox" checked={activeSettings.ode.solution} onChange={e=>updateSettings({ode:{...activeSettings.ode!,solution:e.target.checked}})}/>Solución de la EDO</label>
+        </>}
         <div className="graph-plot-menu-divider"/>
         <strong>Agregar punto</strong>
         <div className="graph-plot-point-inputs">

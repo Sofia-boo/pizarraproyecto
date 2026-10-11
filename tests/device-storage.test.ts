@@ -40,6 +40,16 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('does not resurrect a remote deletion during a concurrent local edit',async()=>{
+    const {mergeBoard}=await import('../src/storage/merge')
+    const base=content()
+    const local={...base,texts:[{...base.texts[0],text:'Concurrent edit'}]}
+    const remote={...base,texts:[]}
+    expect(mergeBoard(base,local,remote).texts).toEqual([])
+    expect(mergeBoard(base,remote,local).texts).toEqual([])
+    const addition={id:'new',x:1,y:1,text:'New',color:'#000',fontSize:12}
+    expect(mergeBoard(base,{...local,texts:[...local.texts,addition]},remote).texts).toEqual([addition])
+  })
   it('persists personal matrices and review history, isolates accounts and rejects stale writes',async()=>{
     const {readPersonal,writePersonal}=await import('../src/study/personalStore')
     const {newFlashcard,reviewCard}=await import('../src/study/flashcards')

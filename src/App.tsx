@@ -10,6 +10,7 @@ import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
+import DocumentOCR from './components/DocumentOCR'
 import A4PrintPreview from './components/A4PrintPreview'
 import type { PrintPreview } from './components/A4PrintPreview'
 import BinaryTreePanel from './components/BinaryTreePanel'
@@ -1028,6 +1029,7 @@ function App() {
   const [recognizing, setRecognizing] = useState(false)
   const [recognizedText, setRecognizedText] = useState<string | null>(null)
   const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
+  const [documentOCR,setDocumentOCR]=useState<{file:File|null}|null>(null)
   const [recognitionError, setRecognitionError] = useState('')
   const [recognitionSuggestion, setRecognitionSuggestion] = useState<string | null>(null)
   const [recognitionEngine, setRecognitionEngine] = useState('')
@@ -2199,6 +2201,9 @@ function App() {
         mediaFailedRef.current.clear()
         redraw()
         hydrateMedia(mediaRef.current)
+        undoRef.current = []
+        redoRef.current = []
+        selectElement(null)
         // Commit the version before asynchronous asset downloads. The user can
         // start editing while those downloads run; never mark an older scene
         // with a newer version or overwrite their new draft.
@@ -2206,9 +2211,6 @@ function App() {
         // Los trazos terminados ya estan en SQLite; los activos siguen como vista previa.
         for (const [key, remote] of remoteStrokesRef.current)
           if (remote.done) remoteStrokesRef.current.delete(key)
-        undoRef.current = []
-        redoRef.current = []
-        selectElement(null)
         setSaveStatus('saved')
         redraw()
         hydrateMedia(mediaRef.current)
@@ -3857,7 +3859,7 @@ function App() {
         const formulas=parsed.formulas.filter((f:unknown)=>f&&typeof f==='object'&&'expr' in f&&typeof f.expr==='string')
           .slice(0,12).map((f:GraphFormula,i:number)=>({id:createId(),expr:f.expr.slice(0,400),color:/^#[0-9a-fA-F]{6}$/.test(f.color)?f.color:['#16a34a','#4f46e5','#ef4444'][i%3],enabled:f.enabled!==false}))
         const savedSettings='settings' in parsed&&parsed.settings&&typeof parsed.settings==='object'?parsed.settings as GraphSettings:undefined
-        if (formulas.length || (Array.isArray(savedSettings?.points) && savedSettings.points.length))
+        if (formulas.length || savedSettings?.ode?.enabled || (Array.isArray(savedSettings?.points) && savedSettings.points.length))
           insertBoardGraph(formulas, toWorld(e.clientX,e.clientY), savedSettings)
       } catch(err){console.error('No se pudo colocar el gráfico:',err)}
       return
@@ -3963,6 +3965,38 @@ function App() {
     const result: { text?: string; detail?: string } = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(result.detail || 'El reconocedor matemático no pudo leer la selección.')
     return [...texts, result.text ?? ''].filter(Boolean).join('\n')
+  }
+
+  async function openSelectionOCR() {
+    setOpenMenu(null)
+    const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
+    const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
+    if(!boxes.length){setRecognitionError('Seleccioná trazos o imágenes para transcribir, o elegí un PDF completo desde el menú OCR.');return}
+    const left=Math.min(...boxes.map(b=>b.x))-16,top=Math.min(...boxes.map(b=>b.y))-16
+    const width=Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=Math.max(...boxes.map(b=>b.y+b.height))-top+16
+    const scale=Math.min(2,6000/Math.max(width,height),Math.sqrt(16000000/(width*height)))
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale)
+    const ctx=canvas.getContext('2d')!
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.scale(scale,scale);ctx.translate(-left,-top)
+    try {
+      for(const sel of selected){
+        if(sel.kind==='media'){
+          const item=mediaRef.current.find(m=>m.id===sel.id)
+          if(!item)continue
+          const blob=await loadAsset(item.assetId)
+          if(!blob)throw new Error('No se pudo descargar la imagen seleccionada.')
+          ctx.drawImage(await imageFromBlob(blob),item.x,item.y,item.width,item.height)
+        }else{
+          const stroke=strokesRef.current[Number(sel.id)]
+          if(!stroke?.points.length)continue
+          ctx.strokeStyle='#000';ctx.fillStyle='#000';ctx.lineWidth=stroke.width;ctx.lineCap='round';ctx.lineJoin='round'
+          ctx.beginPath();stroke.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()
+          if(stroke.points.length===1){const p=stroke.points[0];ctx.beginPath();ctx.arc(p.x,p.y,stroke.width/2,0,Math.PI*2);ctx.fill()}
+        }
+      }
+      const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
+      setDocumentOCR({file:new File([blob],'manuscrito-seleccionado.png',{type:'image/png'})})
+    }catch(e){setRecognitionError(e instanceof Error?e.message:'No se pudo preparar el OCR.')}
   }
 
   async function recognizeSelection(mode: 'letter' | 'letter-train' | 'text-local' | 'math-train' | 'math-symbol' | 'math-local' | 'event') {
@@ -4473,7 +4507,7 @@ function App() {
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
       if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null)}
-      if (editingRef.current || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
+      if (editingRef.current || documentOCR || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
@@ -4501,7 +4535,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
+  }, [documentOCR, libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
 
   const cam = cameraRef.current
   const editorX = editing ? editing.x * cam.zoom + cam.x : 0
@@ -4949,6 +4983,9 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
+            <button role="menuitem" onClick={()=>void openSelectionOCR()}>OCR Datalab · selección manuscrita o imagen</button>
+            <button role="menuitem" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null})}}>OCR Datalab · PDF completo o imagen…</button>
+            <details><summary>Reconocimiento local (opcional)</summary>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter-train') }}>✎ Enseñar letra (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter') }}>A Reconocer letra (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('text-local') }}>T Reconocer texto con espacios (local)</button>
@@ -4956,6 +4993,7 @@ function App() {
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-symbol') }}>123 Reconocer número o símbolo (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-local') }}>∑ Reconocer números y fórmulas (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); setHandwrittenError(''); void recognizeSelection('event') }}>▦ Agregar al calendario</button>
+            </details>
           </div>}
         </div>
         <span className="separator" />
@@ -5055,6 +5093,12 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
+      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
+        rememberChange()
+        const center=toWorld(window.innerWidth/2,window.innerHeight/2)
+        const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
+        textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave()
+      }}/>}
       {(recognizedText !== null || recognitionError) && <div className="recognition-overlay">
         <div className="recognition-dialog">
           <h3>{recognitionMode === 'math' ? 'Reconocimiento matemático local' : 'Reconocimiento de texto local'}</h3>

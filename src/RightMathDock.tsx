@@ -115,12 +115,12 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
   function graphItems(){return rows.filter(r=>r.expr.trim()).map(r=>({...r}))}
   function insert(){
     const items=graphItems()
-    if(!items.length && !(graphSettings.points?.length)){setGraphError('Escribí una función o agregá puntos.');return}
+    if(!items.length && !(graphSettings.points?.length) && !graphSettings.ode?.enabled){setGraphError('Escribí una función, activá una EDO o agregá puntos.');return}
     addGraphToBoard(items,structuredClone(graphSettings));setGraphError('')
   }
   function dragStart(event:ReactDragEvent<HTMLButtonElement>){
     const items=graphItems()
-    if(!items.length && !(graphSettings.points?.length)){event.preventDefault();setGraphError('Escribí una función o agregá puntos.');return}
+    if(!items.length && !(graphSettings.points?.length) && !graphSettings.ode?.enabled){event.preventDefault();setGraphError('Escribí una función, activá una EDO o agregá puntos.');return}
     event.dataTransfer.effectAllowed='copy'
     event.dataTransfer.setData('application/x-pizarra-graph',JSON.stringify({formulas:items,settings:graphSettings}))
     event.dataTransfer.setData('text/plain','Gráfico interactivo')

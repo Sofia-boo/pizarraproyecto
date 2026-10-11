@@ -75,7 +75,7 @@ test('an editable spreadsheet overlapping the toolbar stays below its buttons an
   await page.mouse.down();await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});await page.mouse.up()
   expect(await trigger.evaluate(el=>{const r=el.getBoundingClientRect();return !!document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.toolbar')})).toBe(true)
   await trigger.click()
-  const item=page.getByRole('menuitem',{name:/Reconocer texto con espacios/})
+  const item=page.getByRole('menuitem',{name:'OCR Datalab · selección manuscrita o imagen',exact:true})
   await expect(item).toBeVisible()
   expect(await item.evaluate(el=>{const r=el.getBoundingClientRect();return !!document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.ai-popover')})).toBe(true)
   await page.screenshot({path:'test-results/excel-debajo-menu.png'})

@@ -10,6 +10,40 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_datalab_transcribes_whole_document_keeps_private_jobs_and_reports_failed_pages(self):
+        import httpx
+        from unittest.mock import patch
+        calls=[]
+        def handler(request):
+            calls.append(request)
+            self.assertEqual(request.headers.get('X-API-Key'),'private-test-key')
+            if request.method=='POST':
+                self.assertNotIn(b'max_pages',request.content)
+                self.assertIn(b'accurate',request.content)
+                return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/test-job'})
+            return httpx.Response(200,json={'status':'complete','success':True,'markdown':'# Página 1\nTexto completo\n\n# Página 3\nFinal','page_count':3,'metadata':{'failed_pages':[1]}})
+        client_class=httpx.AsyncClient
+        factory=lambda **kwargs: client_class(transport=httpx.MockTransport(handler),**kwargs)
+        with TestClient(self.app,base_url='https://testserver') as a, TestClient(self.app,base_url='https://testserver') as b:
+            self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,401)
+            a.post('/api/auth/guest',json={'name':'OCR owner','password':'test-password'})
+            b.post('/api/auth/guest',json={'name':'OCR outsider','password':'test-password'})
+            with patch.dict(os.environ,{'DATALAB_API_KEY':''}):
+                self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,503)
+            with patch.dict(os.environ,{'DATALAB_API_KEY':'private-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=factory):
+                response=a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')})
+                self.assertEqual(response.status_code,200,response.text)
+                job=response.json()['id']
+                self.assertNotIn('private-test-key',response.text)
+                self.assertEqual(b.get('/api/ocr/documents/'+job).status_code,404)
+                result=a.get('/api/ocr/documents/'+job)
+                self.assertEqual(result.status_code,200,result.text)
+                self.assertIn('Final',result.json()['text'])
+                self.assertEqual(result.json()['failed_pages'],[1])
+                self.assertIn('2',result.json()['warning'])
+                self.assertEqual(a.get('/api/ocr/documents/'+job).json(),result.json())
+                self.assertEqual(len(calls),2)
+
     def test_media_permissions_are_committed_before_live_notification(self):
         from unittest.mock import patch
         from reconocimiento_local.server import db_connection
