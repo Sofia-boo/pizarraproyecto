@@ -40,6 +40,40 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('persists personal matrices and review history, isolates accounts and rejects stale writes',async()=>{
+    const {readPersonal,writePersonal}=await import('../src/study/personalStore')
+    const {newFlashcard,reviewCard}=await import('../src/study/flashcards')
+    library.setStorageSession('student-a',false)
+    const saved=await writePersonal('matrix:A',[['1','2']],0)
+    expect(saved.revision).toBe(1)
+    await expect(writePersonal('matrix:A',[['9']],0)).rejects.toThrow('otra pestaña')
+    expect((await readPersonal('matrix:A'))?.value).toEqual([['1','2']])
+    const card=reviewCard(newFlashcard('q','a'),'good')
+    await writePersonal(`card:${card.id}`,card,0)
+    library.setStorageSession('student-b',false)
+    expect(await readPersonal('matrix:A')).toBeUndefined()
+    expect(await readPersonal(`card:${card.id}`)).toBeUndefined()
+    library.setStorageSession('student-a',false)
+    expect((await readPersonal(`card:${card.id}`))?.value).toEqual(card)
+  })
+  it('imports study backups atomically and keeps existing progress and matrix memories',async()=>{
+    const {readPersonal,writePersonal}=await import('../src/study/personalStore')
+    const {newFlashcard,reviewCard}=await import('../src/study/flashcards')
+    const {studyBackup,importStudyBackup}=await import('../src/study/backup')
+    const card=newFlashcard('Original question','Answer')
+    await writePersonal(`card:${card.id}`,card,0)
+    await writePersonal('matrix:A',[['2']],0)
+    const backup=await studyBackup()
+    const updated=reviewCard(card,'easy')
+    await writePersonal(`card:${card.id}`,updated,1)
+    expect(await importStudyBackup(backup)).toEqual({added:0,skipped:2})
+    expect((await readPersonal(`card:${card.id}`))?.value).toEqual(updated)
+    library.setStorageSession('other-account',false)
+    await expect(importStudyBackup({...backup,matrices:[{slot:'A',cells:[['x']]}]})).rejects.toThrow('celda')
+    expect(await readPersonal(`card:${card.id}`)).toBeUndefined()
+    expect(await importStudyBackup(backup)).toEqual({added:2,skipped:0})
+    expect((await readPersonal('matrix:A'))?.value).toEqual([['2']])
+  })
   it('preserves visual objects and internal references in imported backups and local history',async()=>{
     let sequence=0
     const data={...content(),shapes:[createNote('note-import',{x:12,y:20}),

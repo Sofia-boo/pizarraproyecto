@@ -62,8 +62,8 @@ export function academicTemplate(template:TemplateId,center:Point,id:()=>string,
     const shape=node('',0,0,'rectangle',140,90)
     shape.visualType='symbol';shape.symbol=symbol
     if(['and','or','not','xor'].includes(symbol))shape.label=symbol.toUpperCase()
-    if(symbol==='matrix'){shape.width=180;shape.height=130;shape.label='1    0\n0    1';shape.labelFontSize=24}
-    if(symbol==='vector'){shape.width=100;shape.height=170;shape.label='x\ny\nz';shape.labelFontSize=25}
+    if(symbol==='matrix'){shape.width=180;shape.height=130;shape.label='1    0\n0    1';shape.labelFontSize=24;shape.matrix=[['1','0'],['0','1']]}
+    if(symbol==='vector'){shape.width=100;shape.height=170;shape.label='x\ny\nz';shape.labelFontSize=25;shape.matrix=[['x'],['y'],['z']]}
     if(symbol==='code'){shape.width=310;shape.height=190;shape.label='función buscar(A, x)\n  para cada elemento en A\n    si elemento = x\n      devolver verdadero\n  devolver falso';shape.labelFontSize=17}
   }
   const bounds=pointsBounds(items.flatMap(item=>[{x:item.x,y:item.y},{x:item.x+item.width,y:item.y+item.height}]))

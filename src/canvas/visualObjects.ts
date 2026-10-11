@@ -1,4 +1,5 @@
 import type { Point } from '../storage/database'
+import { matrixLabel } from '../study/matrices'
 
 export type Bounds = { x:number; y:number; width:number; height:number }
 export type ShapeKind = 'line'|'arrow'|'double-arrow'|'rectangle'|'rounded'|'ellipse'|'circle'|'diamond'|'triangle'|'triangle-down'|'cylinder'|'hexagon'
@@ -16,7 +17,7 @@ export type NoteData = {text:string;background:string;fontSize:number;alternativ
 export type ShapeItem = Bounds & {
   id:string;kind:ShapeKind;color:string;strokeWidth:number;reverse?:boolean;backwards?:boolean;rotation?:number;
   groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol';
-  note?:NoteData;connector?:Connector;symbol?:AcademicSymbol;label?:string;labelFontSize?:number
+  note?:NoteData;connector?:Connector;symbol?:AcademicSymbol;label?:string;labelFontSize?:number;matrix?:string[][]
 }
 export type TargetGeometry = Bounds & {rotation?:number;shapeKind?:ShapeKind}
 export type ResolveObject = (object:ObjectRef)=>TargetGeometry|null
@@ -176,6 +177,12 @@ export function mergeVisual(base:ShapeItem,local:ShapeItem,remote:ShapeItem):Sha
     return result
   }
   const result=merge(base as unknown as Record<string,unknown>,local as unknown as Record<string,unknown>,remote as unknown as Record<string,unknown>) as unknown as ShapeItem
+  if(base.matrix&&local.matrix&&remote.matrix) {
+    const resized=base.matrix.length!==local.matrix.length||base.matrix[0].length!==local.matrix[0].length
+    const shape=resized?local.matrix:remote.matrix
+    result.matrix=shape.map((row,r)=>row.map((value,c)=>local.matrix![r]?.[c]!==undefined&&local.matrix![r][c]!==base.matrix![r]?.[c]?local.matrix![r][c]:remote.matrix![r]?.[c]??value))
+    result.label=matrixLabel(result.matrix).slice(0,2000)
+  }
   if(base.note && local.note && remote.note && local.note.text!==base.note.text && remote.note.text!==base.note.text && local.note.text!==remote.note.text) {
     result.note={...result.note!,alternatives:[...new Set([...(local.note.alternatives??[]),...(remote.note.alternatives??[]),remote.note.text])].filter(text=>text!==result.note!.text)}
   }

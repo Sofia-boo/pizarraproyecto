@@ -1,0 +1,41 @@
+.matrix-editor,.matrix-calculator,.flashcard-content {display:flex;flex-direction:column;gap:12px;min-width:0;}
+.matrix-editor label,.study-label {display:flex;flex-direction:column;gap:6px;}
+.matrix-editor input,.matrix-editor select,.study-label input,.study-label textarea,.study-label select {width:100%;min-width:0;padding:8px;border:1px solid var(--math-border,var(--ui-border,#cbd5e1));border-radius:7px;background:var(--math-input,var(--ui-subtle,#fff));color:inherit;font:inherit;}
+.matrix-grid-scroll {overflow-x:auto;padding:2px;}
+.matrix-grid {display:grid;gap:5px;}
+.matrix-grid input {text-align:center;}
+.matrix-slots {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;}
+.matrix-slots button,.matrix-operation-keys button,.study-actions button,.study-menu button,.study-menu-button,.flashcard-panel button {border:1px solid var(--math-border,var(--ui-border,#cbd5e1));background:var(--math-key,var(--ui-subtle,#f8fafc));color:inherit;border-radius:8px;padding:9px 5px;font:inherit;cursor:pointer;}
+.matrix-slots button {display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;}
+.matrix-slots small {font-size:10px;}
+.matrix-slots button[aria-pressed=true] {border-color:#6366f1;background:#6366f125;}
+.matrix-operation-keys {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;}
+.matrix-operation-keys button {font-size:11px;overflow-wrap:anywhere;}
+.matrix-result {overflow:auto;padding:14px;border:1px solid var(--math-border,#cbd5e1);background:var(--math-screen,#f4f6fb);border-radius:8px;}
+.matrix-result table {border-left:2px solid currentColor;border-right:2px solid currentColor;margin:auto;border-collapse:separate;border-spacing:8px;}
+.matrix-result td {text-align:right;font:14px ui-monospace,monospace;}
+.study-help {font-size:12px;line-height:1.45;color:var(--math-text,var(--ui-muted,#64748b));opacity:.8;margin:0;}
+.study-actions {display:flex;flex-wrap:wrap;gap:6px;}
+.study-actions button {flex:1;min-width:100px;}
+button.study-primary,.flashcard-panel button.study-primary {background:#4f46e5;color:#fff;border:1px solid #4f46e5;border-radius:8px;padding:10px;}
+.study-menu {display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.study-menu button {min-height:65px;display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px;}
+.study-menu small {font-size:11px;opacity:.7;}
+.study-menu-button {margin-bottom:10px;width:100%;text-align:left;}
+.flashcard-panel {position:fixed;z-index:80;right:78px;top:80px;width:min(390px,calc(100vw - 98px));max-height:calc(100dvh - 110px);overflow:auto;padding:16px;border-radius:15px;border:1px solid var(--ui-border,#cbd5e1);background:var(--ui-surface,#fff);color:var(--ui-text,#243047);box-shadow:0 12px 32px #0003;font:13px system-ui;}
+.flashcard-panel header {display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;}
+.flashcard-panel nav {display:flex;gap:5px;margin:12px 0;}
+.flashcard-panel nav button {flex:1;}
+.flashcard-panel button[aria-pressed=true] {border-color:#6366f1;background:#6366f125;}
+.flashcard-panel textarea {resize:vertical;min-height:90px;max-height:30vh;}
+.flashcard-list {display:flex;flex-direction:column;gap:8px;}
+.flashcard-list article {border:1px solid var(--ui-border,#cbd5e1);border-radius:9px;padding:10px;overflow-wrap:anywhere;}
+.flashcard-list article strong {display:block;white-space:pre-wrap;}
+.flashcard-list article small {display:block;opacity:.75;margin:6px 0;}
+.flashcard-face {min-height:120px;max-height:38dvh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;border:1px solid var(--ui-border,#cbd5e1);border-radius:10px;font-size:17px;line-height:1.5;}
+.flashcard-grades {display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.flashcard-grades button {display:flex;flex-direction:column;gap:5px;}
+.flashcard-grades small {font-size:11px;opacity:.8;}
+body:has(.flashcard-panel) .anon-profile {display:none!important;}
+body:has(.math-panel,.flashcard-panel) .visual-edit-button {display:none;}
+@media(max-width:680px) {.flashcard-panel {top:12px;right:65px;width:calc(100vw - 75px);max-height:calc(100dvh - 28px);padding:12px;}}

@@ -3,6 +3,8 @@ import { LuX } from 'react-icons/lu'
 import { NOTE_COLORS } from '../canvas/visualObjects'
 import type { ShapeItem } from '../canvas/visualObjects'
 import './visualTools.css'
+import MatrixGrid from './MatrixGrid'
+import { matrixCells, matrixLabel } from '../study/matrices'
 
 export default function VisualObjectInspector({item,onApply,onClose}:{
   item:ShapeItem;onApply:(base:ShapeItem,next:ShapeItem)=>void;onClose:()=>void
@@ -11,6 +13,7 @@ export default function VisualObjectInspector({item,onApply,onClose}:{
   const [base]=useState(()=>structuredClone(item))
   const [draft,setDraft]=useState(()=>structuredClone(item))
   const note=draft.note,connector=draft.connector
+  const cells=matrixCells(draft)
   const patch=(value:Partial<ShapeItem>)=>setDraft(old=>({...old,...value}))
   const title=note?'Nota adhesiva':connector?'Conector':'Elemento académico'
   return <aside className="visual-inspector" aria-label={`Editar ${title.toLocaleLowerCase('es')}`}
@@ -57,7 +60,9 @@ export default function VisualObjectInspector({item,onApply,onClose}:{
           <button type="button" disabled={!connector.to} onClick={()=>patch({connector:{...connector,to:undefined}})}>Soltar final</button>
         </div>
       </>}
-      {!note&&!connector&&<label>Texto del elemento<textarea autoFocus aria-label="Texto del elemento académico" rows={6} maxLength={2000}
+      {cells&&<MatrixGrid cells={cells} limit={12} label="Matriz del lienzo" onChange={matrix=>patch({matrix,label:matrixLabel(matrix).slice(0,2000),
+        symbol:matrix[0].length===1?'vector':'matrix',width:Math.max(draft.width,34+matrix[0].length*50),height:Math.max(draft.height,22+matrix.length*42)})}/>}
+      {!note&&!connector&&!cells&&<label>Texto del elemento<textarea autoFocus aria-label="Texto del elemento académico" rows={6} maxLength={2000}
         value={draft.label??''} onChange={e=>patch({label:e.target.value})}/></label>}
       <p className="visual-help">Usá el selector para mover, girar o cambiar el tamaño.</p>
       <footer><button type="button" onClick={onClose}>Cancelar</button><button type="submit" className="visual-primary">Aplicar</button></footer>

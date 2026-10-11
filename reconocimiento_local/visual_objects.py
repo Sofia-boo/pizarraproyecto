@@ -73,3 +73,10 @@ def validate_visual_content(content: dict):
         else:
             require(item.get('symbol') in ('and', 'or', 'not', 'xor', 'matrix', 'vector', 'resistor', 'capacitor', 'ground', 'voltage', 'code'),
                     'El símbolo académico no es válido.')
+            if item.get('matrix') is not None:
+                cells = item['matrix']
+                require(item.get('symbol') in ('matrix', 'vector') and isinstance(cells, list) and 1 <= len(cells) <= 12,
+                        'Las filas de la matriz no son válidas.')
+                require(all(isinstance(row, list) and 1 <= len(row) <= 12 for row in cells), 'Las columnas de la matriz no son válidas.')
+                require(all(len(row) == len(cells[0]) and all(text(cell, 100) for cell in row) for row in cells),
+                        'La matriz necesita filas del mismo tamaño y celdas de hasta 100 caracteres.')

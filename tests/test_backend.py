@@ -124,6 +124,25 @@ class BackendTest(unittest.TestCase):
                 outsider.post('/api/auth/guest', json={'name': 'Visual outsider', 'password': 'visual-password'})
                 self.assertEqual(outsider.get(f'/api/boards/{board}').status_code, 403)
 
+    def test_structured_matrices_preserve_old_vectors_and_reject_invalid_grids(self):
+        import copy
+        with TestClient(self.app, base_url='https://testserver') as client:
+            client.post('/api/auth/guest', json={'name': 'Matrix validator', 'password': 'matrix-password'})
+            board = client.post('/api/boards', json={'name': 'Matrices'}).json()['id']
+            legacy = {'id': 'vector-old', 'kind': 'rectangle', 'visualType': 'symbol', 'symbol': 'vector',
+                      'x': 0, 'y': 0, 'width': 100, 'height': 170, 'color': '#202020', 'strokeWidth': 2, 'label': 'x\ny\nz'}
+            content = {'strokes': [], 'texts': [], 'media': [], 'shapes': [legacy]}
+            self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 0, 'content': content}).status_code, 200)
+            matrix = copy.deepcopy(content)
+            matrix['shapes'][0].update(symbol='matrix', matrix=[['1', '2'], ['3', '4']])
+            self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 1, 'content': matrix}).status_code, 200)
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], matrix)
+            for cells in ([['1'], ['2', '3']], [], [['x'*101]], [['1']]*13, [[1, 2]]):
+                invalid = copy.deepcopy(matrix)
+                invalid['shapes'][0]['matrix'] = cells
+                self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 2, 'content': invalid}).status_code, 422)
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], matrix)
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={

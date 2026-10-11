@@ -1,6 +1,7 @@
 import { connectorPath, pathMidpoint } from './visualObjects'
 import type { ConnectorCap, ResolveObject, ShapeItem } from './visualObjects'
 import type { Point } from '../storage/database'
+import { matrixCells } from '../study/matrices'
 
 function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number):string[] {
   const lines:string[]=[]
@@ -15,6 +16,16 @@ function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number):string[]
   return lines
 }
 export function paintLabel(ctx:CanvasRenderingContext2D,item:ShapeItem,color:string) {
+  const cells=matrixCells(item)
+  if(cells) {
+    ctx.save();ctx.fillStyle=color;ctx.textAlign='center';ctx.textBaseline='middle'
+    const cw=Math.max(1,(item.width-34)/cells[0].length),ch=Math.max(1,(item.height-22)/cells.length)
+    const font=Math.max(4,Math.min(item.labelFontSize??24,ch*.65,cw*.7))
+    ctx.font=`${font}px ui-monospace,Consolas,monospace`
+    ctx.beginPath();ctx.rect(item.x+16,item.y+8,Math.max(1,item.width-32),Math.max(1,item.height-16));ctx.clip()
+    cells.forEach((row,r)=>row.forEach((text,c)=>ctx.fillText(text,item.x+17+cw*(c+.5),item.y+11+ch*(r+.5),Math.max(1,cw-6))))
+    ctx.restore();return
+  }
   if(!item.label)return
   const font=item.labelFontSize??16
   const code=item.symbol==='code'

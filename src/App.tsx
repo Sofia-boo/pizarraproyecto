@@ -28,6 +28,8 @@ import './formas_excel.css'
 import './static_tables.css'
 import {createFormulaEvaluator} from './formulas_excel'
 import RightMathDock from './RightMathDock'
+import { matrixCells, matrixLabel } from './study/matrices'
+import type { MatrixCells } from './study/matrices'
 import BoardVersionHistory from './BoardVersionHistory'
 import { StrokeTileIndex, visibleWorldRect, rectsIntersect } from './spatial_viewport'
 import BoardGraphWidget from './BoardGraphWidget'
@@ -2961,11 +2963,17 @@ function App() {
     setOpenMenu(null);setVisualEditor(note.id);redraw();scheduleSave()
   }
 
-  function insertAcademic(template:TemplateId) {
+  function insertAcademic(template:TemplateId,cells?:MatrixCells) {
     if(!loadedRef.current)return
     if(editingRef.current)commitText()
     rememberChange()
     const items=academicTemplate(template,boardCenter(),createId,color)
+    if(cells) {
+      items[0].matrix=structuredClone(cells);items[0].label=matrixLabel(cells).slice(0,2000);items[0].symbol=cells[0].length===1?'vector':'matrix'
+      const cellWidth=Math.max(65,Math.min(200,Math.max(...cells.flat().map(text=>text.length))*14))
+      const center=boardCenter(),w=34+cells[0].length*cellWidth,h=22+cells.length*50
+      Object.assign(items[0],{x:center.x-w/2,y:center.y-h/2,width:w,height:h})
+    }
     shapesRef.current.push(...items)
     selectTool('select');setOpenMenu(null);setVisualEditor(null)
     groupRef.current=items.map(item=>({kind:'shape',id:item.id}))
@@ -3648,6 +3656,10 @@ function App() {
     const texts = selected.filter(item => item.kind === 'text')
       .map(item => textsRef.current.find(text => text.id === item.id)?.text ?? '')
       .filter(Boolean)
+    for(const sel of selected)if(sel.kind==='shape') {
+      const shape=shapesRef.current.find(item=>item.id===sel.id)
+      if(shape){const cells=matrixCells(shape);const text=cells?matrixLabel(cells):shape.note?.text??shape.label;if(text)texts.push(text)}
+    }
     const ids = selected.filter(item => item.kind === 'stroke').map(item => Number(item.id))
     const strokes = ids.map(id => strokesRef.current[id]).filter((item): item is Stroke => Boolean(item))
     if (!strokes.length) return texts.join('\n')
@@ -4576,7 +4588,13 @@ function App() {
           )}
         </div>}
       </div>
-      <RightMathDock getSelection={getMathSelectionForDock} addGraphToBoard={(formulas,settings)=>insertBoardGraph(formulas,undefined,settings)} />
+      <RightMathDock getSelection={getMathSelectionForDock} addGraphToBoard={(formulas,settings)=>insertBoardGraph(formulas,undefined,settings)}
+        getSelectedMatrix={()=>{
+          const selected=groupRef.current
+          if(selected.length!==1||selected[0].kind!=='shape')return null
+          const item=shapesRef.current.find(item=>item.id===selected[0].id)
+          return item?matrixCells(item):null
+        }} addMatrixToBoard={cells=>insertAcademic('matrix',cells)} onOpenPanel={()=>{setVisualEditor(null);setOpenMenu(null)}}/>
       <div className="toolbar" role="toolbar" aria-label="Herramientas de pizarra">
         <div className="toolbar-tools">
       <div className="board-search-dock">

@@ -15,6 +15,7 @@ let remoteEnabled = false
 let notice = ''
 let disconnected = false
 export function setStorageSession(id: string | null, remote = true) { account = id; remoteEnabled = remote && id !== null }
+export function personalStorageScope() { return account??'device' }
 export function privateBoard(id = activeId) { return isPrivate(id) }
 export function canUseServer() { return remoteEnabled }
 export function usingOfflineCopy() { return !privateBoard() && (!remoteEnabled || disconnected) }

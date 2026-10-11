@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react'
+import { LuLayers } from 'react-icons/lu'
+import MatrixCalculator from './components/MatrixCalculator'
+import FlashcardPanel from './components/FlashcardPanel'
+import type { MatrixCells } from './study/matrices'
 import type { CSSProperties, DragEvent as ReactDragEvent } from 'react'
 import { create, all } from 'mathjs'
 import { BsCalculator } from 'react-icons/bs'
@@ -12,9 +16,9 @@ import type { LinearSystemResult } from './LinearSystems'
 import type { EquationResult } from './EquationSolvers'
 
 const math=create(all,{})
-type Mode='closed'|'calculator'|'graph'
+type Mode='closed'|'calculator'|'graph'|'cards'
 type AngleMode='DEG'|'RAD'
-type CalcTab='normal'|'roots'|'linear'
+type CalcTab='menu'|'normal'|'roots'|'linear'|'matrices'|'matrix-calc'
 const palette=['#16a34a','#4f46e5','#ef4444','#f59e0b','#0284c7','#a855f7','#0d9488','#ea580c']
 const functionNames=new Set(['sin','cos','tan','asin','acos','atan','sinh','cosh','tanh','sqrt','abs','exp','log','ln','floor','ceil','round','min','max','nthRoot','sign','pow'])
 function compileSafe(source:string){
@@ -45,12 +49,15 @@ const keys=[
 const newRow=(index:number,expr=''):GraphFormula=>({id:`graph-formula-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,expr,color:palette[index%palette.length],enabled:true})
 const splitSelection=(text:string):GraphFormula[]=>text.split(/[;\n]+/).map(s=>s.trim()).filter(Boolean).map((expr,i)=>newRow(i,expr))
 
-export default function RightMathDock({getSelection,addGraphToBoard}: {
+export default function RightMathDock({getSelection,addGraphToBoard,getSelectedMatrix,addMatrixToBoard,onOpenPanel}: {
   getSelection:()=>Promise<string>;
   addGraphToBoard:(formulas:GraphFormula[],settings?:GraphSettings)=>void;
+  getSelectedMatrix:()=>MatrixCells|null;
+  addMatrixToBoard:(cells:MatrixCells)=>void;
+  onOpenPanel:()=>void;
 }){
   const [mode,setMode]=useState<Mode>('closed')
-  const [calcTab,setCalcTab]=useState<CalcTab>('normal')
+  const [calcTab,setCalcTab]=useState<CalcTab>('menu')
   const [rootsInput,setRootsInput]=useState('')
   const [systemDimension,setSystemDimension]=useState<2|3>(2)
   const [systemCells,setSystemCells]=useState<string[][]>(()=>Array.from({length:3},()=>['','','','']))
@@ -104,7 +111,7 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
       else if(calcTab==='linear')setLinearSolution(null)
     }
   }
-  async function useSelection(target:'calc'|'graph'|'solver'){
+  async function readSelection(target:'calc'|'graph'|'solver'){
     if(reading)return
     setReading(true);setCalcError('');setGraphError('')
     try{
@@ -138,20 +145,32 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
   return <>
     <nav className="math-dock" aria-label="Herramientas matemáticas">
       <button type="button" aria-label="Calculadora científica" title="Calculadora científica" className={mode==='calculator'?'math-dock-active':''}
-        onClick={()=>setMode(m=>m==='calculator'?'closed':'calculator')}><BsCalculator size={20}/></button>
+        onClick={()=>{onOpenPanel();setMode(m=>m==='calculator'?'closed':'calculator')}}><BsCalculator size={20}/></button>
       <button type="button" aria-label="Graficar funciones" title="Graficar funciones" className={mode==='graph'?'math-dock-active':''}
-        onClick={()=>setMode(m=>m==='graph'?'closed':'graph')}><FiActivity size={20}/></button>
+        onClick={()=>{onOpenPanel();setMode(m=>m==='graph'?'closed':'graph')}}><FiActivity size={20}/></button>
+      <button type="button" aria-label="Tarjetas de estudio" title="Tarjetas de estudio" className={mode==='cards'?'math-dock-active':''}
+        onClick={()=>{onOpenPanel();setMode(m=>m==='cards'?'closed':'cards')}}><LuLayers size={20}/></button>
     </nav>
-    {mode!=='closed'&&<aside className={`math-panel ${mode==='graph'?'math-panel-graph':''}`} aria-label="Panel de matemáticas" onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
+    {mode==='cards'&&<FlashcardPanel onClose={()=>setMode('closed')} getSelection={getSelection}/>}
+    {mode!=='closed'&&mode!=='cards'&&<aside className={`math-panel ${mode==='graph'?'math-panel-graph':''}`} aria-label="Panel de matemáticas" onKeyDown={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
       <header className="math-panel-heading"><strong>{mode==='calculator'?'Calculadora científica':'Graficar funciones'}</strong>
         <button className="math-panel-close" type="button" onClick={()=>setMode('closed')} aria-label="Cerrar panel"><FiX/></button></header>
       <div className="math-panel-scroll">
         {mode==='calculator'&&<section className="math-calculator">
+          <button type="button" className="study-menu-button" onClick={()=>setCalcTab('menu')}>MENU · Elegir modo</button>
+          {calcTab==='menu'&&<>
+            <div className="math-screen"><strong>MENU</strong><p>Seleccioná un modo</p></div>
+            <div className="study-menu">{([['normal','Cálculo','Científica'],['roots','Raíces','Ecuaciones'],['linear','Sistemas','2 o 3 incógnitas'],
+              ['matrices','Matrices','Memorias A–E · hasta 4×4'],['matrix-calc','Cálculo de matrices','det · × · + · − · transpuesta · inversa']] as [CalcTab,string,string][]).map(([key,label,description])=>
+                <button type="button" key={key} onClick={()=>setCalcTab(key)}>{label}<small>{description}</small></button>)}</div>
+          </>}
+          <div hidden={calcTab!=='matrices'&&calcTab!=='matrix-calc'}><MatrixCalculator view={calcTab==='matrix-calc'?'calculate':'memory'} getSelection={getSelectedMatrix} onInsert={addMatrixToBoard}/></div>
+          {calcTab!=='menu'&&calcTab!=='matrices'&&calcTab!=='matrix-calc'&&
           <div className="math-calc-tabs" role="tablist" aria-label="Modos de calculadora">
             <button type="button" role="tab" aria-selected={calcTab==='normal'} className={calcTab==='normal'?'active':''} onClick={()=>{setCalcTab('normal');setSolveError('')}}>Cálculo</button>
             <button type="button" role="tab" aria-selected={calcTab==='roots'} className={calcTab==='roots'?'active':''} onClick={()=>{setCalcTab('roots');setSolveError('')}}>Raíces</button>
             <button type="button" role="tab" aria-selected={calcTab==='linear'} className={calcTab==='linear'?'active':''} onClick={()=>{setCalcTab('linear');setSolveError('')}}>Sistemas</button>
-          </div>
+          </div>}
           {calcTab==='normal'&&<>
           <div className="math-screen"><div className="math-screen-meta"><span>{angleMode}</span><span>{result||' '}</span></div>
             <input ref={fieldRef} aria-label="Expresión de la calculadora" value={calcInput} placeholder="0" spellCheck={false}
@@ -159,7 +178,7 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
           {calcError&&<p className="math-panel-error" role="alert">{calcError}</p>}
           <div className="math-calculator-actions">
             <button type="button" onClick={()=>setAngleMode(m=>m==='DEG'?'RAD':'DEG')}>{angleMode}</button>
-            <button type="button" onClick={()=>void useSelection('calc')} disabled={reading}>{reading?'Leyendo…':'Usar'}</button>
+            <button type="button" onClick={()=>void readSelection('calc')} disabled={reading}>{reading?'Leyendo…':'Usar'}</button>
             <button type="button" onClick={()=>{setCalcInput('');setResult('');setCalcError('')}}>AC</button>
             <button type="button" onClick={del}>DEL</button>
           </div>
@@ -180,7 +199,7 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
               onChange={e=>{setRootsInput(e.target.value);setRootsSolution(null);setSolveError('')}}
               onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();solveCurrent()}}}/>
             <div className="math-solver-actions">
-              <button type="button" disabled={reading} onClick={()=>void useSelection('solver')}>{reading?'Leyendo…':'Usar selección'}</button>
+              <button type="button" disabled={reading} onClick={()=>void readSelection('solver')}>{reading?'Leyendo…':'Usar selección'}</button>
               <button type="button" className="math-solver-solve" onClick={solveCurrent}>Resolver</button>
             </div>
             {solveError&&<p className="math-panel-error" role="alert">{solveError}</p>}
@@ -214,7 +233,7 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
               </div>
             </div>
             <div className="math-solver-actions">
-              <button type="button" disabled={reading} onClick={()=>void useSelection('solver')}>{reading?'Leyendo…':'Usar selección'}</button>
+              <button type="button" disabled={reading} onClick={()=>void readSelection('solver')}>{reading?'Leyendo…':'Usar selección'}</button>
               <button type="button" className="math-solver-solve" onClick={solveCurrent}>Resolver</button>
             </div>
             {solveError&&<p className="math-panel-error" role="alert">{solveError}</p>}
@@ -235,7 +254,7 @@ export default function RightMathDock({getSelection,addGraphToBoard}: {
             </div>)}
           </div>
           <div className="math-formula-actions"><button type="button" onClick={addRow} disabled={rows.length>=12}><FiPlus/> Agregar función</button>
-            <button type="button" className="math-selection-action" disabled={reading} onClick={()=>void useSelection('graph')}>{reading?'Leyendo…':'Usar selección'}</button></div>
+            <button type="button" className="math-selection-action" disabled={reading} onClick={()=>void readSelection('graph')}>{reading?'Leyendo…':'Usar selección'}</button></div>
           {graphError&&<p className="math-panel-error" role="alert">{graphError}</p>}
           <div className="math-graph-preview"><GraphPlot formulas={rows} settings={graphSettings} onSettingsChange={setGraphSettings}
               onInsertPiecewise={()=>setRows(r=>r.length>=12?r:[...r,newRow(r.length,'{x<0:-x; x>=0:x}')])}/></div>
