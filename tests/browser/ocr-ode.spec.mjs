@@ -72,6 +72,7 @@ test('OCR menu stays inside tablet and phone screens and offers the rear camera'
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText('OCR conectado.')
     await expect(page.getByLabel('Foto para transcribir')).toHaveAttribute('capture','environment')
+    await expect(page.getByLabel('Foto para transcribir')).toBeHidden()
     const camera=page.waitForEvent('filechooser')
     await page.getByRole('button',{name:'Tomar foto',exact:true}).click()
     await (await camera).setFiles({name:'foto.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aIv8AAAAASUVORK5CYII=','base64')})

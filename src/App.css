@@ -105,11 +105,13 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .ai-popover details { border-top: 1px solid var(--border-color, #d5dbea); margin-top: 6px; padding-top: 8px; }
 .ai-popover summary { cursor: pointer; padding: 10px; font-size: 13px; }
 .recognition-dialog.ocr-dialog { width: min(700px, 94vw); max-height: 90dvh; overflow-y: auto; box-sizing: border-box; }
+.ocr-dialog h3, .ocr-dialog p { margin: 0; }
+.ocr-dialog p { line-height: 1.5; }
 .ocr-dialog input[type=file] { display: block; max-width: 100%; min-height: 44px; margin-top: 8px; }
 .ocr-dialog button { min-height: 44px; }
 .ocr-file-name { overflow-wrap: anywhere; }
 .ocr-preview { display: block; max-width: 100%; max-height: 230px; object-fit: contain; margin: 12px auto; border-radius: 8px; }
-.ocr-dialog .ocr-camera-input { display: none; }
+.ocr-dialog input.ocr-camera-input { display: none; }
 @media (max-width: 600px) {
   .recognition-dialog.ocr-dialog { padding: 16px; }
 }
