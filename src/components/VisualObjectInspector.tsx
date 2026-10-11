@@ -5,6 +5,7 @@ import type { ShapeItem } from '../canvas/visualObjects'
 import './visualTools.css'
 import MatrixGrid from './MatrixGrid'
 import { matrixCells, matrixLabel } from '../study/matrices'
+import { updateStudyNote } from '../canvas/studyCards'
 
 export default function VisualObjectInspector({item,onApply,onClose}:{
   item:ShapeItem;onApply:(base:ShapeItem,next:ShapeItem)=>void;onClose:()=>void
@@ -12,24 +13,43 @@ export default function VisualObjectInspector({item,onApply,onClose}:{
   // Keep the draft stable if a collaborator updates the board while typing.
   const [base]=useState(()=>structuredClone(item))
   const [draft,setDraft]=useState(()=>structuredClone(item))
+  const [error,setError]=useState('')
   const note=draft.note,connector=draft.connector
   const cells=matrixCells(draft)
   const patch=(value:Partial<ShapeItem>)=>setDraft(old=>({...old,...value}))
-  const title=note?'Nota adhesiva':connector?'Conector':'Elemento académico'
+  const title=note?.study?'Tarjeta adhesiva':note?'Nota adhesiva':connector?'Conector':'Elemento académico'
   return <aside className="visual-inspector" aria-label={`Editar ${title.toLocaleLowerCase('es')}`}
     onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape')onClose()}}>
     <header><strong>{title}</strong><button type="button" aria-label="Cerrar editor de objeto" onClick={onClose}><LuX/></button></header>
-    <form onSubmit={e=>{e.preventDefault();onApply(base,draft);onClose()}}>
+    <form onSubmit={e=>{e.preventDefault();
+      if(draft.note?.study&&(!draft.note.study.question.trim()||!draft.note.study.answer.trim())){setError('Completá la pregunta y la respuesta.');return}
+      onApply(base,draft);onClose()
+    }}>
       {note&&<>
-        <label>Texto de la nota<textarea autoFocus aria-label="Texto de la nota" maxLength={10000} rows={6}
-          value={note.text} onChange={e=>patch({note:{...note,text:e.target.value}})}/></label>
+        {note.study?<>
+          <label>Mazo<input aria-label="Mazo de la tarjeta adhesiva" maxLength={100} value={note.study.deck} onChange={e=>patch({note:updateStudyNote(note,{deck:e.target.value})})}/></label>
+          <label>Pregunta<textarea autoFocus required aria-label="Pregunta de la tarjeta adhesiva" maxLength={10000} rows={3} value={note.study.question} onChange={e=>patch({note:updateStudyNote(note,{question:e.target.value})})}/></label>
+          <label>Respuesta<textarea required aria-label="Respuesta de la tarjeta adhesiva" maxLength={20000} rows={5} value={note.study.answer} onChange={e=>patch({note:updateStudyNote(note,{answer:e.target.value})})}/></label>
+          <label>Cara visible<select aria-label="Cara visible de la tarjeta" value={note.study.face} onChange={e=>patch({note:updateStudyNote(note,{face:e.target.value as 'question'|'answer'})})}>
+            <option value="question">Pregunta</option><option value="answer">Respuesta</option>
+          </select></label>
+          <p className="visual-help">Editás la copia de la pizarra. La tarjeta original y tus repasos se conservan.</p>
+        </>:<label>Texto de la nota<textarea autoFocus aria-label="Texto de la nota" maxLength={10000} rows={6}
+          value={note.text} onChange={e=>patch({note:{...note,text:e.target.value}})}/></label>}
         <div className="visual-swatches" role="group" aria-label="Color de la nota">
           {NOTE_COLORS.map((color,i)=><button type="button" key={color} aria-label={`Color de nota ${i+1}`} aria-pressed={note.background===color}
             style={{background:color}} onClick={()=>patch({note:{...note,background:color}})}/>)}
         </div>
         <label>Tamaño de letra<input type="number" aria-label="Tamaño de letra de nota" min={10} max={80} value={note.fontSize}
           onChange={e=>patch({note:{...note,fontSize:Math.max(10,Math.min(80,Number(e.target.value)||10))}})}/></label>
-        {!!note.alternatives?.length&&<section className="visual-conflicts" aria-label="Ediciones simultáneas">
+        {!!note.study?.alternatives?.length&&<section className="visual-conflicts" aria-label="Ediciones simultáneas de tarjeta">
+          <strong>Otras versiones de la tarjeta</strong><p>Se conservaron las ediciones simultáneas para que puedas revisarlas.</p>
+          {note.study.alternatives.map((version,i)=><div key={i}><pre>{version.question}{'\n'}{version.answer}</pre>
+            <button type="button" onClick={()=>patch({note:updateStudyNote(note,{...version,alternatives:[...note.study!.alternatives!.filter((_,n)=>n!==i),{question:note.study!.question,answer:note.study!.answer}]})})}>Usar esta versión de tarjeta</button>
+          </div>)}
+          <button type="button" onClick={()=>patch({note:updateStudyNote(note,{alternatives:[]})})}>Resolver con la tarjeta actual</button>
+        </section>}
+        {!note.study&&!!note.alternatives?.length&&<section className="visual-conflicts" aria-label="Ediciones simultáneas">
           <strong>Otra edición de esta nota</strong><p>Se conservaron ambas versiones. Revisalas antes de resolver.</p>
           {note.alternatives.map((text,i)=><div key={i}><pre>{text||'(texto vacío)'}</pre>
             <button type="button" disabled={note.text.length+text.length+1>10000} onClick={()=>patch({note:{...note,text:`${note.text}\n${text}`,alternatives:note.alternatives!.filter((_,n)=>n!==i)}})}>Conservar ambos textos</button>
@@ -65,6 +85,7 @@ export default function VisualObjectInspector({item,onApply,onClose}:{
       {!note&&!connector&&!cells&&<label>Texto del elemento<textarea autoFocus aria-label="Texto del elemento académico" rows={6} maxLength={2000}
         value={draft.label??''} onChange={e=>patch({label:e.target.value})}/></label>}
       <p className="visual-help">Usá el selector para mover, girar o cambiar el tamaño.</p>
+      {error&&<p role="alert">{error}</p>}
       <footer><button type="button" onClick={onClose}>Cancelar</button><button type="submit" className="visual-primary">Aplicar</button></footer>
     </form>
   </aside>

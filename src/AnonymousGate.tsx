@@ -11,8 +11,11 @@ type ManagedUser = {id:string;display_name:string;emoji:string;is_admin:number;b
 
 async function api<T>(path:string, init?:RequestInit):Promise<T> {
   const root = import.meta.env.DEV ? `${location.protocol}//${location.hostname}:8765` : location.origin
-  const resp = await fetch(root+path, {...init,credentials:'include',signal:AbortSignal.timeout(10000)})
+  const resp = await fetch(root+path, {...init,credentials:'include',signal:AbortSignal.timeout(10000)}).catch(()=>{
+    throw new Error('No se pudo conectar al servidor de las pizarras compartidas. Revisá la conexión o abrí las privadas y copias de este dispositivo.')
+  })
   if (!resp.ok) {
+    if([502,503,504].includes(resp.status))throw new Error(`El servidor de las pizarras compartidas no está disponible (HTTP ${resp.status}). Podés abrir las privadas y copias de este dispositivo mientras se restablece la conexión.`)
     const info = await resp.json().catch(()=>({detail:`HTTP ${resp.status}`})) as {detail?:string}
     throw new Error(info.detail ?? `Error ${resp.status}`)
   }

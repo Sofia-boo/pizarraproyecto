@@ -33,6 +33,8 @@ import './formas_excel.css'
 import './static_tables.css'
 import {createFormulaEvaluator} from './formulas_excel'
 import RightMathDock from './RightMathDock'
+import type { Flashcard } from './study/flashcards'
+import { studyCardNotes, updateStudyNote } from './canvas/studyCards'
 import { matrixCells, matrixLabel } from './study/matrices'
 import type { MatrixCells } from './study/matrices'
 import BoardVersionHistory from './BoardVersionHistory'
@@ -3038,6 +3040,18 @@ function App() {
     setOpenMenu(null);setVisualEditor(note.id);redraw();scheduleSave()
   }
 
+  function insertStudyCards(cards:Flashcard[]) {
+    if(!loadedRef.current)throw new Error('Esperá a que termine de cargar la pizarra.')
+    const items=studyCardNotes(cards,boardCenter(),createId,window.innerWidth/cameraRef.current.zoom)
+    if(editingRef.current)commitText()
+    rememberChange()
+    shapesRef.current.push(...items)
+    selectTool('select');setOpenMenu(null);setVisualEditor(null)
+    groupRef.current=items.map(item=>({kind:'shape',id:item.id}))
+    selectedRef.current=items.length===1?groupRef.current[0]:null
+    setSelection(selectedRef.current);redraw();scheduleSave()
+  }
+
   function insertAcademic(template:TemplateId,cells?:MatrixCells) {
     if(!loadedRef.current)return
     if(editingRef.current)commitText()
@@ -4700,7 +4714,7 @@ function App() {
           if(selected.length!==1||selected[0].kind!=='shape')return null
           const item=shapesRef.current.find(item=>item.id===selected[0].id)
           return item?matrixCells(item):null
-        }} addMatrixToBoard={cells=>insertAcademic('matrix',cells)} onOpenPanel={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(null)}}/>
+        }} addMatrixToBoard={cells=>insertAcademic('matrix',cells)} addCardsToBoard={insertStudyCards} onOpenPanel={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(null)}}/>
       <div className="toolbar" role="toolbar" aria-label="Herramientas de pizarra">
         <div className="toolbar-tools">
       <div className="board-search-dock">
@@ -4914,7 +4928,10 @@ function App() {
       {!visualEditor && !treePanel && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
         return item && (item.visualType || item.label!==undefined)
-          ?<button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>:null
+          ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
+            {item.note?.study&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
+              rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()
+            }}>{item.note.study.face==='question'?'Mostrar respuesta':'Mostrar pregunta'}</button>}</>:null
       })()}
       {visualEditor && (()=>{
         const item=shapesRef.current.find(item=>item.id===visualEditor)

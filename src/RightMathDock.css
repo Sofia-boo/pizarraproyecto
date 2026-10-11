@@ -38,7 +38,7 @@
 .math-panel-error { padding:8px 10px; border-radius:7px; background:#fff0f1; color:#b42332; margin:7px 0; }
 .app[data-theme='dark'] { --math-panel-bg:#222938; --math-text:#eef3fc; --math-border:#495469; --math-key:#303a4d; --math-screen:#1b2231; --math-input:#222938; --math-active:#3b4672; --math-accent:#abb8ff; }
 .app[data-theme='rest'] { --math-panel-bg:#fffaf0; --math-text:#4a4030; --math-border:#dbd1bc; --math-key:#fbf5e8; --math-screen:#f7f0e2; --math-active:#f1e4c6; --math-input:#fffaf0; }
-@media(max-width:680px){ .math-panel { top:12px; transform:none; max-height:calc(100dvh - 28px); right:65px; width:calc(100vw - 75px); } .math-graph-preview { height:270px; } .math-dock { bottom:80px; top:auto; transform:none; right:7px; } }
+@media(max-width:680px){ .math-panel { top:12px; transform:none; max-height:calc(100dvh - 28px); right:65px; width:calc(100vw - 75px); } .math-graph-preview { height:270px; } .math-dock { bottom:145px; top:auto; transform:none; right:7px; } }
 /* Tres modos compactos: cálculo, raíces y sistemas lineales. */
 .math-calc-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; margin-bottom:10px; }
 .math-calc-tabs button { min-width:0; padding:9px 4px; border:1px solid var(--math-border,#d4d9e2); border-radius:9px; background:var(--math-key,#f7f9fc); color:var(--math-text,#202938); cursor:pointer; font-size:12px; }

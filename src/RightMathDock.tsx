@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { LuLayers } from 'react-icons/lu'
 import MatrixCalculator from './components/MatrixCalculator'
 import FlashcardPanel from './components/FlashcardPanel'
+import type { Flashcard } from './study/flashcards'
 import type { MatrixCells } from './study/matrices'
 import type { CSSProperties, DragEvent as ReactDragEvent } from 'react'
 import { calculateScientific } from './study/scientificCalculator'
@@ -31,11 +32,12 @@ const keys=[
 const newRow=(index:number,expr=''):GraphFormula=>({id:`graph-formula-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,expr,color:palette[index%palette.length],enabled:true})
 const splitSelection=(text:string):GraphFormula[]=>text.split(/[;\n]+/).map(s=>s.trim()).filter(Boolean).map((expr,i)=>newRow(i,expr))
 
-export default function RightMathDock({getSelection,addGraphToBoard,getSelectedMatrix,addMatrixToBoard,onOpenPanel}: {
+export default function RightMathDock({getSelection,addGraphToBoard,getSelectedMatrix,addMatrixToBoard,addCardsToBoard,onOpenPanel}: {
   getSelection:()=>Promise<string>;
   addGraphToBoard:(formulas:GraphFormula[],settings?:GraphSettings)=>void;
   getSelectedMatrix:()=>MatrixCells|null;
   addMatrixToBoard:(cells:MatrixCells)=>void;
+  addCardsToBoard:(cards:Flashcard[])=>void;
   onOpenPanel:()=>void;
 }){
   const [mode,setMode]=useState<Mode>('closed')
@@ -132,7 +134,7 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
       <button type="button" aria-label="Tarjetas de estudio" title="Tarjetas de estudio" className={mode==='cards'?'math-dock-active':''}
         onClick={()=>{onOpenPanel();setMode(m=>m==='cards'?'closed':'cards')}}><LuLayers size={20}/></button>
     </nav>
-    {mode==='cards'&&<FlashcardPanel onClose={()=>setMode('closed')} getSelection={getSelection}/>}
+    {mode==='cards'&&<FlashcardPanel onClose={()=>setMode('closed')} getSelection={getSelection} onInsert={addCardsToBoard}/>}
     {mode!=='closed'&&mode!=='cards'&&<aside className={`math-panel ${mode==='graph'?'math-panel-graph':''}`} aria-label="Panel de matemáticas" onKeyDown={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()} onWheel={e=>e.stopPropagation()}>
       <header className="math-panel-heading"><strong>{mode==='calculator'?'Calculadora científica':'Graficar funciones'}</strong>
         <button className="math-panel-close" type="button" onClick={()=>setMode('closed')} aria-label="Cerrar panel"><FiX/></button></header>

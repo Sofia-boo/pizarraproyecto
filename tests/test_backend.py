@@ -143,6 +143,26 @@ class BackendTest(unittest.TestCase):
                 self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 2, 'content': invalid}).status_code, 422)
             self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], matrix)
 
+    def test_study_notes_preserve_full_answers_and_reject_invalid_content(self):
+        import copy
+        with TestClient(self.app, base_url='https://testserver') as client:
+            client.post('/api/auth/guest', json={'name': 'Study notes validator', 'password': 'study-password'})
+            board = client.post('/api/boards', json={'name': 'Tarjetas adhesivas'}).json()['id']
+            study = {'question': 'Pregunta', 'answer': 'a'*20000, 'deck': 'General', 'face': 'answer'}
+            note = {'id': 'study-note', 'kind': 'rectangle', 'visualType': 'sticky', 'x': 0, 'y': 0,
+                    'width': 280, 'height': 230, 'color': '#b79b43', 'strokeWidth': 1,
+                    'note': {'text': 'a'*10000, 'background': '#fff0a6', 'fontSize': 18, 'study': study}}
+            content = {'strokes': [], 'texts': [], 'shapes': [note]}
+            result = client.put(f'/api/boards/{board}', json={'version': 0, 'content': content})
+            self.assertEqual(result.status_code, 200, result.text)
+            for changes in ({'answer': 'x'*20001}, {'question': ''}, {'deck': 'x'*101},
+                            {'face': 'invalid'}, {'alternatives': [{'question': 'q', 'answer': 123}]}):
+                invalid = copy.deepcopy(content)
+                invalid['shapes'][0]['note']['study'].update(changes)
+                result = client.put(f'/api/boards/{board}', json={'version': 1, 'content': invalid})
+                self.assertEqual(result.status_code, 422, result.text)
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], content)
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={

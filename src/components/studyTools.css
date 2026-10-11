@@ -16,6 +16,9 @@
 .matrix-result td {text-align:right;font:14px ui-monospace,monospace;}
 .study-help {font-size:12px;line-height:1.45;color:var(--math-text,var(--ui-muted,#64748b));opacity:.8;margin:0;}
 .study-actions {display:flex;flex-wrap:wrap;gap:6px;}
+.flashcard-insert {display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+.flashcard-choice {display:flex;gap:10px;align-items:flex-start;cursor:pointer;overflow-wrap:anywhere;}
+.flashcard-choice input[type=checkbox] {width:20px;height:20px;flex:none;margin:1px 0;accent-color:#4f46e5;cursor:pointer;}
 .study-actions button {flex:1;min-width:100px;}
 button.study-primary,.flashcard-panel button.study-primary {background:#4f46e5;color:#fff;border:1px solid #4f46e5;border-radius:8px;padding:10px;}
 .study-menu {display:grid;grid-template-columns:1fr 1fr;gap:8px;}

@@ -7,11 +7,13 @@ import { intervalLabel, newFlashcard, reviewCard } from '../study/flashcards'
 import type { Flashcard, Grade } from '../study/flashcards'
 import { importStudyBackup, studyBackup } from '../study/backup'
 import './studyTools.css'
+import { MAX_STUDY_NOTES } from '../canvas/studyCards'
 
 type Entry={key:string;record:PersonalRecord<Flashcard>}
-export default function FlashcardPanel({onClose,getSelection}:{onClose:()=>void;getSelection:()=>Promise<string>}) {
+export default function FlashcardPanel({onClose,getSelection,onInsert}:{onClose:()=>void;getSelection:()=>Promise<string>;onInsert:(cards:Flashcard[])=>void}) {
   const [entries,setEntries]=useState<Entry[]>([]),[tab,setTab]=useState<'review'|'edit'|'list'>('review')
-  const [deck,setDeck]=useState('Todas'),[question,setQuestion]=useState(''),[answer,setAnswer]=useState(''),[editDeck,setEditDeck]=useState('General')
+  const [deck,setDeck]=useState(''),[question,setQuestion]=useState(''),[answer,setAnswer]=useState(''),[editDeck,setEditDeck]=useState('General')
+  const [selected,setSelected]=useState<Set<string>>(()=>new Set())
   const [editing,setEditing]=useState<Entry|null>(null),[source,setSource]=useState<string>(),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[now,setNow]=useState(()=>Date.now()),[revealedCard,setRevealedCard]=useState<string|null>(null)
   const fileRef=useRef<HTMLInputElement>(null)
@@ -22,7 +24,8 @@ export default function FlashcardPanel({onClose,getSelection}:{onClose:()=>void;
     const timer=setInterval(()=>setNow(Date.now()),30000)
     return ()=>{active=false;clearInterval(timer)}
   },[])
-  const filtered=entries.filter(e=>deck==='Todas'||e.record.value.deck===deck)
+  const filtered=entries.filter(e=>!deck||e.record.value.deck===deck)
+  const chosen=filtered.filter(entry=>selected.has(entry.key))
   const due=filtered.filter(e=>e.record.value.due<=now).sort((a,b)=>a.record.value.due-b.record.value.due||a.record.value.created-b.record.value.created)
   const current=due[0]
   const revealed=!!current&&revealedCard===current.key
@@ -53,12 +56,19 @@ export default function FlashcardPanel({onClose,getSelection}:{onClose:()=>void;
       const link=document.createElement('a');link.href=url;link.download='pizarra-estudio.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
     })
   }
+  function insert(list:Entry[]) {
+    void action(async()=>{onInsert(list.map(entry=>entry.record.value));onClose()})
+  }
   return <aside className="flashcard-panel" aria-label="Tarjetas de estudio" onPointerDown={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape')onClose()}}>
     <header><strong>Tarjetas de estudio</strong><button type="button" aria-label="Cerrar tarjetas" onClick={onClose}><LuX/></button></header>
-    <label className="study-label">Mazo<select aria-label="Mazo de estudio" value={deck} onChange={e=>{setDeck(e.target.value);setRevealed(false)}}>
-      <option>Todas</option>{[...new Set(entries.map(e=>e.record.value.deck))].sort().map(name=><option key={name}>{name}</option>)}
+    <label className="study-label">Mazo<select aria-label="Mazo de estudio" value={deck} onChange={e=>{setDeck(e.target.value);setSelected(new Set());setRevealed(false)}}>
+      <option value="">Todas</option>{[...new Set(entries.map(e=>e.record.value.deck))].sort().map(name=><option key={name}>{name}</option>)}
     </select></label>
     <p aria-live="polite">{due.length} pendientes · {filtered.length} tarjetas</p>
+    {filtered.length>0&&<div className="flashcard-insert">
+      <button type="button" disabled={busy||!loaded} onClick={()=>insert(filtered)}>{deck?'Poner mazo en pizarra':'Poner todas en pizarra'}</button>
+      <p className="study-help">Copias adhesivas con pregunta y respuesta. Podés elegir tarjetas en Mis tarjetas. Hasta {MAX_STUDY_NOTES} por vez.</p>
+    </div>}
     <nav aria-label="Secciones de tarjetas"><button type="button" aria-pressed={tab==='review'} onClick={()=>{setTab('review');setNow(Date.now());setRevealed(false)}}>Repasar</button>
       <button type="button" aria-pressed={tab==='edit'} onClick={()=>edit(null)}>Nueva tarjeta</button>
       <button type="button" aria-pressed={tab==='list'} onClick={()=>setTab('list')}>Mis tarjetas</button></nav>
@@ -81,8 +91,13 @@ export default function FlashcardPanel({onClose,getSelection}:{onClose:()=>void;
         </>}
       </>:<p>{filtered.length?'No quedan tarjetas pendientes.':'Creá tu primera tarjeta para empezar a repasar.'}</p>}
     </div>}
-    {tab==='list'&&<div className="flashcard-list">{filtered.map(entry=>{const card=entry.record.value;return <article key={entry.key}>
-      <strong>{card.question}</strong><small>{card.deck} · {card.reviews.length} repasos · Próximo: {new Date(card.due).toLocaleString('es-AR')}</small>
+    {tab==='list'&&<div className="flashcard-list">
+      {filtered.length>0&&<div className="study-actions">
+        <button type="button" disabled={busy} onClick={()=>setSelected(chosen.length===filtered.length?new Set():new Set(filtered.map(entry=>entry.key)))}>{chosen.length===filtered.length?'Quitar selección':'Seleccionar todas'}</button>
+        <button type="button" className="study-primary" disabled={busy||!chosen.length} onClick={()=>insert(chosen)}>Poner seleccionadas en pizarra ({chosen.length})</button>
+      </div>}
+      {filtered.map(entry=>{const card=entry.record.value;return <article key={entry.key}>
+      <label className="flashcard-choice"><input type="checkbox" aria-label={`Seleccionar tarjeta: ${card.question}`} checked={selected.has(entry.key)} onChange={e=>setSelected(old=>{const next=new Set(old);if(e.target.checked)next.add(entry.key);else next.delete(entry.key);return next})}/><strong>{card.question}</strong></label><small>{card.deck} · {card.reviews.length} repasos · Próximo: {new Date(card.due).toLocaleString('es-AR')}</small>
       {card.lastReview!==null&&<small>Último: {new Date(card.lastReview).toLocaleString('es-AR')} · Factor: {card.difficulty.toFixed(2)}</small>}
       <details><summary>Historial de repasos</summary>{card.reviews.length?card.reviews.map((r,i)=><p key={i}>{new Date(r.at).toLocaleString('es-AR')} · {({again:'Otra vez',hard:'Difícil',good:'Bien',easy:'Fácil'})[r.grade]} · {intervalLabel(r.intervalDays)}</p>):<p>Sin repasos todavía.</p>}</details>
       <div className="study-actions"><button type="button" disabled={busy} onClick={()=>edit(entry)}>Editar tarjeta</button>

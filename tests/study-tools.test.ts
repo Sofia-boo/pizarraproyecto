@@ -4,6 +4,44 @@ import { DAY, newFlashcard, reviewCard, validateCard } from '../src/study/flashc
 import { academicTemplate } from '../src/canvas/academicTemplates'
 import { mergeVisual } from '../src/canvas/visualObjects'
 import { calculateScientific } from '../src/study/scientificCalculator'
+import { studyCardNotes, updateStudyNote } from '../src/canvas/studyCards'
+
+describe('study cards as native adhesive notes',()=>{
+  it('copies full content without personal progress and lays out independent notes for the viewport',()=>{
+    const cards=Array.from({length:4},(_,i)=>newFlashcard(`Pregunta ${i}`,'a'.repeat(20000),'General','private-board',1000))
+    cards[0]=reviewCard(cards[0],'good',2000)
+    const before=structuredClone(cards)
+    let id=0
+    const notes=studyCardNotes(cards,{x:500,y:400},()=>`note-${++id}`,1100)
+    expect(new Set(notes.map(n=>n.id)).size).toBe(4)
+    expect(notes[1].x-notes[0].x).toBeGreaterThan(notes[0].width)
+    expect(notes[3].y-notes[0].y).toBeGreaterThan(notes[0].height)
+    expect(notes[0].note!.study).toEqual({question:'Pregunta 0',answer:'a'.repeat(20000),deck:'General',face:'question'})
+    const flipped=updateStudyNote(notes[0].note!,{face:'answer'})
+    expect(flipped.text).toHaveLength(10000)
+    expect(flipped.study!.answer).toHaveLength(20000)
+    expect(cards).toEqual(before)
+    const mobile=studyCardNotes(cards,{x:195,y:400},()=>`note-${++id}`,390)
+    expect(mobile.every(n=>n.x>=0&&n.x+n.width<=390)).toBe(true)
+    expect(mobile[1].y-mobile[0].y).toBeGreaterThan(mobile[0].height)
+    expect(()=>studyCardNotes([], {x:0,y:0},()=>'',1000)).toThrow('al menos')
+    expect(()=>studyCardNotes(Array(101).fill(cards[0]),{x:0,y:0},()=>'',1000)).toThrow('100')
+  })
+  it('merges flipping and edits independently, retaining full simultaneous answers',()=>{
+    const base=studyCardNotes([newFlashcard('Pregunta','Original')],{x:0,y:0},()=>'note',1000)[0]
+    const flip={...base,note:updateStudyNote(base.note!,{face:'answer'})}
+    const edit={...base,note:updateStudyNote(base.note!,{answer:'Respuesta remota'})}
+    const merged=mergeVisual(base,flip,edit)
+    expect(merged.note!.study).toMatchObject({face:'answer',answer:'Respuesta remota'})
+    expect(merged.note!.text).toContain('Respuesta remota')
+    expect(merged.note!.study!.alternatives).toBeUndefined()
+    const local={...base,note:updateStudyNote(base.note!,{answer:'a'.repeat(20000)})}
+    const remote={...base,note:updateStudyNote(base.note!,{answer:'b'.repeat(20000)})}
+    const conflict=mergeVisual(base,local,remote)
+    expect(conflict.note!.study!.answer).toBe('a'.repeat(20000))
+    expect(conflict.note!.study!.alternatives).toEqual([{question:'Pregunta',answer:'b'.repeat(20000)}])
+  })
+})
 
 describe('scientific inverse trigonometry',()=>{
   it('accepts Spanish/English inverse names and returns the selected angle unit',()=>{

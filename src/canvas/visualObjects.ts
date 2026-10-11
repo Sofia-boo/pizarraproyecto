@@ -13,7 +13,12 @@ export type Connector = {
   startCap:ConnectorCap;endCap:ConnectorCap;style:ConnectorStyle;label:string
 }
 export type AcademicSymbol = 'and'|'or'|'not'|'xor'|'matrix'|'vector'|'resistor'|'capacitor'|'ground'|'voltage'|'code'
-export type NoteData = {text:string;background:string;fontSize:number;alternatives?:string[]}
+export type StudyContent = {question:string;answer:string}
+export type StudyNote = StudyContent & {deck:string;face:'question'|'answer';alternatives?:StudyContent[]}
+export type NoteData = {text:string;background:string;fontSize:number;alternatives?:string[];study?:StudyNote}
+export function studyNoteText(study:StudyNote):string {
+  return `${study.deck} · ${study.face==='question'?'Pregunta':'Respuesta'}\n${study[study.face]}`.slice(0,10000)
+}
 export type ShapeItem = Bounds & {
   id:string;kind:ShapeKind;color:string;strokeWidth:number;reverse?:boolean;backwards?:boolean;rotation?:number;
   groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol';
@@ -183,7 +188,15 @@ export function mergeVisual(base:ShapeItem,local:ShapeItem,remote:ShapeItem):Sha
     result.matrix=shape.map((row,r)=>row.map((value,c)=>local.matrix![r]?.[c]!==undefined&&local.matrix![r][c]!==base.matrix![r]?.[c]?local.matrix![r][c]:remote.matrix![r]?.[c]??value))
     result.label=matrixLabel(result.matrix).slice(0,2000)
   }
-  if(base.note && local.note && remote.note && local.note.text!==base.note.text && remote.note.text!==base.note.text && local.note.text!==remote.note.text) {
+  if(base.note?.study&&local.note?.study&&remote.note?.study&&result.note?.study) {
+    const b=base.note.study,l=local.note.study,r=remote.note.study
+    if((['question','answer'] as const).some(key=>l[key]!==b[key]&&r[key]!==b[key]&&l[key]!==r[key])) {
+      const variants=[...(l.alternatives??[]),...(r.alternatives??[]),{question:r.question,answer:r.answer}]
+      result.note.study.alternatives=variants.filter((variant,index)=>!variants.slice(0,index).some(other=>same(other,variant))).slice(-64)
+    }
+    result.note.text=studyNoteText(result.note.study)
+  }
+  if(!result.note?.study && base.note && local.note && remote.note && local.note.text!==base.note.text && remote.note.text!==base.note.text && local.note.text!==remote.note.text) {
     result.note={...result.note!,alternatives:[...new Set([...(local.note.alternatives??[]),...(remote.note.alternatives??[]),remote.note.text])].filter(text=>text!==result.note!.text)}
   }
   return result

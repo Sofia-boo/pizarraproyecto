@@ -3,9 +3,9 @@ import type { ConnectorCap, ResolveObject, ShapeItem } from './visualObjects'
 import type { Point } from '../storage/database'
 import { matrixCells } from '../study/matrices'
 
-function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number):string[] {
+function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number,limit=10000):string[] {
   const lines:string[]=[]
-  for(const paragraph of text.slice(0,10000).split('\n')) {
+  for(const paragraph of text.slice(0,limit).split('\n')) {
     let line=''
     for(const char of paragraph) {
       if(line && ctx.measureText(line+char).width>width){lines.push(line);line=''}
@@ -50,6 +50,25 @@ export function paintVisual(ctx:CanvasRenderingContext2D,item:ShapeItem,resolve:
     ctx.save();ctx.shadowColor='#0002';ctx.shadowBlur=7;ctx.shadowOffsetY=3
     ctx.fillStyle=note.background;ctx.fillRect(x,y,w,h);ctx.restore()
     ctx.strokeStyle='#0002';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h)
+    if(note.study) {
+      const study=note.study,scale=note.fontSize/18,inset=14*scale,header=42*scale,footer=25*scale
+      ctx.save();ctx.beginPath();ctx.rect(x+inset,y+inset,Math.max(1,w-inset*2),Math.max(1,h-inset*2));ctx.clip()
+      ctx.fillStyle='#202530';ctx.textBaseline='top';ctx.textAlign='left'
+      ctx.font=`600 ${11*scale}px system-ui,sans-serif`
+      ctx.fillText(`${study.deck} · ${study.face==='question'?'PREGUNTA':'RESPUESTA'}`,x+inset,y+inset,Math.max(1,w-inset*2-18*scale))
+      ctx.strokeStyle='#20253022';ctx.beginPath();ctx.moveTo(x+inset,y+header-8*scale);ctx.lineTo(x+w-inset,y+header-8*scale);ctx.stroke()
+      ctx.font=`${11*scale}px system-ui,sans-serif`;ctx.fillStyle='#20253099'
+      ctx.fillText('Tarjeta de estudio',x+inset,y+h-footer,Math.max(1,w-inset*2))
+      ctx.beginPath();ctx.rect(x+inset,y+header,Math.max(1,w-inset*2),Math.max(1,h-header-footer-8*scale));ctx.clip()
+      ctx.fillStyle='#202530';ctx.font=`${study.face==='question'?'600 ':''}${note.fontSize}px system-ui,sans-serif`
+      const lines=wrapped(ctx,study[study.face],Math.max(1,w-inset*2),20000),lineHeight=note.fontSize*1.35
+      const visible=Math.max(1,Math.floor((h-header-footer-8*scale)/lineHeight))
+      lines.slice(0,visible).forEach((line,i)=>ctx.fillText(i===visible-1&&lines.length>visible?`${line.slice(0,-1)}…`:line,x+inset,y+header+i*lineHeight))
+      ctx.restore()
+      // A small folded corner gives the card the appearance of an adhesive note.
+      ctx.save();ctx.fillStyle='#00000012';ctx.beginPath();ctx.moveTo(x+w-18*scale,y);ctx.lineTo(x+w,y+18*scale);ctx.lineTo(x+w-18*scale,y+18*scale);ctx.closePath();ctx.fill();ctx.restore()
+      return true
+    }
     ctx.save();ctx.beginPath();ctx.rect(x+12,y+12,Math.max(1,w-24),Math.max(1,h-24));ctx.clip()
     ctx.fillStyle='#202530';ctx.font=`${note.fontSize}px system-ui,sans-serif`;ctx.textBaseline='top'
     const lines=wrapped(ctx,note.text||'Escribí una idea…',Math.max(1,w-28))

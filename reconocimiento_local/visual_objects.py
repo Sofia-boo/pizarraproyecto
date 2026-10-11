@@ -57,6 +57,17 @@ def validate_visual_content(content: dict):
             require(text(note.get('text'), 10000) and number(note.get('fontSize'), .1, 10000), 'El texto de la nota no es válido.')
             require(isinstance(note.get('background'), str) and re.fullmatch(r'#[0-9a-fA-F]{6}', note['background']),
                     'El color de la nota no es válido.')
+            if 'study' in note:
+                study = note['study']
+                require(isinstance(study, dict), 'Faltan los datos de la tarjeta adhesiva.')
+                require(text(study.get('question'), 10000) and bool(study['question'].strip())
+                        and text(study.get('answer'), 20000) and bool(study['answer'].strip())
+                        and text(study.get('deck'), 100) and study.get('face') in ('question', 'answer'),
+                        'La pregunta, respuesta o cara de la tarjeta adhesiva no es válida.')
+                variants = study.get('alternatives', [])
+                require(isinstance(variants, list) and len(variants) <= 64 and all(
+                    isinstance(v, dict) and text(v.get('question'), 10000) and text(v.get('answer'), 20000)
+                    for v in variants), 'Las versiones de la tarjeta adhesiva no son válidas.')
             alternatives = note.get('alternatives', [])
             require(isinstance(alternatives, list) and len(alternatives) <= 64 and all(text(s, 10000) for s in alternatives),
                     'Las versiones de texto de la nota no son válidas.')
