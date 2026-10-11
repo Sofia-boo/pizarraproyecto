@@ -853,6 +853,7 @@ function App() {
   const activeStroke = useRef<Stroke | null>(null)
   const penBreakRef = useRef<PenBreak | null>(null)
   const penTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const penHoldRef=useRef<{event:ReactPointerEvent<HTMLCanvasElement>;lastMove?:ReactPointerEvent<HTMLCanvasElement>;timer:ReturnType<typeof setTimeout>;fired:boolean}|null>(null)
   const [treePanel,setTreePanel]=useState<{initial?:string}|null>(null)
   const [,refreshSelection]=useState(0)
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 })
@@ -2641,8 +2642,8 @@ function App() {
   // cuando hay al menos dos punteros táctiles sobre el lienzo.
   function readTouchGesture(canvas: HTMLCanvasElement): { center: Point; distance: number } | null {
     const fingers = [...touchPointersRef.current.values()]
-    if (fingers.length < 2) return null
-    const [a, b] = fingers
+    if (fingers.length < 1) return null
+    const a=fingers[0],b=fingers[1]??a
     const rect = canvas.getBoundingClientRect()
     return {
       center: { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top },
@@ -2662,6 +2663,63 @@ function App() {
     }
     return true
   }
+
+  function clearPenHold(){
+    const hold=penHoldRef.current
+    if(hold)clearTimeout(hold.timer)
+    penHoldRef.current=null
+    return hold
+  }
+  function tabletPointerDown(e:ReactPointerEvent<HTMLCanvasElement>){
+    if(e.pointerType==='touch'&&penHoldRef.current){e.preventDefault();return}
+    if(e.pointerType!=='pen'){clearPenHold();pointerDown(e);return}
+    if(e.button!==0||!loadedRef.current||pointerRef.current!==null||touchPointersRef.current.size)return
+    clearPenHold()
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    // Do not draw or erase before the pen moves: a stationary hold is a menu,
+    // while an ordinary tap is replayed on release. Keep the original start point.
+    const saved={...e,currentTarget:e.currentTarget,preventDefault:()=>e.preventDefault()} as ReactPointerEvent<HTMLCanvasElement>
+    const hold={event:saved,fired:false,timer:setTimeout(()=>{
+      if(penHoldRef.current!==hold)return
+      hold.fired=true
+      openBoardContextMenu(saved.clientX,saved.clientY,saved.target as HTMLElement)
+    },3000)}
+    penHoldRef.current=hold
+  }
+  function tabletPointerMove(e:ReactPointerEvent<HTMLCanvasElement>){
+    const hold=penHoldRef.current
+    if(hold&&hold.event.pointerId===e.pointerId){
+      sendCursorPosition(e.clientX,e.clientY)
+      if(hold.fired)return
+      if(Math.hypot(e.clientX-hold.event.clientX,e.clientY-hold.event.clientY)<=4){
+        hold.lastMove={...e,currentTarget:e.currentTarget} as ReactPointerEvent<HTMLCanvasElement>
+        return
+      }
+      clearPenHold();pointerDown(hold.event)
+    }
+    pointerMove(e)
+  }
+  function tabletPointerUp(e:ReactPointerEvent<HTMLCanvasElement>){
+    const hold=penHoldRef.current
+    if(hold&&hold.event.pointerId===e.pointerId){
+      clearPenHold()
+      if(hold.fired){if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);return}
+      pointerDown(hold.event)
+      if(hold.lastMove)pointerMove(hold.lastMove)
+    }
+    pointerUp(e)
+  }
+  function tabletPointerCancel(e:ReactPointerEvent<HTMLCanvasElement>){
+    if(penHoldRef.current?.event.pointerId===e.pointerId){clearPenHold();return}
+    pointerCancel(e)
+  }
+  useEffect(()=>{
+    const cancel=()=>clearPenHold()
+    window.addEventListener('blur',cancel)
+    window.addEventListener('pagehide',cancel)
+    return()=>{cancel();window.removeEventListener('blur',cancel);window.removeEventListener('pagehide',cancel)}
+  },[])
 
   function pointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if(contextMenu) setContextMenu(null)
@@ -4365,10 +4423,14 @@ function App() {
     const target=event.target as HTMLElement
     if(target.closest('input,textarea,select,[contenteditable],button,.toolbar,.sheet-inline-editor'))return
     event.preventDefault()
+    if(penHoldRef.current)return
+    openBoardContextMenu(event.clientX,event.clientY,target)
+  }
+  function openBoardContextMenu(clientX:number,clientY:number,target:HTMLElement) {
     const clickedVideo=target.closest<HTMLElement>('[data-video-id]')?.dataset.videoId
-    if(clickedVideo){selectElement({kind:'video',id:clickedVideo});setContextMenu({x:Math.min(event.clientX,window.innerWidth-215),y:Math.min(event.clientY,window.innerHeight-340)});return}
+    if(clickedVideo){selectElement({kind:'video',id:clickedVideo});setContextMenu({x:Math.max(8,Math.min(clientX,window.innerWidth-215)),y:Math.max(8,Math.min(clientY,window.innerHeight-340))});return}
     const bounds=groupBounds()
-    const world=toWorld(event.clientX,event.clientY)
+    const world=toWorld(clientX,clientY)
     const inside=bounds&&world.x>=bounds.x&&world.x<=bounds.x+bounds.width&&world.y>=bounds.y&&world.y<=bounds.y+bounds.height
     if(!inside){
       const found=[...everySelection()].reverse().find(sel=>{
@@ -4377,7 +4439,7 @@ function App() {
       })
       selectElement(found??null)
     }
-    setContextMenu({x:Math.min(event.clientX,window.innerWidth-215),y:Math.min(event.clientY,window.innerHeight-265)})
+    setContextMenu({x:Math.max(8,Math.min(clientX,window.innerWidth-215)),y:Math.max(8,Math.min(clientY,window.innerHeight-265))})
   }
 
   function selectAllBoard() {
@@ -4486,13 +4548,13 @@ function App() {
         {following&&<button type="button" className="live-follow-stop" onClick={stopFollowing}>Dejar de seguir</button>}
         {!liveConnected&&<span className="live-presence-empty" title="Reconectando">…</span>}
       </aside>}
-      <canvas ref={canvasRef} onPointerDown={pointerDown} onPointerMove={pointerMove}
+      <canvas ref={canvasRef} onPointerDown={tabletPointerDown} onPointerMove={tabletPointerMove}
         onPointerLeave={e => {
           // No ocultar los controles cuando el puntero pasa del canvas a un botón +.
           const next = e.relatedTarget
           if (!(next instanceof Element) || !next.closest('.sheet-hover-controls')) setHoveredTableId(null)
         }}
-        onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={pointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
+        onPointerUp={tabletPointerUp} onPointerCancel={tabletPointerCancel} onLostPointerCapture={tabletPointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
         <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y}}>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{copySelected();setContextMenu(null)}}>Copiar <small>Ctrl+C</small></button>

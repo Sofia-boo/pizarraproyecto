@@ -5,7 +5,8 @@ import './visualTools.css'
 
 export default function AcademicLibrary({onInsert,onBinaryExpression,onPrint,hasPages}:{onInsert:(id:TemplateId)=>void;onBinaryExpression:()=>void;onPrint:()=>void;hasPages:boolean}) {
   const [query,setQuery]=useState('')
-  const items=ACADEMIC_TEMPLATES.filter(item=>`${item.name} ${item.category}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')))
+  const hidden=new Set(['directed-graph','undirected-graph','state-machine','and','or','not','xor','resistor','capacitor','voltage','ground','code'])
+  const items=ACADEMIC_TEMPLATES.filter(item=>!hidden.has(item.id)&&`${item.name} ${item.category}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')))
   return <div className="toolbar-popover academic-library" role="dialog" aria-label="Biblioteca de elementos académicos">
     <strong>Elementos académicos</strong>
     <input autoFocus type="search" aria-label="Buscar elemento académico" placeholder="Buscar figura o tema…" value={query} onChange={e=>setQuery(e.target.value)}/>

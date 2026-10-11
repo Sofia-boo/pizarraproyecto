@@ -26,6 +26,7 @@
 .anon-profile-menu>input{width:100%;padding:9px;border:1px solid #61708d;border-radius:8px;color:#fff;background:#151d2b;font:inherit;box-sizing:border-box}
 .anon-profile-menu .anon-emoji-grid button{width:35px;margin:0;padding:0;border:1px solid #56677e;background:#172031}
 .anon-success{color:#bbf7d0!important}
+.tablet-install{margin:12px 0}.tablet-install-help{padding:10px 12px;border:1px solid #61708d;border-radius:12px;background:#151d2b;font-size:13px;line-height:1.5}.tablet-install-help p{margin:6px 0;color:#cbd5e1}.tablet-install .anon-secondary{width:100%;min-height:44px}
 .anon-avatar{font-size:18px}
 @media(max-width:520px){.anon-entry{padding:17px}.anon-tabs button{font-size:11px}.anon-emoji-grid button{width:33px;height:33px;font-size:20px}}
 

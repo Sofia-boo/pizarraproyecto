@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import App from './App'
+import InstallTablet from './components/InstallTablet'
 import { getActiveBoardId, getLibrary, privateBoard, setStorageSession, requestPersistentStorage } from './biblioteca'
 import './anonymous_users.css'
 
@@ -27,7 +28,7 @@ function post<T>(path:string,data:unknown):Promise<T> {
 
 export default function AnonymousGate(){
   const [profile,setProfile]=useState<Profile|null>(null)
-  const [localMode,setLocalMode]=useState(sessionStorage.getItem('pizarra-modo-local')==='1')
+  const [localMode,setLocalMode]=useState(sessionStorage.getItem('pizarra-modo-local')==='1'||localStorage.getItem('pizarra-modo-local-preferido')==='1')
   const [loading,setLoading]=useState(true)
   const [joining,setJoining]=useState(false)
   const [inviteProcessed,setInviteProcessed]=useState(!new URLSearchParams(location.search).has('invite'))
@@ -65,6 +66,7 @@ export default function AnonymousGate(){
       return
     }
     let alive=true
+    if(!navigator.onLine){setProfile(null);setLoading(false);return}
     void api<Profile>('/api/auth/me').then(u=>{if(alive){
       setStorageSession(u.id)
       localStorage.setItem('pizarra-perfil-copia',JSON.stringify(u))
@@ -95,6 +97,7 @@ export default function AnonymousGate(){
 
   function enterLocal() {
     sessionStorage.setItem('pizarra-modo-local','1')
+    localStorage.setItem('pizarra-modo-local-preferido','1')
     void requestPersistentStorage()
     setLocalMode(true)
   }
@@ -147,6 +150,7 @@ export default function AnonymousGate(){
     localStorage.removeItem('pizarra_activa')
     localStorage.removeItem('pizarra-perfil-copia')
     sessionStorage.removeItem('pizarra-modo-local')
+    localStorage.removeItem('pizarra-modo-local-preferido')
     setStorageSession(null,false)
     window.location.reload()
   }
@@ -204,6 +208,7 @@ export default function AnonymousGate(){
       <h1>Tu pizarra</h1>
       <p>Las privadas se guardan en este dispositivo. Ingresá para usar las compartidas.</p>
       <button className="anon-secondary" onClick={enterLocal}>Abrir privadas y copias de este dispositivo</button>
+      <InstallTablet/>
       <div className="anon-tabs">
         <button className={mode==='guest'?'active':''} onClick={()=>{setMode('guest');setError('')}}>Crear usuario</button>
         <button className={mode==='login'?'active':''} onClick={()=>{setMode('login');setError('')}}>Ingresar</button>
@@ -246,7 +251,8 @@ export default function AnonymousGate(){
       {menuOpen&&<div className="anon-profile-menu">
         <strong>{localMode?'Modo local':profile.is_admin?'Administrador':profile.display_name}</strong>
         <p>Privadas: este dispositivo. Compartidas: servidor y copia local.</p>
-        {localMode&&<button onClick={()=>{sessionStorage.removeItem('pizarra-modo-local');window.location.reload()}}>Conectar con el servidor / ingresar</button>}
+        <InstallTablet/>
+        {localMode&&<button onClick={()=>{sessionStorage.removeItem('pizarra-modo-local');localStorage.removeItem('pizarra-modo-local-preferido');window.location.reload()}}>Conectar con el servidor / ingresar</button>}
         {!localMode&&<button onClick={()=>setChangeEmoji(v=>!v)}>Cambiar emoji</button>}
         {changeEmoji&&<div className="anon-emoji-grid anon-emoji-menu" role="group" aria-label="Emoji de perfil">{EMOJIS.map(item=><button type="button" key={item} disabled={busy} title={item} onClick={()=>void updateEmoji(item)}>{item}</button>)}</div>}
         {!localMode&&<button onClick={()=>void openSharing()}>Compartir pizarra actual</button>}

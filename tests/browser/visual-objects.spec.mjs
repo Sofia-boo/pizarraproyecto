@@ -116,7 +116,19 @@ test('private notes and academic templates support transform, group, layers, und
   await page.keyboard.press('Control+a');await page.keyboard.press('Delete')
   await expect.poll(async()=>(await cachedShapes(page)).length).toBe(0)
   await page.getByRole('button',{name:'Elementos académicos',exact:true}).click()
-  await page.getByRole('button',{name:/Puerta XOR/}).click()
+  await expect(page.getByRole('button',{name:/Puerta XOR/})).toHaveCount(0)
+  // Removed templates remain editable in boards saved before the menu change.
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction('boards','readwrite'),store=tx.objectStore('boards'),request=store.get(localStorage.getItem('pizarra_activa'))
+      request.onsuccess=()=>{const value=request.result;value.content.shapes=[{id:'legacy-xor',kind:'rectangle',visualType:'symbol',symbol:'xor',x:200,y:200,width:140,height:90,color:'#334155',strokeWidth:2,label:'XOR'}];store.put(value)}
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)
+    });db.close()
+  })
+  await page.reload()
+  await page.getByRole('button',{name:'Seleccionar área',exact:true}).click()
+  await page.keyboard.press('Control+a')
   await expect.poll(async()=>(await cachedShapes(page))[0]?.symbol).toBe('xor')
   await page.getByRole('button',{name:'Editar elemento',exact:true}).click()
   await page.getByRole('textbox',{name:'Texto del elemento académico'}).fill('XOR')

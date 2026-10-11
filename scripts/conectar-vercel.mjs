@@ -25,7 +25,11 @@ writeFileSync(new URL('../vercel.json', import.meta.url), JSON.stringify({
     {source:'/api/:path*',destination:`${destination.origin}/api/:path*`},
     {source:'/recognize/:path*',destination:`${destination.origin}/recognize/:path*`},
   ],
-  headers:[{source:'/api/:path*',headers:[{key:'Cache-Control',value:'private, no-store'}]}],
+  headers:[
+    {source:'/api/:path*',headers:[{key:'Cache-Control',value:'private, no-store'}]},
+    {source:'/sw.js',headers:[{key:'Cache-Control',value:'no-cache'}]},
+    {source:'/manifest.webmanifest',headers:[{key:'Cache-Control',value:'no-cache'}]},
+  ],
 }, null, 2) + '\n')
 writeFileSync(new URL('../hosting.local.json', import.meta.url), JSON.stringify({
   publicOrigin:publicSite.origin,backendOrigin:destination.origin,
