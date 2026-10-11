@@ -221,11 +221,11 @@ test('real backend synchronizes notes and connectors across contributors, includ
   // Expression-created trees use the existing API and preserve their anchors in B's copy.
   await a.getByRole('button',{name:'Elementos académicos',exact:true}).click()
   await a.getByRole('button',{name:'Árbol desde expresión…',exact:true}).click()
-  await a.getByRole('textbox',{name:'Expresión del árbol binario'}).fill('(R L (D . E))')
+  await a.getByRole('textbox',{name:'Expresión del árbol binario'}).fill('(R L (D E F G))')
   await a.getByRole('button',{name:'Crear árbol visual',exact:true}).click()
-  await expect.poll(async()=>(await cachedShapes(b)).filter(s=>['R','L','D','E'].includes(s.label)).length).toBe(4)
+  await expect.poll(async()=>(await cachedShapes(b)).filter(s=>['R','L','D','E','F','G'].includes(s.label)).length).toBe(6)
   await a.getByRole('button',{name:'Expresión del árbol',exact:true}).click()
-  await expect(a.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue('(R L (D . E))')
+  await expect(a.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue('(R L (D E F G))')
   await a.getByRole('button',{name:'Cancelar',exact:true}).click()
   // Observe actual frames on B, including the end of A's recovered pen stroke.
   const observer=await contexts[1].newCDPSession(b),frames=[]

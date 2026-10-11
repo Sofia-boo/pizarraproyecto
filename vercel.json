@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://government-focuses-rehab-violations.trycloudflare.com/api/:path*"
+      "destination": "https://hopes-bird-casino-joy.trycloudflare.com/api/:path*"
     },
     {
       "source": "/recognize/:path*",
-      "destination": "https://government-focuses-rehab-violations.trycloudflare.com/recognize/:path*"
+      "destination": "https://hopes-bird-casino-joy.trycloudflare.com/recognize/:path*"
     }
   ],
   "headers": [

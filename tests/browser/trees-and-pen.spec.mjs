@@ -19,7 +19,7 @@ test('binary trees convert between the example notation and editable canvas obje
   await page.getByRole('button',{name:'Árbol desde expresión…',exact:true}).click()
   const expression='(* (* A (* O (* P .))) (* U T))'
   await expect(page.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue(expression)
-  await page.getByRole('textbox',{name:'Expresión del árbol binario'}).fill('(A B)')
+  await page.getByRole('textbox',{name:'Expresión del árbol binario'}).fill('(A B')
   await page.getByRole('button',{name:'Crear árbol visual',exact:true}).click()
   await expect(page.getByRole('alert')).toBeVisible()
   expect((await content(page)).shapes??[]).toHaveLength(0)
@@ -40,6 +40,29 @@ test('binary trees convert between the example notation and editable canvas obje
   await page.setViewportSize({width:390,height:844})
   await expect(page.getByRole('button',{name:'Crear árbol visual',exact:true})).toBeInViewport()
   await page.screenshot({path:'test-results/arbol-expresion-movil.png'})
+})
+
+test('expressions with three or more children draw every branch and survive reload',async({page})=>{
+  await openLocal(page)
+  await page.getByRole('button',{name:'Elementos académicos',exact:true}).click()
+  await page.getByRole('button',{name:'Árbol desde expresión…',exact:true}).click()
+  const expression='(8 (4 2 6) (12 10 9 14))'
+  await page.getByRole('textbox',{name:'Expresión del árbol binario'}).fill(expression)
+  await page.getByRole('button',{name:'Crear árbol visual',exact:true}).click()
+  await expect.poll(async()=>(await content(page)).shapes?.length).toBe(15)
+  const shapes=(await content(page)).shapes,parent=shapes.find(s=>s.label==='12')
+  const edges=shapes.filter(s=>s.connector?.from?.object.id===parent.id)
+  expect(edges).toHaveLength(3)
+  expect(edges.map(e=>shapes.find(s=>s.id===e.connector.to.object.id).label)).toEqual(['10','9','14'])
+  await page.getByRole('button',{name:'Expresión del árbol',exact:true}).click()
+  await expect(page.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue(expression)
+  await page.getByRole('button',{name:'Cancelar',exact:true}).click()
+  await page.screenshot({path:'test-results/arbol-varios-hijos.png'})
+  await page.reload()
+  await page.getByRole('button',{name:'Seleccionar área',exact:true}).click()
+  await page.keyboard.press('Control+a')
+  await page.getByRole('button',{name:'Expresión del árbol',exact:true}).click()
+  await expect(page.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue(expression)
 })
 
 test('pen microcuts resume one stroke, hover draws nothing and a one-second lift separates strokes',async({page,context})=>{

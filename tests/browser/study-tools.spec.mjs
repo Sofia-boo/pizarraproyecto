@@ -16,6 +16,37 @@ async function matrixMode(page,name) {
   await page.getByRole('button',{name:'MENU · Elegir modo',exact:true}).click()
   await page.locator('.study-menu').getByRole('button',{name:new RegExp(`^${name} `)}).click()
 }
+
+test('calculator menu is compact and INV exposes arcsen, arccos and arctan in DEG/RAD',async({page})=>{
+  await openLocal(page)
+  await page.getByRole('button',{name:'Calculadora científica',exact:true}).click()
+  await expect(page.locator('.math-screen')).toHaveCount(0)
+  await expect(page.locator('.study-menu button')).toHaveCount(5)
+  await page.screenshot({path:'test-results/calculadora-menu-compacto.png'})
+  await page.locator('.study-menu').getByRole('button',{name:/^Cálculo Científica/}).click()
+  await page.getByRole('button',{name:'Funciones trigonométricas inversas',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Funciones trigonométricas inversas',exact:true})).toHaveAttribute('aria-pressed','true')
+  const input=page.getByRole('textbox',{name:'Expresión de la calculadora',exact:true})
+  for(const [name,value,result] of [['arcsen','0.5','30'],['arccos','0.5','60'],['arctan','1','45']]) {
+    await input.fill('')
+    await page.getByRole('button',{name,exact:true}).click()
+    await expect(input).toHaveValue(`${name==='arcsen'?'asin':name==='arccos'?'acos':'atan'}(`)
+    await expect(input).toBeFocused()
+    await page.keyboard.type(`${value})`);await page.keyboard.press('Enter')
+    await expect(page.locator('.math-screen-meta span').last()).toHaveText(result)
+  }
+  await page.getByRole('button',{name:'DEG',exact:true}).click()
+  await input.fill('arc tan(1)');await page.keyboard.press('Enter')
+  await expect(page.locator('.math-screen-meta span').last()).toHaveText('0.785398163397')
+  await page.setViewportSize({width:390,height:844})
+  await page.screenshot({path:'test-results/calculadora-inversas-movil.png'})
+  await input.fill('arcsen(2)');await page.keyboard.press('Enter')
+  await expect(page.getByRole('alert')).toContainText('entre -1 y 1')
+  await page.getByRole('button',{name:'Funciones trigonométricas inversas',exact:true}).click()
+  await expect(page.getByRole('button',{name:'sin',exact:true})).toBeVisible()
+  await matrixMode(page,'Matrices')
+  await expect(page.getByRole('button',{name:'Guardar MatA',exact:true})).toBeVisible()
+})
 test('vectors grow into editable matrices, import into A–E, calculate and survive reload',async({page})=>{
   test.setTimeout(60000)
   await openLocal(page)

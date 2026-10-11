@@ -4,7 +4,8 @@ import MatrixCalculator from './components/MatrixCalculator'
 import FlashcardPanel from './components/FlashcardPanel'
 import type { MatrixCells } from './study/matrices'
 import type { CSSProperties, DragEvent as ReactDragEvent } from 'react'
-import { create, all } from 'mathjs'
+import { calculateScientific } from './study/scientificCalculator'
+import type { AngleMode } from './study/scientificCalculator'
 import { BsCalculator } from 'react-icons/bs'
 import { FiActivity, FiX, FiPlus, FiMove } from 'react-icons/fi'
 import { GraphPlot } from './GraphPlot'
@@ -15,28 +16,9 @@ import { solveLinearSystem, parseLinearSystemText } from './LinearSystems'
 import type { LinearSystemResult } from './LinearSystems'
 import type { EquationResult } from './EquationSolvers'
 
-const math=create(all,{})
 type Mode='closed'|'calculator'|'graph'|'cards'
-type AngleMode='DEG'|'RAD'
 type CalcTab='menu'|'normal'|'roots'|'linear'|'matrices'|'matrix-calc'
 const palette=['#16a34a','#4f46e5','#ef4444','#f59e0b','#0284c7','#a855f7','#0d9488','#ea580c']
-const functionNames=new Set(['sin','cos','tan','asin','acos','atan','sinh','cosh','tanh','sqrt','abs','exp','log','ln','floor','ceil','round','min','max','nthRoot','sign','pow'])
-function compileSafe(source:string){
-  const ast=math.parse(source)
-  ast.traverse((node:{type:string;name?:string;fn?:{type?:string;name?:string}})=>{
-    if(!['OperatorNode','ConstantNode','ParenthesisNode','SymbolNode','FunctionNode'].includes(node.type))throw new Error('Operación no admitida.')
-    if(node.type==='SymbolNode'&&!functionNames.has(node.name??'')&&!['pi','e','tau','ans'].includes(node.name??''))throw new Error(`Símbolo no admitido: ${node.name}`)
-    if(node.type==='FunctionNode'&&(node.fn?.type!=='SymbolNode'||!functionNames.has(node.fn.name??'')))throw new Error('Función no admitida.')
-  })
-  return ast.compile()
-}
-function normalizeMath(raw:string){return raw.trim().replace(/[−–]/g,'-').replace(/[×·]/g,'*').replace(/÷/g,'/').replace(/π/g,'pi').replace(/\\sqrt\{([^{}]+)\}/g,'sqrt($1)').replace(/\^\{([^{}]+)\}/g,'^($1)').replace(/\b(sen)\s*\(/gi,'sin(')}
-function calcScope(mode:AngleMode,ans:number|null):Record<string,unknown>{
-  const k=mode==='DEG'?Math.PI/180:1
-  return {...(ans===null?{}:{ans}),sin:(x:number)=>Math.sin(x*k),cos:(x:number)=>Math.cos(x*k),tan:(x:number)=>Math.tan(x*k),
-    asin:(x:number)=>Math.asin(x)/k,acos:(x:number)=>Math.acos(x)/k,atan:(x:number)=>Math.atan(x)/k,
-    ln:(x:number)=>Math.log(x),log:(x:number)=>Math.log10(x)}
-}
 const keys=[
   ['sin(','sin'],['cos(','cos'],['tan(','tan'],['sqrt(','√'],
   ['log(','log'],['ln(','ln'],['^2','x²'],['^','xʸ'],
@@ -68,6 +50,7 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
   const [result,setResult]=useState('')
   const [answer,setAnswer]=useState<number|null>(null)
   const [angleMode,setAngleMode]=useState<AngleMode>('DEG')
+  const [inverseTrig,setInverseTrig]=useState(false)
   const [history,setHistory]=useState<{expression:string;output:string}[]>([])
   const [rows,setRows]=useState<GraphFormula[]>([newRow(0,'x^2+x')])
   const [graphSettings,setGraphSettings]=useState<GraphSettings>({})
@@ -91,13 +74,11 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
   }
   function evaluate(){
     try{
-      const expr=normalizeMath(calcInput)
-      if(!expr)return
-      const value=compileSafe(expr).evaluate(calcScope(angleMode,answer))
-      const output=math.format(value,{precision:12})
+      if(!calcInput.trim())return
+      const {output,answer:nextAnswer}=calculateScientific(calcInput,angleMode,answer)
       setResult(output);setCalcError('')
       setHistory(h=>[...h.slice(-7),{expression:calcInput,output}])
-      setAnswer(typeof value==='number'&&Number.isFinite(value)?value:null)
+      setAnswer(nextAnswer)
     }catch(e){setCalcError(e instanceof Error?e.message:'No se pudo calcular.');setResult('')}
   }
   function solveCurrent(){
@@ -159,7 +140,6 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
         {mode==='calculator'&&<section className="math-calculator">
           <button type="button" className="study-menu-button" onClick={()=>setCalcTab('menu')}>MENU · Elegir modo</button>
           {calcTab==='menu'&&<>
-            <div className="math-screen"><strong>MENU</strong><p>Seleccioná un modo</p></div>
             <div className="study-menu">{([['normal','Cálculo','Científica'],['roots','Raíces','Ecuaciones'],['linear','Sistemas','2 o 3 incógnitas'],
               ['matrices','Matrices','Memorias A–E · hasta 4×4'],['matrix-calc','Cálculo de matrices','det · × · + · − · transpuesta · inversa']] as [CalcTab,string,string][]).map(([key,label,description])=>
                 <button type="button" key={key} onClick={()=>setCalcTab(key)}>{label}<small>{description}</small></button>)}</div>
@@ -178,11 +158,16 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
           {calcError&&<p className="math-panel-error" role="alert">{calcError}</p>}
           <div className="math-calculator-actions">
             <button type="button" onClick={()=>setAngleMode(m=>m==='DEG'?'RAD':'DEG')}>{angleMode}</button>
+            <button type="button" aria-label="Funciones trigonométricas inversas" aria-pressed={inverseTrig} className={inverseTrig?'math-inverse-active':''} onClick={()=>setInverseTrig(value=>!value)}>INV</button>
             <button type="button" onClick={()=>void readSelection('calc')} disabled={reading}>{reading?'Leyendo…':'Usar'}</button>
             <button type="button" onClick={()=>{setCalcInput('');setResult('');setCalcError('')}}>AC</button>
             <button type="button" onClick={del}>DEL</button>
           </div>
-          <div className="math-keys">{keys.map(([value,label],i)=><button key={i} type="button" onClick={()=>addKey(value)}>{label}</button>)}
+          <div className="math-keys">{keys.map(([value,label],i)=>{
+            const inverse=inverseTrig&&i<3
+            const names=['arcsen','arccos','arctan']
+            return <button key={i} type="button" aria-label={inverse?names[i]:undefined} onClick={()=>addKey(inverse?`a${value}`:value)}>{inverse?['sen⁻¹','cos⁻¹','tan⁻¹'][i]:label}</button>
+          })}
             <button type="button" onClick={()=>addKey('%')}>%</button><button type="button" onClick={()=>addKey('!')}>!</button>
             <button type="button" className="math-key-equal" onClick={evaluate}>=</button>
           </div>

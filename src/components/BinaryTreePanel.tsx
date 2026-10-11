@@ -17,11 +17,11 @@ export default function BinaryTreePanel({initial,onTree,onExpression,onClose}:{
   }
   return <aside className="visual-inspector binary-tree-panel" aria-label="Árbol binario y expresión" onPointerDown={e=>e.stopPropagation()}
     onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape')onClose()}}>
-    <header><strong>Árbol binario</strong><button type="button" aria-label="Cerrar árbol binario" onClick={onClose}><LuX/></button></header>
+    <header><strong>Árbol · binario o varios hijos</strong><button type="button" aria-label="Cerrar árbol binario" onClick={onClose}><LuX/></button></header>
     <form onSubmit={e=>{e.preventDefault();run(tree=>{onTree(tree);onClose()})}}>
       <label>Expresión parentizada<textarea autoFocus spellCheck={false} aria-label="Expresión del árbol binario" maxLength={8000} rows={5}
         value={text} onChange={e=>{setText(e.target.value);setError('');setNotice('')}}/></label>
-      <p className="visual-help">(nodo izquierda derecha). Una letra o número es una hoja; el punto indica una rama vacía. Ejemplo: (8 4 (12 . 14)). Usá comillas para nombres con espacios.</p>
+      <p className="visual-help">(nodo hijo1 hijo2 …). Ejemplo: (12 10 9 14). En árboles binarios, el punto conserva una rama vacía: (8 . 14). Usá comillas para nombres con espacios.</p>
       {initial&&<p className="visual-help">La expresión refleja los nombres y conexiones del árbol seleccionado. Podés insertar una copia como texto o crear otro árbol.</p>}
       {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
       <button type="button" onClick={()=>run((_tree,expression)=>{onExpression(expression);onClose()})}>Insertar expresión en pizarra</button>

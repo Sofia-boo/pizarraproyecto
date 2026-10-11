@@ -12,7 +12,8 @@
 .math-screen { background:var(--math-screen,#f4f6fb); padding:9px; border-radius:10px; border:1px solid var(--math-border,#d4d9e2); margin-bottom:8px; }
 .math-screen-meta { display:flex; justify-content:space-between; color:var(--math-accent,#555fdc); min-height:17px; }
 .math-screen input { width:100%; height:40px; border:0; outline:0; background:transparent; color:inherit; font-size:21px; text-align:right; }
-.math-calculator-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-bottom:8px; }
+.math-calculator-actions { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; margin-bottom:8px; }
+.math-calculator-actions .math-inverse-active {color:var(--math-accent,#4355d4);background:var(--math-active,#e5e9ff);border-color:#7786eb;font-weight:700;}
 .math-calculator-actions button,.math-keys button,.math-graph-topbar button,.math-formula-actions button,.math-graph-export button { background:var(--math-key,#f7f9fc); color:inherit; border:1px solid var(--math-border,#d4d9e2); border-radius:8px; padding:8px 4px; }
 .math-keys { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
 .math-keys button { min-height:34px; }

@@ -10,6 +10,13 @@ if (destination.protocol !== 'https:' || destination.pathname !== '/' ||
 if (publicSite.protocol !== 'https:' || publicSite.pathname !== '/' || publicSite.search || publicSite.hash || publicSite.username || publicSite.password) {
   throw new Error('La dirección pública de Vercel debe ser una URL HTTPS raíz.')
 }
+// Do not replace a working configuration with an expired tunnel or an HTML page.
+try {
+  const response=await fetch(`${destination.origin}/healthz`,{signal:AbortSignal.timeout(10000)})
+  if(!response.ok||(await response.json()).ok!==true)throw new Error('Comprobación de salud incorrecta.')
+}catch(error){
+  throw new Error(`El servidor ${destination.origin} no está disponible. No se modificó la configuración. ${error.message}`)
+}
 // Vercel serves the frontend; only authenticated APIs go to the home computer.
 writeFileSync(new URL('../vercel.json', import.meta.url), JSON.stringify({
   $schema: 'https://openapi.vercel.sh/vercel.json',

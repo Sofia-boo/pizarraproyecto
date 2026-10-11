@@ -2,11 +2,12 @@ import type { Point } from '../storage/database'
 import { defaultConnector, isConnector, pointsBounds } from './visualObjects'
 import type { ShapeItem } from './visualObjects'
 
-export type BinaryTree = { value:string; left:BinaryTree|null; right:BinaryTree|null }
+// The name is retained for existing callers; nodes now also support general trees.
+export type BinaryTree = { value:string; children:(BinaryTree|null)[] }
 export const TREE_EXAMPLE = '(* (* A (* O (* P .))) (* U T))'
 const MAX_NODES=127, MAX_DEPTH=24
 
-/** Parenthesized binary notation: (node left right), leaf, or . for an empty branch. */
+/** (node child ...), leaf, or . for an empty binary branch. */
 export function parseBinaryTree(text:string):BinaryTree|null {
   if(text.length>8000)throw new Error('La expresión admite hasta 8000 caracteres.')
   const tokens=text.match(/"(?:\\.|[^"\\])*"|[()]|[^\s()]+/g)??[]
@@ -26,11 +27,15 @@ export function parseBinaryTree(text:string):BinaryTree|null {
     if(depth>MAX_DEPTH)throw new Error(`El árbol admite hasta ${MAX_DEPTH} niveles.`)
     if(++count>MAX_NODES)throw new Error(`El árbol admite hasta ${MAX_NODES} nodos.`)
     if(token==='(') {
-      const value=label(tokens[position++]),left=read(depth+1),right=read(depth+1)
-      if(tokens[position++]!==')')throw new Error('Cada paréntesis debe contener un nodo y sus dos ramas: (nodo izquierda derecha).')
-      return {value,left,right}
+      const value=label(tokens[position++])
+      let children:(BinaryTree|null)[]=[]
+      while(position<tokens.length&&tokens[position]!==')')children.push(read(depth+1))
+      if(tokens[position++]!==')')throw new Error('Falta cerrar un paréntesis: (nodo hijo1 hijo2 …).')
+      if(children.length>2)children=children.filter(child=>child!==null)
+      if(children.length===1)children.push(null)
+      return {value,children}
     }
-    return {value:label(token),left:null,right:null}
+    return {value:label(token),children:[]}
   }
   if(!tokens.length)throw new Error('Escribí una expresión para el árbol.')
   const tree=read(1)
@@ -40,7 +45,7 @@ export function parseBinaryTree(text:string):BinaryTree|null {
 export function binaryTreeExpression(tree:BinaryTree|null):string {
   if(!tree)return '.'
   const value=/[\s()"\\]/.test(tree.value)||tree.value==='.'?JSON.stringify(tree.value):tree.value
-  return !tree.left&&!tree.right?value:`(${value} ${binaryTreeExpression(tree.left)} ${binaryTreeExpression(tree.right)})`
+  return !tree.children.some(Boolean)?value:`(${value} ${tree.children.map(binaryTreeExpression).join(' ')})`
 }
 
 /** Native canvas objects: shared storage, editing, grouping and undo need no new schema. */
@@ -48,15 +53,17 @@ export function binaryTreeShapes(tree:BinaryTree|null,center:Point,id:()=>string
   if(!tree)throw new Error('Un árbol vacío no tiene nodos para dibujar.')
   const groupId=id(),nodes:ShapeItem[]=[],edges:ShapeItem[]=[]
   let slot=0
-  const width=(node:BinaryTree|null):number=>node?Math.max(1,width(node.left)+width(node.right)):1
+  const width=(node:BinaryTree|null):number=>node?Math.max(1,node.children.reduce((sum,child)=>sum+width(child),0)):1
   function build(node:BinaryTree,depth:number,start:number):ShapeItem {
-    const leftWidth=width(node.left),rightWidth=width(node.right)
     const item:ShapeItem={id:id(),groupId,kind:'circle',label:node.value,labelFontSize:17,
-      x:(start+(leftWidth+rightWidth)/2)*95,y:depth*115,width:64,height:64,color,strokeWidth:2}
+      x:(start+width(node)/2)*95,y:depth*115,width:64,height:64,color,strokeWidth:2}
     nodes.push(item);slot=Math.max(slot,depth)
-    for(const [child,offset] of [[node.left,0],[node.right,leftWidth]] as const) {
+    let offset=0
+    for(const child of node.children) {
+      const childStart=start+offset
+      offset+=width(child)
       if(!child)continue
-      const target=build(child,depth+1,start+offset)
+      const target=build(child,depth+1,childStart)
       const a={x:item.x+32,y:item.y+32},b={x:target.x+32,y:target.y+32}
       edges.push({id:id(),groupId,kind:'arrow',visualType:'connector',color,strokeWidth:2,...pointsBounds([a,b]),
         connector:{...defaultConnector(),start:a,end:b,
@@ -76,7 +83,7 @@ export function binaryTreeShapes(tree:BinaryTree|null,center:Point,id:()=>string
 export function binaryTreeFromShapes(items:ShapeItem[]):BinaryTree {
   const nodes=items.filter(item=>!isConnector(item)),edges=items.filter(isConnector)
   if(!nodes.length||nodes.length>MAX_NODES||nodes.some(n=>!['circle','ellipse','rectangle','rounded'].includes(n.kind)||!n.label?.trim()))
-    throw new Error('Seleccioná los nodos y las conexiones de un árbol binario.')
+    throw new Error('Seleccioná los nodos y las conexiones de un árbol.')
   const byId=new Map(nodes.map(n=>[n.id,n])),children=new Map<string,ShapeItem[]>(),incoming=new Set<string>()
   for(const edge of edges) {
     const {from,to}=edge.connector!
@@ -86,7 +93,6 @@ export function binaryTreeFromShapes(items:ShapeItem[]):BinaryTree {
     incoming.add(to.object.id)
     const list=children.get(from.object.id)??[]
     list.push(byId.get(to.object.id)!);children.set(from.object.id,list)
-    if(list.length>2)throw new Error('Un árbol binario admite hasta dos hijos por nodo.')
   }
   const roots=nodes.filter(n=>!incoming.has(n.id))
   if(roots.length!==1)throw new Error('La selección debe tener una única raíz y ninguna conexión circular.')
@@ -95,13 +101,11 @@ export function binaryTreeFromShapes(items:ShapeItem[]):BinaryTree {
     if(visited.has(node.id)||depth>MAX_DEPTH)throw new Error('Hay un ciclo o demasiados niveles en el árbol.')
     visited.add(node.id)
     const list=(children.get(node.id)??[]).sort((a,b)=>(a.x+a.width/2)-(b.x+b.width/2))
-    let left:ShapeItem|undefined,right:ShapeItem|undefined
-    if(list.length===2)[left,right]=list
-    else if(list[0]) {
-      if(list[0].x+list[0].width/2<node.x+node.width/2)left=list[0]
-      else right=list[0]
+    if(list.length===1) {
+      const child=visit(list[0],depth+1)
+      return {value:node.label!,children:list[0].x+list[0].width/2<node.x+node.width/2?[child,null]:[null,child]}
     }
-    return {value:node.label!,left:left?visit(left,depth+1):null,right:right?visit(right,depth+1):null}
+    return {value:node.label!,children:list.map(child=>visit(child,depth+1))}
   }
   const tree=visit(roots[0],1)
   if(visited.size!==nodes.length)throw new Error('Hay nodos desconectados o un ciclo en la selección.')

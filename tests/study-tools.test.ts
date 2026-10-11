@@ -3,6 +3,27 @@ import { calculateMatrix, determinant, inverse, matrixCells, parseNumericMatrix,
 import { DAY, newFlashcard, reviewCard, validateCard } from '../src/study/flashcards'
 import { academicTemplate } from '../src/canvas/academicTemplates'
 import { mergeVisual } from '../src/canvas/visualObjects'
+import { calculateScientific } from '../src/study/scientificCalculator'
+
+describe('scientific inverse trigonometry',()=>{
+  it('accepts Spanish/English inverse names and returns the selected angle unit',()=>{
+    for(const name of ['asin','asen','arcsen','arcsin','arc sen','ARC SIN','arcseno'])
+      expect(calculateScientific(`${name}(0.5)`,'DEG').answer).toBeCloseTo(30)
+    expect(calculateScientific('arccos(0.5)','DEG').answer).toBeCloseTo(60)
+    expect(calculateScientific('arctan(1)','DEG').answer).toBeCloseTo(45)
+    expect(calculateScientific('arctangente(1)','DEG').answer).toBeCloseTo(45)
+    expect(calculateScientific('arc coseno(0.5)','DEG').answer).toBeCloseTo(60)
+    expect(calculateScientific('arc tan(1)','RAD').answer).toBeCloseTo(Math.PI/4)
+    expect(calculateScientific('asin(1)','RAD').answer).toBeCloseTo(Math.PI/2)
+    expect(calculateScientific('sin(arcsen(0.25))+cos(arccos(0.75))','DEG').answer).toBeCloseTo(1)
+  })
+  it('keeps ordinary calculations, Ans and the safe expression boundary',()=>{
+    expect(calculateScientific('sen(30)+log(100)+ln(e)+ans','DEG',2).answer).toBeCloseTo(5.5)
+    expect(calculateScientific('sqrt(16)+2^3','RAD').output).toBe('12')
+    for(const expression of ['arcsen(2)','arccos(-2)','arctan(1/0)','a=3','import("x")','[1,2]','pi.value'])
+      expect(()=>calculateScientific(expression,'DEG')).toThrow()
+  })
+})
 
 describe('matrix calculator and structured canvas matrices',()=>{
   const A=[[1,2],[3,4]],B=[[5,6],[7,8]]

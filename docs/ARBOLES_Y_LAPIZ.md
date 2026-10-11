@@ -1,4 +1,4 @@
-# Árboles binarios y recuperación de microcortes del lápiz
+# Árboles y recuperación de microcortes del lápiz
 
 Implementado el 11 de octubre de 2026 sobre la pizarra existente.
 
@@ -11,8 +11,11 @@ Implementado el 11 de octubre de 2026 sobre la pizarra existente.
 - Al seleccionar un árbol completo aparece **Expresión del árbol**. Lee las
   etiquetas y los conectores actuales; también reconoce las plantillas antiguas.
   Si se desagrupó, hay que seleccionar todos sus nodos y conexiones.
-- La representación usa `(nodo izquierda derecha)`, hojas sin paréntesis y
-  `.` para una rama vacía. Los nombres con espacios se escriben entre comillas.
+- La representación usa `(nodo hijo1 hijo2 …)`, hojas sin paréntesis y
+  `.` para una rama binaria vacía. Se admiten tres o más hijos, por ejemplo
+  `(8 (4 2 6) (12 10 9 14))` y `(* U m k T)`. Un único hijo se normaliza a
+  `(nodo hijo .)`; en nodos con más de dos posiciones, los puntos se omiten.
+  Los nombres con espacios se escriben entre comillas.
   La expresión de la imagen funciona directamente:
 
   ```text
@@ -20,7 +23,7 @@ Implementado el 11 de octubre de 2026 sobre la pizarra existente.
   ```
 
   Otro ejemplo: `(8 (4 2 6) (12 . 14))`.
-- Izquierda y derecha se determinan por la posición horizontal de los hijos.
+- El orden de los hijos se determina por su posición horizontal.
   Mover un hijo al otro lado puede cambiar la expresión obtenida.
 - Los nuevos árboles son grupos de figuras y conectores nativos, con edición,
   movimiento, copiar/pegar, deshacer, guardado y sincronización habituales.

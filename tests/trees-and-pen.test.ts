@@ -7,7 +7,8 @@ import type { PenBreak } from '../src/canvas/penRecovery'
 const ids=()=>{let n=0;return ()=>`tree-${++n}`}
 describe('binary tree notation and native objects',()=>{
   it('round-trips the photographed expression and both empty branch positions',()=>{
-    for(const text of [TREE_EXAMPLE,'(8 4 (12 . 14))','(8 (4 2 .) .)','"Raíz con espacios"','("." . "hoja (1)")']) {
+    for(const text of [TREE_EXAMPLE,'(8 4 (12 . 14))','(8 (4 2 .) .)','"Raíz con espacios"','("." . "hoja (1)")',
+      '(8 (4 2 6) (12 10 9 14))','(* (* A (* O (* P .))) (* U m k T))','(R A B C D E F)']) {
       const tree=parseBinaryTree(text)
       expect(binaryTreeExpression(tree)).toBe(text)
       const shapes=binaryTreeShapes(tree,{x:500,y:400},ids())
@@ -27,7 +28,7 @@ describe('binary tree notation and native objects',()=>{
     expect(binaryTreeExpression(binaryTreeFromShapes(shapes))).toContain('(Cuatro 2 6)')
   })
   it('rejects incomplete syntax and bounds size before creating objects',()=>{
-    for(const text of ['', '(', '(A B)', '(A B C D)', '(A B C', 'A B', '"sin cerrar', '()', '("" . .)'])
+    for(const text of ['', '(', '(A B C', 'A B', '"sin cerrar', '()', '("" . .)'])
       expect(()=>parseBinaryTree(text)).toThrow()
     expect(parseBinaryTree('.')).toBeNull()
     expect(()=>binaryTreeShapes(null,{x:0,y:0},ids())).toThrow()
@@ -35,6 +36,14 @@ describe('binary tree notation and native objects',()=>{
     expect(()=>parseBinaryTree('(a . '.repeat(25)+'a'+')'.repeat(25))).toThrow()
     const full=(n:number):string=>n?`(a ${full(n-1)} ${full(n-1)})`:'a'
     expect(()=>parseBinaryTree(full(7))).toThrow()
+  })
+  it('lays out all children without overlap, and keeps unary input compatible with binary branches',()=>{
+    const tree=parseBinaryTree('(12 10 9 14)')!
+    const shapes=binaryTreeShapes(tree,{x:0,y:0},ids())
+    expect(shapes.filter(s=>s.connector)).toHaveLength(3)
+    expect(binaryTreeExpression(binaryTreeFromShapes(shapes))).toBe('(12 10 9 14)')
+    expect(binaryTreeExpression(parseBinaryTree('(A B)'))).toBe('(A B .)')
+    expect(binaryTreeExpression(parseBinaryTree('(A B . C D)'))).toBe('(A B C D)')
   })
   it('rejects cycles, multiple parents, missing targets and disconnected graphs',()=>{
     const tree=()=>academicTemplate('binary-tree',{x:0,y:0},ids())
