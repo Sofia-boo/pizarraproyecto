@@ -85,25 +85,77 @@ test('OCR menu stays inside tablet and phone screens and offers the rear camera'
   }
 })
 
-test('selected handwriting opens an image scan and remains editable after OCR',async({page})=>{
+test('selected handwriting starts fast OCR and inserts once automatically without removing ink',async({page})=>{
   await openLocal(page)
   await page.keyboard.press('p')
   await page.mouse.move(200,350);await page.mouse.down();await page.mouse.move(300,400,{steps:10});await page.mouse.up()
   await expect.poll(async()=>(await content(page))?.strokes?.length).toBe(1)
   await page.getByRole('button',{name:'Seleccionar área',exact:true}).click()
   await page.keyboard.press('Control+a')
+  let submissions=0,polls=0
   await page.route('**/api/ocr/documents',async route=>{
+    submissions++
     expect(route.request().postDataBuffer().includes(Buffer.from('manuscrito-seleccionado.png'))).toBe(true)
+    expect(route.request().postDataBuffer().includes(Buffer.from('name="mode"\r\n\r\nfast'))).toBe(true)
     await route.fulfill({json:{id:'handwriting',status:'processing'}})
   })
-  await page.route('**/api/ocr/documents/handwriting',route=>route.fulfill({json:{id:'handwriting',status:'complete',text:'Apuntes manuscritos',page_count:1}}))
+  await page.route('**/api/ocr/documents/handwriting',route=>route.fulfill({json:++polls===1?{id:'handwriting',status:'processing'}:{id:'handwriting',status:'complete',text:'Apuntes manuscritos',page_count:1}}))
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   await page.getByRole('menuitem',{name:'OCR Datalab · selección manuscrita o imagen',exact:true}).click()
   await expect(page.getByAltText('Vista previa del documento seleccionado')).toBeVisible()
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Apuntes manuscritos')
+  await expect(page.getByRole('dialog',{name:'Transcripción con Datalab'})).toHaveCount(0)
+  const saved=await content(page)
+  expect(saved.strokes).toHaveLength(1)
+  expect(saved.texts).toHaveLength(1)
+  expect(saved.texts[0].x).toBeLessThan(205)
+  expect(saved.texts[0].y).toBeGreaterThan(400)
+  expect(submissions).toBe(1)
+  await page.reload()
+  await expect.poll(async()=>(await content(page))?.texts?.length).toBe(1)
+  expect(submissions).toBe(1)
+})
+
+test('OCR can still be reviewed manually and empty results do not insert text',async({page})=>{
+  await openLocal(page)
+  let empty=false
+  await page.route('**/api/ocr/documents',route=>route.fulfill({json:{id:empty?'empty':'manual',status:'processing'}}))
+  await page.route('**/api/ocr/documents/*',route=>route.fulfill({json:{id:empty?'empty':'manual',status:'complete',text:empty?'':'Apuntes para corregir',page_count:1}}))
+  const open=async()=>{
+    await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+    await page.getByRole('menuitem',{name:'OCR Datalab · PDF completo o imagen…',exact:true}).click()
+    await page.getByLabel('Documento para transcribir').setInputFiles({name:'image.png',mimeType:'image/png',buffer:Buffer.from('png-test')})
+  }
+  await open()
+  await page.getByRole('checkbox',{name:'Insertar texto automáticamente al terminar'}).uncheck()
+  await page.getByRole('combobox',{name:'Modo de reconocimiento'}).selectOption('accurate')
   await page.getByRole('button',{name:'Transcribir con Datalab',exact:true}).click()
-  await expect(page.getByRole('textbox',{name:'Transcripción completa'})).toHaveValue('Apuntes manuscritos')
-  await page.getByRole('textbox',{name:'Transcripción completa'}).fill('Apuntes corregidos')
+  await expect(page.getByRole('textbox',{name:'Transcripción completa'})).toHaveValue('Apuntes para corregir')
+  expect((await content(page))?.texts??[]).toHaveLength(0)
+  await page.getByRole('textbox',{name:'Transcripción completa'}).fill('Texto corregido')
   await page.getByRole('button',{name:'Insertar texto en pizarra',exact:true}).click()
-  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Apuntes corregidos')
-  expect((await content(page)).strokes).toHaveLength(1)
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Texto corregido')
+  empty=true
+  await open()
+  await page.getByRole('checkbox',{name:'Insertar texto automáticamente al terminar'}).check()
+  await page.getByRole('button',{name:'Transcribir con Datalab',exact:true}).click()
+  await expect(page.getByRole('alert')).toContainText('No se encontró texto legible')
+  expect((await content(page)).texts).toHaveLength(1)
+})
+
+test('a pending scan resumes on its own board and inserts without submitting again',async({page})=>{
+  await openLocal(page)
+  await page.evaluate(()=>{
+    const board=localStorage.getItem('pizarra_activa')
+    localStorage.setItem(`pizarra-ocr-job:device:${board}`,'resume-test')
+    localStorage.setItem('pizarra-ocr-job:device:another-board','different-job')
+  })
+  let submissions=0
+  await page.route('**/api/ocr/documents',route=>{submissions++;return route.fulfill({status:500})})
+  await page.route('**/api/ocr/documents/resume-test',route=>route.fulfill({json:{id:'resume-test',status:'complete',text:'Resultado recuperado',page_count:1}}))
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  await page.getByRole('menuitem',{name:'OCR Datalab · PDF completo o imagen…',exact:true}).click()
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Resultado recuperado')
+  expect(submissions).toBe(0)
+  expect(await page.evaluate(()=>localStorage.getItem('pizarra-ocr-job:device:another-board'))).toBe('different-job')
 })

@@ -5,10 +5,11 @@ import os
 import secrets
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import HTTPException, Request, UploadFile, File
+from fastapi import HTTPException, Request, UploadFile, File, Form
 
 API = 'https://www.datalab.to/api/v1/convert'
 MAX_FILE = 30_000_000
@@ -93,7 +94,7 @@ def attach_datalab(app, db_connection, data_dir):
             raise HTTPException(503, 'No se pudo comunicar con Datalab. Tu archivo original sigue intacto.')
 
     @app.post('/api/ocr/documents')
-    async def submit(request: Request, file: UploadFile = File(...)):
+    async def submit(request: Request, file: UploadFile = File(...), mode: Literal['fast','balanced','accurate'] | None = Form(None)):
         api_key = key()
         mime = file.content_type or ''
         if mime not in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp'):
@@ -108,8 +109,10 @@ def attach_datalab(app, db_connection, data_dir):
                 raise HTTPException(429, 'Podés iniciar hasta tres transcripciones por minuto.')
         result = await upstream('POST', API, headers={'X-API-Key': api_key},
                                 files={'file': ('document.pdf' if mime=='application/pdf' else 'image.'+mime.split('/')[1], data, mime)},
-                                data={'output_format':'markdown','mode':'accurate','paginate':'true',
+                                data={'output_format':'markdown','mode':mode or ('accurate' if mime=='application/pdf' else 'fast'),
+                                      'paginate':'true' if mime=='application/pdf' else 'false',
                                       'disable_image_extraction':'true',
+                                      'disable_image_captions':'true',
                                       'additional_config':json.dumps({'keep_pageheader_in_output':True,'keep_pagefooter_in_output':True})})
         url = result.get('request_check_url', '')
         parsed = urlsplit(url)

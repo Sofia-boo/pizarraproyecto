@@ -117,7 +117,10 @@ class BackendTest(unittest.TestCase):
         def handler(request):
             self.assertEqual(request.headers['X-API-Key'],'private-vercel-test-key')
             self.assertIn(b'image/png',request.content)
-            self.assertIn(b'accurate',request.content)
+            self.assertIn(b'fast',request.content)
+            self.assertNotIn(b'accurate',request.content)
+            self.assertIn(b'name="paginate"\r\n\r\nfalse',request.content)
+            self.assertIn(b'disable_image_captions',request.content)
             return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/image-job'})
         with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':'private-vercel-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
             client.post('/api/auth/guest',json={'name':'Image OCR','password':'test-password'})
@@ -125,6 +128,22 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(result.status_code,200,result.text)
             self.assertNotIn('private-vercel-test-key',result.text)
             self.assertNotIn('datalab.to',result.text)
+
+    def test_ocr_precision_override_and_invalid_modes(self):
+        import httpx
+        from unittest.mock import patch
+        client_class=httpx.AsyncClient
+        calls=[]
+        def handler(request):
+            calls.append(request)
+            self.assertIn(b'accurate',request.content)
+            return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/precise-image'})
+        with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'private-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
+            client.post('/api/auth/guest',json={'name':'Precise OCR','password':'test-password'})
+            file={'file':('test.png',b'\x89PNG-test','image/png')}
+            self.assertEqual(client.post('/api/ocr/documents',files=file,data={'mode':'accurate'}).status_code,200)
+            self.assertEqual(client.post('/api/ocr/documents',files=file,data={'mode':'unlimited'}).status_code,422)
+            self.assertEqual(len(calls),1)
 
     def test_media_permissions_are_committed_before_live_notification(self):
         from unittest.mock import patch

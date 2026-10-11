@@ -1031,7 +1031,7 @@ function App() {
   const [recognizing, setRecognizing] = useState(false)
   const [recognizedText, setRecognizedText] = useState<string | null>(null)
   const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
-  const [documentOCR,setDocumentOCR]=useState<{file:File|null}|null>(null)
+  const [documentOCR,setDocumentOCR]=useState<{file:File|null;boardId:string;position?:Point}|null>(null)
   const [recognitionError, setRecognitionError] = useState('')
   const [recognitionSuggestion, setRecognitionSuggestion] = useState<string | null>(null)
   const [recognitionEngine, setRecognitionEngine] = useState('')
@@ -4011,12 +4011,13 @@ function App() {
 
   async function openSelectionOCR() {
     setOpenMenu(null)
+    const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
     if(!boxes.length){setRecognitionError('Seleccioná trazos o imágenes para transcribir, o elegí un PDF completo desde el menú OCR.');return}
     const left=Math.min(...boxes.map(b=>b.x))-16,top=Math.min(...boxes.map(b=>b.y))-16
     const width=Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=Math.max(...boxes.map(b=>b.y+b.height))-top+16
-    const scale=Math.min(2,6000/Math.max(width,height),Math.sqrt(16000000/(width*height)))
+    const scale=Math.min(2,2400/Math.max(width,height),Math.sqrt(4000000/(width*height)))
     const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale)
     const ctx=canvas.getContext('2d')!
     ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.scale(scale,scale);ctx.translate(-left,-top)
@@ -4043,7 +4044,8 @@ function App() {
         }
       }
       const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
-      setDocumentOCR({file:new File([blob],'manuscrito-seleccionado.png',{type:'image/png'})})
+      if(boardId!==getActiveBoardId())return
+      setDocumentOCR({file:new File([blob],'manuscrito-seleccionado.png',{type:'image/png'}),boardId,position:{x:left+16,y:top+height+8}})
     }catch(e){setRecognitionError(e instanceof Error?e.message:'No se pudo preparar el OCR.')}
   }
 
@@ -5033,7 +5035,7 @@ function App() {
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
             <strong>Escanear y transcribir</strong>
             <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR()}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
-            <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
+            <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null,boardId:getActiveBoardId()})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
             <details><summary>Reconocimiento local (opcional)</summary>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter-train') }}>✎ Enseñar letra (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter') }}>A Reconocer letra (local)</button>
@@ -5142,9 +5144,10 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
-      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
+      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} boardId={documentOCR.boardId} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
+        if(documentOCR.boardId!==getActiveBoardId())return
         rememberChange()
-        const center=toWorld(window.innerWidth/2,window.innerHeight/2)
+        const center=documentOCR.position??toWorld(window.innerWidth/2,window.innerHeight/2)
         const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
         textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave()
       }}/>}

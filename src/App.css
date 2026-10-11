@@ -109,6 +109,10 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .ocr-dialog p { line-height: 1.5; }
 .ocr-dialog input[type=file] { display: block; max-width: 100%; min-height: 44px; margin-top: 8px; }
 .ocr-dialog button { min-height: 44px; }
+.ocr-dialog select { min-height: 44px; max-width: 100%; }
+.ocr-auto-insert { display: flex; align-items: center; gap: 8px; }
+.ocr-auto-insert input { width: 20px; height: 20px; flex-shrink: 0; }
+.ocr-dialog .recognition-actions { flex-wrap: wrap; }
 .ocr-file-name { overflow-wrap: anywhere; }
 .ocr-preview { display: block; max-width: 100%; max-height: 230px; object-fit: contain; margin: 12px auto; border-radius: 8px; }
 .ocr-dialog input.ocr-camera-input { display: none; }
