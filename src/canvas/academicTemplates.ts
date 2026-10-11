@@ -62,6 +62,7 @@ export function academicTemplate(template:TemplateId,center:Point,id:()=>string,
   } else if(template==='a4') {
     const page=node('',0,0,'rectangle',595,595*297/210)
     page.visualType='page';page.zIndex=-1000000;page.color='#94a3b8'
+    delete page.groupId
   } else if(template==='cpp') {
     const block=node('',0,0,'rectangle',520,410)
     block.visualType='code';block.code={source:'#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hola, mundo!" << endl;\n    return 0;\n}\n',stdin:'',output:'',status:'Listo para ejecutar'}

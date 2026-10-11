@@ -1798,7 +1798,11 @@ function App() {
       const b = selectionBounds(selection, ctx)
       if (b && overlaps(area, b)) matches.push(selection)
     }
-    for (const item of shapesRef.current) if (overlaps(area,rotatedRect(visualBounds(item,resolveObject),item.rotation))) matches.push({kind:'shape',id:item.id})
+    for (const item of shapesRef.current) {
+      const bounds=rotatedRect(visualBounds(item,resolveObject),item.rotation)
+      const contained=area.x<=bounds.x&&area.y<=bounds.y&&area.x+area.width>=bounds.x+bounds.width&&area.y+area.height>=bounds.y+bounds.height
+      if(item.visualType==='page'?contained:overlaps(area,bounds))matches.push({kind:'shape',id:item.id})
+    }
     for (const item of graphsRef.current) if (overlaps(area,rotatedRect(item,item.rotation))) matches.push({kind:'graph',id:item.id})
     for (const item of tablesRef.current) if (overlaps(area,rotatedRect(tableSize(item),item.rotation))) matches.push({kind:'table',id:item.id})
     for (const item of videosRef.current) if (overlaps(area,item)) matches.push({kind:'video',id:item.id})
