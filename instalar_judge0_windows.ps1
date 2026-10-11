@@ -26,23 +26,38 @@ try {
     Save-Status 'Requiere reinicio' 'WSL instalado. Reiniciar Windows y ejecutar de nuevo instalar_judge0_windows.ps1 como administrador para continuar con Ubuntu y Judge0.'
     exit 3010
   }
-  & wsl --install -d Ubuntu-22.04 --no-launch *> (Join-Path $taskLogs 'instalar-ubuntu.log')
-  if($LASTEXITCODE -ne 0){throw 'No se pudo preparar Ubuntu. Revisar logs/instalar-ubuntu.log; puede requerir reiniciar Windows.'}
+  $installedDistros=((& wsl --list --quiet) -join "`n").Replace([string][char]0,'')
+  if($installedDistros -notmatch '(?m)^Ubuntu-22\.04\s*$') {
+    & wsl --install -d Ubuntu-22.04 --no-launch *> (Join-Path $taskLogs 'instalar-ubuntu.log')
+    if($LASTEXITCODE -ne 0){throw 'No se pudo preparar Ubuntu. Revisar logs/instalar-ubuntu.log; puede requerir reiniciar Windows.'}
+  }
   $prepareScript=Join-Path $taskRoot 'servidor_judge0/preparar_wsl.py'
-  $preparePath=(& wsl -d Ubuntu-22.04 -u root -- wslpath -a $prepareScript).Trim()
+  $preparePath=(& wsl -d Ubuntu-22.04 -u root --exec wslpath -a $prepareScript.Replace('\','/'))
+  if($LASTEXITCODE -ne 0 -or -not $preparePath){throw 'No se pudo resolver la ruta del instalador en Ubuntu.'}
+  $preparePath=$preparePath.Trim()
   $changed=(& wsl -d Ubuntu-22.04 -u root -- python3 $preparePath).Trim()
   if($LASTEXITCODE -ne 0){throw 'No se pudo configurar cgroup v1 en Ubuntu.'}
-  if($changed -eq 'changed') {
+  & wsl -d Ubuntu-22.04 -u root --exec test -f /sys/fs/cgroup/cgroup.controllers
+  $usesCgroupV2=$LASTEXITCODE -eq 0
+  if($changed -eq 'changed' -or $usesCgroupV2) {
     & wsl --terminate Ubuntu-22.04 | Out-Null
     Start-Sleep -Seconds 3
   }
   $linuxScript=Join-Path $taskRoot 'servidor_judge0/instalar.sh'
-  $linuxPath=(& wsl -d Ubuntu-22.04 -u root -- wslpath -a $linuxScript).Trim()
-  & wsl -d Ubuntu-22.04 -u root -- bash $linuxPath *> (Join-Path $taskLogs 'instalar-judge0.log')
-  if($LASTEXITCODE -ne 0){throw 'Judge0 no paso la instalacion/prueba de aislamiento. Revisar logs/instalar-judge0.log.'}
+  $linuxPath=(& wsl -d Ubuntu-22.04 -u root --exec wslpath -a $linuxScript.Replace('\','/')).Trim()
+  Save-Status 'Instalando' 'Ubuntu preparado. Instalando Docker y comprobando Judge0.'
+  $previousPreference=$ErrorActionPreference
+  try {
+    # Native tools report normal download progress on stderr in PowerShell 5.
+    $ErrorActionPreference='Continue'
+    & wsl -d Ubuntu-22.04 -u root --exec bash $linuxPath *> (Join-Path $taskLogs 'instalar-judge0.log')
+    $judge0Exit=$LASTEXITCODE
+  } finally { $ErrorActionPreference=$previousPreference }
+  if($judge0Exit -ne 0){throw 'Judge0 no paso la instalacion/prueba de aislamiento. Revisar logs/instalar-judge0.log.'}
   $taskData=Join-Path $taskRoot 'datos'
   New-Item -ItemType Directory -Path $taskData -Force | Out-Null
   @{url='http://127.0.0.1:2358'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskData 'judge0.json') -Encoding ASCII
+  & (Join-Path $taskRoot 'iniciar_judge0_windows.ps1')
   Save-Status 'Listo' 'Judge0 local activo en 127.0.0.1:2358. La pizarra ya puede compilar C++.'
 } catch {
   Save-Status 'Pendiente' $_.Exception.Message

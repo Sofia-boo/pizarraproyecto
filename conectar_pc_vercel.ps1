@@ -8,6 +8,10 @@ if (Get-NetTCPConnection -State Listen -LocalPort 8765 -ErrorAction SilentlyCont
 $pizarraPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $pizarraPython)) { throw 'Falta .venv\Scripts\python.exe' }
 $pizarraCloudflared = (Get-Command cloudflared -ErrorAction Stop).Source
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'datos/judge0.json')) {
+    $pizarraJudge0 = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'datos/judge0.json') -Raw | ConvertFrom-Json
+    if ($pizarraJudge0.url -eq 'http://127.0.0.1:2358') { & (Join-Path $PSScriptRoot 'iniciar_judge0_windows.ps1') }
+}
 & npm.cmd run build
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo compilar la página.' }
 $pizarraLogs = Join-Path $PSScriptRoot 'logs'

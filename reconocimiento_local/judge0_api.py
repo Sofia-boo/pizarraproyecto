@@ -103,7 +103,10 @@ def attach_judge0(app, data_dir):
         output = {}
         for field in ('stdout', 'stderr', 'compile_output', 'message'):
             try:
-                output[field] = base64.b64decode(data.get(field) or '', validate=True).decode('utf-8', errors='replace')[:10000]
+                # Judge0/Ruby wraps Base64 output with line breaks, including
+                # a trailing newline even for short strings.
+                encoded = re.sub(r'[ \t\r\n]', '', data.get(field) or '')
+                output[field] = base64.b64decode(encoded, validate=True).decode('utf-8', errors='replace')[:10000]
             except (ValueError, TypeError):
                 raise HTTPException(502, 'Judge0 devolvió una salida ilegible.')
         output.update({key: data.get(key) for key in ('status', 'time', 'memory', 'exit_code')})

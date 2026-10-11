@@ -209,7 +209,8 @@ class BackendTest(unittest.TestCase):
         import base64, io, json
         from unittest.mock import patch
         token='12345678-abcd-1234-abcd-123456789012'
-        encode=lambda value: base64.b64encode(value.encode()).decode()
+        # Judge0 uses Ruby's line-wrapped Base64 with a trailing newline.
+        encode=lambda value: base64.encodebytes(value.encode()).decode()
         submitted=[]
         def fake(req,timeout):
             if req.method=='POST':
@@ -232,6 +233,8 @@ class BackendTest(unittest.TestCase):
                 self.assertEqual(result.status_code,200,result.text)
                 self.assertEqual(result.json()['stdout'],'Hola, mundo!\n')
                 self.assertEqual(result.json()['stderr'],'error de ejemplo')
+                with patch('reconocimiento_local.judge0_api.urllib.request.urlopen',return_value=io.BytesIO(json.dumps({'stdout':'!!!','status':{'id':3}}).encode())):
+                    self.assertEqual(client.get('/api/code/results/'+token).status_code,502)
                 compilation={'compile_output':encode('error: expected semicolon'),'status':{'id':6,'description':'Compilation Error'}}
                 with patch('reconocimiento_local.judge0_api.urllib.request.urlopen',return_value=io.BytesIO(json.dumps(compilation).encode())):
                     failure=client.get('/api/code/results/'+token)

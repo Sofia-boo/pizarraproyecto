@@ -5,6 +5,10 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
   echo 'Judge0 1.13.1 requiere cgroup v1. Configurar Linux con systemd.unified_cgroup_hierarchy=0 y reiniciarlo antes de continuar.' >&2
   exit 1
 fi
+if [ ! -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+  echo 'Falta el controlador de memoria cgroup v1. Se requiere un nucleo Linux compatible; WSL 6.18 no lo incluye.' >&2
+  exit 1
+fi
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose curl unzip python3
 if command -v systemctl >/dev/null && systemctl is-system-running >/dev/null 2>&1; then
@@ -34,6 +38,10 @@ text=compose.read_text().replace('2358:2358','127.0.0.1:2358:2358')
 compose.write_text(text)
 PY
 fi
+# The image runs as judge0 (uid 1000, gid 999), not root. Keep the
+# configuration private while allowing that user to read the bind mount.
+chown 1000:999 judge0.conf
+chmod 600 judge0.conf
 docker-compose up -d db redis
 sleep 10
 docker-compose up -d
