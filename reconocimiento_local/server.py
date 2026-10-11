@@ -701,6 +701,8 @@ def read_board(board_id: str):
 
 @app.put('/api/boards/{board_id}')
 async def save_board(board_id: str, item: BoardSave):
+    from reconocimiento_local.visual_objects import validate_visual_content
+    validate_visual_content(item.content)
     with db_connection() as db:
         row = db.execute('SELECT version FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')

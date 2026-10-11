@@ -1,6 +1,14 @@
 import { mergeBoard } from './storage/merge'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { LuHand } from 'react-icons/lu'
+import { LuHand, LuStickyNote, LuWorkflow, LuBookOpen } from 'react-icons/lu'
+import { createNote, defaultConnector, findAnchor, hitsConnector, isConnector, materializeConnector, mergeVisual,
+  pointsBounds, refKey, remapConnector, detachTargets, transformVisual, visualBounds } from './canvas/visualObjects'
+import type { ShapeItem, ShapeKind, Bounds, ObjectRef, TargetGeometry } from './canvas/visualObjects'
+import { paintVisual, paintLabel } from './canvas/visualRendering'
+import { academicTemplate } from './canvas/academicTemplates'
+import type { TemplateId } from './canvas/academicTemplates'
+import VisualObjectInspector from './components/VisualObjectInspector'
+import AcademicLibrary from './components/AcademicLibrary'
 import type { Ref, CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { PointerEvent as ReactPointerEvent, DragEvent as ReactDragEvent, ChangeEvent, MouseEvent as ReactMouseEvent } from 'react'
 import * as pdfjs from 'pdfjs-dist'
@@ -130,7 +138,7 @@ function occursOn(event: CalendarEvent, date: string): boolean {
 
 
 type ThemeMode = 'light' | 'dark' | 'rest'
-type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape'
+type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape' | 'connector'
 type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:{center:Point;zoom:number};client_ids?:string[]}
 type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number}
 // PERFILES_Y_CURSORES_V1
@@ -139,8 +147,6 @@ type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
 type SaveStatus = 'loading' | 'saved' | 'pending' | 'error' | 'local' | 'copy'
 type Camera = { x: number; y: number; zoom: number }
 type EditingText = { id: string; x: number; y: number; value: string; color: string; fontSize: number }
-type ShapeKind = 'line' | 'arrow' | 'double-arrow' | 'rectangle' | 'rounded' | 'ellipse' | 'circle' | 'diamond' | 'triangle' | 'triangle-down' | 'cylinder' | 'hexagon'
-type ShapeItem = { id: string; kind: ShapeKind; x: number; y: number; width: number; height: number; color: string; strokeWidth: number; reverse?: boolean; backwards?: boolean; rotation?: number }
 type SheetCell = { input: string; display?: string; backgroundColor?: string; textColor?: string }
 type SheetItem = { id: string; name: string; x: number; y: number; cellWidth: number; cellHeight: number; cells: SheetCell[][]; rotation?: number }
 // Los videos son referencias a YouTube, no archivos descargados ni HTML arbitrario.
@@ -362,7 +368,6 @@ type Snapshot = { strokes: Stroke[]; texts: Rotatable<TextItem>[]; media: Rotata
 type BoardClipboard = Snapshot
 type Selection = { kind: 'media' | 'text' | 'stroke' | 'shape' | 'table' | 'graph' | 'video'; id: string | number }
 type Marquee = { start: Point; end: Point }
-type Bounds = { x: number; y: number; width: number; height: number }
 type ScreenMarquee = { startX: number; startY: number; endX: number; endY: number }
 type Transform = { mode: 'move' | 'resize' | 'rotate'; start: Point; bounds: Bounds; initial: Snapshot; group: Selection[] }
 
@@ -1021,7 +1026,10 @@ function App() {
   const correctionSavingRef = useRef(false)
   const [correctionSaving, setCorrectionSaving] = useState(false)
   const [correctionNotice, setCorrectionNotice] = useState('')
-  const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | null>(null)
+  const [visualEditor,setVisualEditor] = useState<string|null>(null)
+  const visualEditorRef=useRef<string|null>(null)
+  visualEditorRef.current=visualEditor
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [historyTarget, setHistoryTarget] = useState<{ id:string; name:string } | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
@@ -1378,6 +1386,7 @@ function App() {
       const center = {x:x+w/2,y:y+h/2}
       ctx.translate(center.x,center.y);ctx.rotate(shape.rotation);ctx.translate(-center.x,-center.y)
     }
+    if(paintVisual(ctx,shape,resolveObject,color,themeRef.current==='dark')){ctx.restore();return}
     ctx.strokeStyle = color
     ctx.lineWidth = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current) ? Math.max(shape.strokeWidth, 1.35 / Math.max(cameraRef.current.zoom, .01)) : shape.strokeWidth
     ctx.lineJoin = 'round'; ctx.lineCap = 'round'
@@ -1414,7 +1423,7 @@ function App() {
       ctx.moveTo(x+w,y+h-ry);ctx.lineTo(x+w,y+ry)
       ctx.moveTo(x+w,y+ry);ctx.ellipse(x+w/2,y+ry,w/2,ry,0,0,Math.PI)
     }
-    ctx.stroke();ctx.restore()
+    ctx.stroke();paintLabel(ctx,shape,color);ctx.restore()
   }
 
   /** La cámara está en coordenadas de pantalla; no hay que recalcular geometría al desplazarla. */
@@ -1625,8 +1634,9 @@ function App() {
       }})
     }
     for(const item of shapesRef.current){
-      if(rectsIntersect(view,rotatedRect(item,item.rotation)))
-        renderables.push({z:(item as GroupedItem).zIndex??-200000,index:renderIndex++,bounds:rotatedRect(item,item.rotation),paint:surface=>drawShape(surface,item)})
+      const bounds=rotatedRect(visualBounds(item,resolveObject),item.rotation)
+      if(rectsIntersect(view,bounds))
+        renderables.push({z:(item as GroupedItem).zIndex??-200000,index:renderIndex++,bounds,paint:surface=>drawShape(surface,item)})
     }
     for(const index of strokeTilesRef.current.query(strokesRef.current,view)){
       const item=strokesRef.current[index]
@@ -1751,7 +1761,7 @@ function App() {
       const b = selectionBounds(selection, ctx)
       if (b && overlaps(area, b)) matches.push(selection)
     }
-    for (const item of shapesRef.current) if (overlaps(area,rotatedRect(item,item.rotation))) matches.push({kind:'shape',id:item.id})
+    for (const item of shapesRef.current) if (overlaps(area,rotatedRect(visualBounds(item,resolveObject),item.rotation))) matches.push({kind:'shape',id:item.id})
     for (const item of graphsRef.current) if (overlaps(area,rotatedRect(item,item.rotation))) matches.push({kind:'graph',id:item.id})
     for (const item of tablesRef.current) if (overlaps(area,rotatedRect(tableSize(item),item.rotation))) matches.push({kind:'table',id:item.id})
     for (const item of videosRef.current) if (overlaps(area,item)) matches.push({kind:'video',id:item.id})
@@ -1788,6 +1798,7 @@ function App() {
   }
 
   function transformSelection(t: Transform, point: Point) {
+    const selectedObjects=new Set(t.group.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null).map(refKey))
     if (t.mode === 'rotate') {
       const pivot = {x:t.bounds.x+t.bounds.width/2,y:t.bounds.y+t.bounds.height/2}
       const startAngle=Math.atan2(t.start.y-pivot.y,t.start.x-pivot.x)
@@ -1809,7 +1820,8 @@ function App() {
       }
       graphsRef.current=t.initial.graphs.map(item=>graphIds.has(item.id)?rotateObject(item):item)
       if(graphIds.size)setGraphs([...graphsRef.current])
-      shapesRef.current=t.initial.shapes.map(item=>shapeIds.has(item.id)?rotateObject(item):item)
+      shapesRef.current=t.initial.shapes.map(item=>!shapeIds.has(item.id)?item:isConnector(item)
+        ?transformVisual(item,p=>rotateAround(p,pivot,angle),selectedObjects,ref=>resolveObject(ref,t.initial)):rotateObject(item))
       tablesRef.current=t.initial.tables.map(item=>{
         if(!tableIds.has(item.id))return item
         const bounds=tableSize(item)
@@ -1858,7 +1870,10 @@ function App() {
     }
     const shapeIds = new Set(t.group.filter(s => s.kind === 'shape').map(s => s.id))
     const tableIds = new Set(t.group.filter(s => s.kind === 'table').map(s => s.id))
-    shapesRef.current = t.initial.shapes.map(item => shapeIds.has(item.id) ? {...item, ...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor,strokeWidth:item.strokeWidth*factor}:item)
+    shapesRef.current = t.initial.shapes.map(item => !shapeIds.has(item.id)?item:isConnector(item)
+      ?{...transformVisual(item,p=>mapPoint(p.x,p.y),selectedObjects,ref=>resolveObject(ref,t.initial)),strokeWidth:item.strokeWidth*factor}
+      :{...item,...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor,strokeWidth:item.strokeWidth*factor,
+        note:item.note?{...item.note,fontSize:item.note.fontSize*factor}:undefined,labelFontSize:(item.labelFontSize??16)*factor})
     tablesRef.current = t.initial.tables.map(item => tableIds.has(item.id) ? {...item,...mapPoint(item.x,item.y),cellWidth:item.cellWidth*factor,cellHeight:item.cellHeight*factor}:item)
     const mediaIds = new Set(t.group.filter(s => s.kind === 'media').map(s => s.id))
     const textIds = new Set(t.group.filter(s => s.kind === 'text').map(s => s.id))
@@ -1893,7 +1908,7 @@ function App() {
       strokes: structuredClone(strokesRef.current),
       texts: structuredClone(textsRef.current),
       media: structuredClone(mediaRef.current),
-      shapes: structuredClone(shapesRef.current),
+      shapes: structuredClone(shapesRef.current.map(item=>materializeConnector(item,resolveObject))),
       tables: structuredClone(tablesRef.current),
       graphs: structuredClone(graphsRef.current),
       videos: structuredClone(videosRef.current),
@@ -1907,6 +1922,7 @@ function App() {
   }
 
   function applySnapshot(state: Snapshot) {
+    setVisualEditor(null)
     strokesRef.current = state.strokes
     textsRef.current = state.texts
     mediaRef.current = state.media
@@ -1946,7 +1962,7 @@ function App() {
       strokes: structuredClone(strokesRef.current),
       texts: structuredClone(textsRef.current),
       media: structuredClone(mediaRef.current),
-      shapes: structuredClone(shapesRef.current),
+      shapes: structuredClone(shapesRef.current.map(item=>materializeConnector(item,resolveObject))),
       tables: structuredClone(tablesRef.current),
       graphs: structuredClone(graphsRef.current),
       videos: structuredClone(videosRef.current),
@@ -2099,7 +2115,7 @@ function App() {
 
     const localIsBusy = () => !loadedRef.current || dirtyRef.current || savingRef.current ||
       pointerRef.current !== null || activeStroke.current !== null ||
-      editingRef.current !== null || tableEditorBusyRef.current ||
+      editingRef.current !== null || visualEditorRef.current !== null || tableEditorBusyRef.current ||
       syncConflictRef.current
 
     function retryApply(delay = 180) {
@@ -2382,10 +2398,12 @@ function App() {
 
   /** Borrado de figuras: el lápiz debe rozar el contorno, no solamente el recuadro invisible. */
   function shapeTouchesEraser(shape: ShapeItem, point: Point, radius: number): boolean {
+    if(isConnector(shape))return hitsConnector(shape,point,resolveObject,radius)
     const {x,y,width:w,height:h,kind} = shape
     if(shape.rotation) point=rotateAround(point,{x:x+w/2,y:y+h/2},-shape.rotation)
     const tolerance=radius+shape.strokeWidth/2
     if(point.x<x-tolerance||point.x>x+w+tolerance||point.y<y-tolerance||point.y>y+h+tolerance)return false
+    if(shape.visualType==='sticky' || shape.visualType==='symbol')return true
     const seg=(x1:number,y1:number,x2:number,y2:number)=>distanceToSegment(point,{x:x1,y:y1},{x:x2,y:y2})<=tolerance
     if(kind==='line'||kind==='arrow'||kind==='double-arrow'){
       const leftY=shape.reverse?y:y+h,rightY=shape.reverse?y+h:y
@@ -2465,9 +2483,17 @@ function App() {
         nextShapes.length !== shapesRef.current.length || nextGraphs.length !== graphsRef.current.length ||
         nextTables.length !== tablesRef.current.length) {
       rememberChange()
+      const removed=new Set<string>()
+      for(const item of shapesRef.current)if(!nextShapes.includes(item))removed.add(`shape:${item.id}`)
+      for(const item of textsRef.current)if(!nextTexts.includes(item))removed.add(`text:${item.id}`)
+      for(const item of tablesRef.current)if(!nextTables.includes(item))removed.add(`table:${item.id}`)
+      for(const item of graphsRef.current)if(!nextGraphs.includes(item))removed.add(`graph:${item.id}`)
+      // Capture fallback coordinates before removing their targets.
+      for(const item of strokesRef.current)if(item.id&&!nextStrokes.includes(item))removed.add(`stroke:${item.id}`)
+      shapesRef.current = detachTargets(nextShapes,removed,resolveObject)
+      if(visualEditorRef.current && !shapesRef.current.some(item=>item.id===visualEditorRef.current))setVisualEditor(null)
       strokesRef.current = nextStrokes
       textsRef.current = nextTexts
-      shapesRef.current = nextShapes
       if(nextTables.length !== tablesRef.current.length){
         tablesRef.current = nextTables
         setTableEditorId(null)
@@ -2487,6 +2513,43 @@ function App() {
 
 
 
+  function objectReference(selection:Selection):ObjectRef|null {
+    const id=selection.kind==='stroke'?strokesRef.current[Number(selection.id)]?.id:String(selection.id)
+    return id?{kind:selection.kind,id}:null
+  }
+
+  function resolveObject(ref:ObjectRef,state?:Snapshot): TargetGeometry|null {
+    if(ref.kind==='shape') {
+      const item=(state?.shapes??shapesRef.current).find(item=>item.id===ref.id)
+      return item&&!isConnector(item)?{...item,shapeKind:item.kind}:null
+    }
+    if(ref.kind==='table') {
+      const item=(state?.tables??tablesRef.current).find(item=>item.id===ref.id)
+      return item?{...tableSize(item),rotation:item.rotation}:null
+    }
+    if(ref.kind==='text') {
+      const item=(state?.texts??textsRef.current).find(item=>item.id===ref.id)
+      return item?{...selectionBoundsForText(item),rotation:item.rotation}:null
+    }
+    if(ref.kind==='stroke') {
+      const item=(state?.strokes??strokesRef.current).find(item=>item.id===ref.id)
+      return item?.points.length?pointsBounds(item.points,item.width/2):null
+    }
+    const items=ref.kind==='media'?(state?.media??mediaRef.current):ref.kind==='graph'?(state?.graphs??graphsRef.current):(state?.videos??videosRef.current)
+    return items.find(item=>item.id===ref.id)??null
+  }
+
+  function anchorAt(point:Point) {
+    const objects=everySelection().map(objectReference).filter((ref):ref is ObjectRef=>ref!==null)
+    return findAnchor(point,objects,resolveObject,16/cameraRef.current.zoom)
+  }
+
+  function hitShapeAt(point:Point):ShapeItem|undefined {
+    return [...shapesRef.current].reverse().sort((a,b)=>(b.zIndex??-200000)-(a.zIndex??-200000)).find(item=>
+      isConnector(item)?hitsConnector(item,point,resolveObject,8/cameraRef.current.zoom):
+      overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(item,item.rotation)))
+  }
+
   function selectionBounds(selected: Selection, ctx?: CanvasRenderingContext2D | null) {
     if (selected.kind === 'video') {
       const item=videosRef.current.find(v=>v.id===selected.id)
@@ -2498,7 +2561,7 @@ function App() {
     }
     if (selected.kind === 'shape') {
       const item = shapesRef.current.find(v=>v.id===selected.id)
-      return item ? rotatedRect({x:item.x,y:item.y,width:item.width,height:item.height},item.rotation):null
+      return item ? rotatedRect(visualBounds(item,resolveObject),item.rotation):null
     }
     if (selected.kind === 'table') {
       const item=tablesRef.current.find(v=>v.id===selected.id)
@@ -2568,6 +2631,15 @@ function App() {
     if (!loadedRef.current || pointerRef.current !== null) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const point = toWorld(e.clientX, e.clientY)
+    if(tool==='connector') {
+      if(editingRef.current)commitText()
+      rememberChange()
+      activeShape.current={id:createId(),kind:'arrow',visualType:'connector',...pointsBounds([point]),color,strokeWidth:width,
+        connector:{...defaultConnector(),start:point,end:point,from:anchorAt(point)}}
+      pointerRef.current=e.pointerId
+      e.currentTarget.setPointerCapture(e.pointerId)
+      redraw();return
+    }
     if(tool === 'shape') {
       if(editingRef.current) commitText()
       rememberChange()
@@ -2611,7 +2683,7 @@ function App() {
       const hitVideo=[...videosRef.current].reverse().find(v=>overlaps({x:point.x,y:point.y,width:0,height:0},v))
       if(hitVideo){selectElement({kind:'video',id:hitVideo.id});setTableEditorId(null);return}
       const hitTable=[...tablesRef.current].reverse().find(v=>overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(tableSize(v),v.rotation)))
-      const hitShape=[...shapesRef.current].reverse().find(v=>overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(v,v.rotation)))
+      const hitShape=hitShapeAt(point)
       if(hitTable||hitShape){ selectElement(hitTable?{kind:'table',id:hitTable.id}:{kind:'shape',id:hitShape!.id});setTableEditorId(hitTable&&!groupIdFor({kind:'table',id:hitTable.id})?hitTable.id:null);return }
       setTableEditorId(null)
       // Un clic sobre un miembro de un grupo persistente selecciona el grupo completo.
@@ -2714,6 +2786,11 @@ function App() {
       eraseAt(point)
       return
     }
+    if(activeShape.current && isConnector(activeShape.current)) {
+      const item=activeShape.current,c=item.connector!
+      activeShape.current={...item,...pointsBounds([c.start,point]),connector:{...c,end:point,to:anchorAt(point)}}
+      redraw();return
+    }
     if(activeShape.current){
       const sh=activeShape.current
       // Las coordenadas siempre se mantienen positivas para selección y guardado.
@@ -2744,7 +2821,7 @@ function App() {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     if(activeShape.current){
       const sh=activeShape.current
-      const normalized={...sh,width:Math.max(sh.width,10),height:Math.max(sh.height,10)}
+      const normalized=isConnector(sh)?materializeConnector(sh,resolveObject):{...sh,width:Math.max(sh.width,10),height:Math.max(sh.height,10)}
       const videoZ=videosRef.current.filter(v=>overlaps(v,normalized)).map(v=>v.zIndex??-150000)
       if(videoZ.length)(normalized as ShapeItem & {zIndex?:number}).zIndex=Math.max(...videoZ)+1
       shapesRef.current.push(normalized)
@@ -2754,6 +2831,9 @@ function App() {
       groupRef.current=[]
       selectedRef.current=null
       setSelection(null)
+      if(isConnector(normalized)) {
+        setTool('select');selectElement({kind:'shape',id:normalized.id})
+      }
       scheduleSave()
     }
     if (activeStroke.current) {
@@ -2866,8 +2946,39 @@ function App() {
 
   function selectTool(next: Tool) {
     if (editingRef.current && (next !== 'text' || tool !== 'text')) commitText()
+    setVisualEditor(null)
     setTool(next)
     if (next !== 'select') {setTableEditorId(null);selectElement(null)}
+  }
+
+  function insertNote() {
+    if(!loadedRef.current)return
+    if(editingRef.current)commitText()
+    rememberChange()
+    const center=boardCenter(),note=createNote(createId(),{x:center.x-115,y:center.y-90})
+    shapesRef.current.push(note)
+    selectTool('select');selectElement({kind:'shape',id:note.id})
+    setOpenMenu(null);setVisualEditor(note.id);redraw();scheduleSave()
+  }
+
+  function insertAcademic(template:TemplateId) {
+    if(!loadedRef.current)return
+    if(editingRef.current)commitText()
+    rememberChange()
+    const items=academicTemplate(template,boardCenter(),createId,color)
+    shapesRef.current.push(...items)
+    selectTool('select');setOpenMenu(null);setVisualEditor(null)
+    groupRef.current=items.map(item=>({kind:'shape',id:item.id}))
+    selectedRef.current=items.length===1?groupRef.current[0]:null
+    setSelection(selectedRef.current);redraw();scheduleSave()
+  }
+
+  function applyVisualEdit(base:ShapeItem,next:ShapeItem) {
+    const index=shapesRef.current.findIndex(item=>item.id===base.id)
+    if(index<0)return
+    rememberChange()
+    shapesRef.current[index]=mergeVisual(base,next,materializeConnector(shapesRef.current[index],resolveObject))
+    redraw();scheduleSave()
   }
 
   function selectShape(kind: ShapeKind) {
@@ -3003,6 +3114,10 @@ function App() {
 
   function onCanvasDoubleClick(e:ReactMouseEvent<HTMLCanvasElement>) {
     const point=toWorld(e.clientX,e.clientY)
+    const visual=hitShapeAt(point)
+    if(visual && (visual.visualType || visual.label!==undefined)) {
+      selectElement({kind:'shape',id:visual.id});setVisualEditor(visual.id);return
+    }
     const table=[...tablesRef.current].reverse().find(item=>overlaps({x:point.x,y:point.y,width:0,height:0},tableSize(item)))
     if(table){selectElement({kind:'table',id:table.id});setTableEditorId(table.id);setExcelNotice('')}
   }
@@ -3046,6 +3161,7 @@ function App() {
   }
   function deleteBoardGraph(id:string) {
     rememberChange()
+    shapesRef.current=detachTargets(shapesRef.current,new Set([`graph:${id}`]),resolveObject)
     graphsRef.current=graphsRef.current.filter(item=>item.id!==id)
     setGraphs([...graphsRef.current])
     if(groupRef.current.some(s=>s.kind==='graph'&&s.id===id))selectElement(null)
@@ -3192,6 +3308,7 @@ function App() {
   }
   function deleteYouTube(id:string) {
     rememberChange()
+    shapesRef.current=detachTargets(shapesRef.current,new Set([`video:${id}`]),resolveObject)
     videoPreviousSizeRef.current.delete(id)
     videosRef.current=videosRef.current.filter(item=>item.id!==id)
     setVideos([...videosRef.current])
@@ -3810,6 +3927,9 @@ function App() {
     const group = groupRef.current
     if (!group.length) return
     rememberChange()
+    setVisualEditor(null)
+    const deleted=new Set(group.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null).map(refKey))
+    shapesRef.current=detachTargets(shapesRef.current,deleted,resolveObject)
     const mediaIds = new Set(group.filter(s => s.kind === 'media').map(s => s.id))
     const textIds = new Set(group.filter(s => s.kind === 'text').map(s => s.id))
     const shapeIds=new Set(group.filter(s=>s.kind==='shape').map(s=>s.id))
@@ -3844,7 +3964,7 @@ function App() {
       strokes: structuredClone(strokesRef.current.filter((_, i) => strokeIds.has(i))),
       texts: structuredClone(textsRef.current.filter(item => textIds.has(item.id))),
       media: structuredClone(mediaRef.current.filter(item => mediaIds.has(item.id))),
-      shapes: structuredClone(shapesRef.current.filter(item=>shapeIds.has(item.id))),
+      shapes: structuredClone(shapesRef.current.filter(item=>shapeIds.has(item.id)).map(item=>materializeConnector(item,resolveObject))),
       tables: structuredClone(tablesRef.current.filter(item=>tableIds.has(item.id))),
       graphs: structuredClone(graphsRef.current.filter(item=>graphIds.has(item.id))),
       videos: structuredClone(videosRef.current.filter(v=>videoIds.has(v.id))),
@@ -3861,6 +3981,13 @@ function App() {
     const data = clipboardRef.current
     if (!data || !loadedRef.current) return
     const offset = 24 * ++pasteCountRef.current / cameraRef.current.zoom
+    const freshIds=new Map<string,string>()
+    for(const kind of ['stroke','text','media','shape','table','graph','video'] as const) {
+      const items=kind==='stroke'?data.strokes:kind==='text'?data.texts:kind==='media'?data.media:kind==='shape'?data.shapes:
+        kind==='table'?data.tables:kind==='graph'?data.graphs:data.videos
+      for(const item of items??[])if(item.id)freshIds.set(`${kind}:${item.id}`,createId())
+    }
+    const newId=(kind:string,id:string|undefined)=>id?freshIds.get(`${kind}:${id}`)??createId():createId()
     const freshGroups=new Map<string,string>()
     const remapGroup=<T extends object>(item:T):T=>{
       const copy=structuredClone(item) as T&GroupedItem
@@ -3869,13 +3996,13 @@ function App() {
     }
     rememberChange()
     const firstStrokeIndex = strokesRef.current.length
-    const strokes = data.strokes.map(stroke => ({ ...remapGroup(stroke), points: stroke.points.map(p => ({ ...p, x: p.x + offset, y: p.y + offset })) }))
-    const texts = data.texts.map(item => ({ ...remapGroup(item), id: createId(), x: item.x + offset, y: item.y + offset }))
-    const media = data.media.map(item => ({ ...remapGroup(item), id: createId(), x: item.x + offset, y: item.y + offset }))
-    const shapes = (data.shapes??[]).map(item=>({...remapGroup(item),id:createId(),x:item.x+offset,y:item.y+offset}))
-    const tables = (data.tables??[]).map(item=>({...remapGroup(item),id:createId(),x:item.x+offset,y:item.y+offset}))
-    const graphs = (data.graphs??[]).map(item=>({...remapGroup(item),id:createId(),x:item.x+offset,y:item.y+offset}))
-    const videos=(data.videos??[]).map(item=>({...remapGroup(item),id:createId(),x:item.x+offset,y:item.y+offset}))
+    const strokes = data.strokes.map(stroke => ({ ...remapGroup(stroke), id:newId('stroke',stroke.id), points: stroke.points.map(p => ({ ...p, x: p.x + offset, y: p.y + offset })) }))
+    const texts = data.texts.map(item => ({ ...remapGroup(item), id: newId('text',item.id), x: item.x + offset, y: item.y + offset }))
+    const media = data.media.map(item => ({ ...remapGroup(item), id: newId('media',item.id), x: item.x + offset, y: item.y + offset }))
+    const shapes = (data.shapes??[]).map(item=>remapConnector({...remapGroup(item),id:newId('shape',item.id),x:item.x+offset,y:item.y+offset},freshIds,{x:offset,y:offset}))
+    const tables = (data.tables??[]).map(item=>({...remapGroup(item),id:newId('table',item.id),x:item.x+offset,y:item.y+offset}))
+    const graphs = (data.graphs??[]).map(item=>({...remapGroup(item),id:newId('graph',item.id),x:item.x+offset,y:item.y+offset}))
+    const videos=(data.videos??[]).map(item=>({...remapGroup(item),id:newId('video',item.id),x:item.x+offset,y:item.y+offset}))
     videosRef.current.push(...videos)
     if(videos.length)setVideos([...videosRef.current])
     graphsRef.current.push(...graphs)
@@ -4063,7 +4190,8 @@ function App() {
       }
       if (e.shiftKey) return
       if ((e.key === 'Delete' || e.key === 'Backspace') && groupRef.current.length) { e.preventDefault(); deleteSelected(); return }
-      const shortcuts: Record<string, Tool> = { p: 'pen', t: 'text', e: 'eraser', h: 'pan', v: 'select' }
+      if(key==='n'){e.preventDefault();insertNote();return}
+      const shortcuts: Record<string, Tool> = { p: 'pen', t: 'text', e: 'eraser', h: 'pan', v: 'select', c:'connector' }
       if (shortcuts[key]) { e.preventDefault(); selectTool(shortcuts[key]); setOpenMenu(null) }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -4104,7 +4232,7 @@ function App() {
     : []
   const selectedDayLabel = selectedCalendarDate ? (() => { const [y,m,d] = selectedCalendarDate.split('-').map(Number); return `${d} de ${new Intl.DateTimeFormat('es-AR', { month: 'long' }).format(new Date(y,m-1,d))}` })() : ''
   return (
-    <div className="app" data-theme={theme}
+    <div className="app" data-theme={theme} data-tool={tool}
       onDragEnter={onFileDragEnter} onDragOver={onFileDragOver}
       onDragLeave={onFileDragLeave} onDrop={onFileDrop}>
       {liveBoardId && !privateBoard(liveBoardId) && <aside className="live-presence" aria-label="Usuarios activos en esta pizarra">
@@ -4532,6 +4660,14 @@ function App() {
         <div className="toolbar-popover-anchor">
           <button type="button" title="Insertar tabla 2×2 editable" aria-label="Insertar tabla 2×2 editable" onClick={()=>{setOpenMenu(null);createTable()}}><ToolbarTableIcon /></button>
         </div>
+        <button type="button" title="Agregar nota adhesiva (N)" aria-label="Agregar nota adhesiva" onClick={insertNote}><LuStickyNote/></button>
+        <button type="button" title="Conectar objetos: arrastrá de uno a otro (C)" aria-label="Conectar objetos" aria-pressed={tool==='connector'}
+          className={tool==='connector'?'active':''} onClick={()=>{selectTool('connector');setVisualEditor(null);setOpenMenu(null)}}><LuWorkflow/></button>
+        <div className="toolbar-popover-anchor">
+          <button type="button" title="Elementos académicos" aria-label="Elementos académicos" aria-expanded={openMenu==='academic'}
+            onClick={()=>{setVisualEditor(null);setOpenMenu(openMenu==='academic'?null:'academic')}}><LuBookOpen/></button>
+          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic}/>}
+        </div>
         <div className="toolbar-popover-anchor">
           <button className={openMenu === 'add' ? 'active' : ''} title="Agregar imagen o PDF" aria-label="Agregar imagen o PDF" aria-expanded={openMenu === 'add'} onClick={() => setOpenMenu(openMenu === 'add' ? null : 'add')}>＋</button>
           {openMenu === 'add' && <div className="toolbar-popover add-popover">
@@ -4647,6 +4783,16 @@ function App() {
         </div>
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
+      {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
+      {!visualEditor && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
+        const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
+        return item && (item.visualType || item.label!==undefined)
+          ?<button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>:null
+      })()}
+      {visualEditor && (()=>{
+        const item=shapesRef.current.find(item=>item.id===visualEditor)
+        return item?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
+      })()}
       <div className="zoom-controls">
         <button onClick={() => changeZoom(2 / 3, window.innerWidth / 2, window.innerHeight / 2)}>−</button>
         <span>{zoomLabel}%</span>

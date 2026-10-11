@@ -2,6 +2,8 @@
 // additions, edits and deletions. A local deletion also wins over a remote edit.
 type Item = { id?: string; [key: string]: unknown }
 type Content = { [key: string]: unknown }
+import { mergeVisual } from '../canvas/visualObjects'
+import type { ShapeItem } from '../canvas/visualObjects'
 const lists = ['strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos']
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -27,7 +29,11 @@ export function mergeBoard<T extends Content>(base: T, local: T, remote: T): T {
     const ours = new Map(((local[key] ?? []) as Item[]).map(item => [item.id, item]))
     const merged = new Map(((remote[key] ?? []) as Item[]).map(item => [item.id, item]))
     for (const id of before.keys()) if (!ours.has(id)) merged.delete(id)
-    for (const [id, item] of ours) if (!equal(before.get(id), item)) merged.set(id, item)
+    for (const [id, item] of ours) if (!equal(before.get(id), item)) {
+      const original=before.get(id),other=merged.get(id)
+      merged.set(id,key==='shapes' && original && other && (item.visualType || item.label!==undefined)
+        ?mergeVisual(original as ShapeItem,item as ShapeItem,other as ShapeItem) as Item:item)
+    }
     result[key] = [...merged.values()]
   }
   result.camera = { ...(local.camera as object), youtubeVideos: result.videos }

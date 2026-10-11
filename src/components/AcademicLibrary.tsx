@@ -1,0 +1,17 @@
+import { useState } from 'react'
+import { ACADEMIC_TEMPLATES } from '../canvas/academicTemplates'
+import type { TemplateId } from '../canvas/academicTemplates'
+import './visualTools.css'
+
+export default function AcademicLibrary({onInsert}:{onInsert:(id:TemplateId)=>void}) {
+  const [query,setQuery]=useState('')
+  const items=ACADEMIC_TEMPLATES.filter(item=>`${item.name} ${item.category}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')))
+  return <div className="toolbar-popover academic-library" role="dialog" aria-label="Biblioteca de elementos académicos">
+    <strong>Elementos académicos</strong>
+    <input autoFocus type="search" aria-label="Buscar elemento académico" placeholder="Buscar figura o tema…" value={query} onChange={e=>setQuery(e.target.value)}/>
+    <div className="academic-library-grid">{items.map(item=><button type="button" key={item.id} onClick={()=>onInsert(item.id)}>
+      <span>{item.name}</span><small>{item.category}</small>
+    </button>)}</div>
+    {!items.length&&<p>No hay elementos con ese nombre.</p>}
+  </div>
+}

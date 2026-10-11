@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { academicTemplate } from '../src/canvas/academicTemplates'
+import { createNote } from '../src/canvas/visualObjects'
 
 let library: typeof import('../src/biblioteca')
 let device: typeof import('../src/storage/device')
@@ -38,6 +40,20 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('preserves visual objects and internal references in imported backups and local history',async()=>{
+    let sequence=0
+    const data={...content(),shapes:[createNote('note-import',{x:12,y:20}),
+      ...academicTemplate('flowchart',{x:400,y:400},()=>`import-${++sequence}`)]}
+    const backup={format:'pizarra-backup-v1',name:'Visual backup',content:data,assets:{}}
+    const id=await library.importBoardBackup({text:async()=>JSON.stringify(backup)} as File)
+    library.selectBoard(id)
+    expect(await library.loadBoard()).toEqual(data)
+    const snapshot=await library.createBoardHistory(id,'Before deletion',0)
+    await library.saveBoard({...data,shapes:[]})
+    await library.restoreBoardHistory(id,snapshot.id,1)
+    expect((await library.loadBoard())?.shapes).toEqual(data.shapes)
+    expect(fetched).not.toHaveBeenCalled()
+  })
   it('creates and saves a private board without any server requests, preserving all content',async()=>{
     const folder=await library.addFolder('Privadas')
     const board=await library.addBoard('Mi privada',folder.id)

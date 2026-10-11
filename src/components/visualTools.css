@@ -1,0 +1,43 @@
+.toolbar .academic-library {left:0;right:0;transform:none;min-width:0;width:auto;max-width:none;padding:14px;gap:12px;white-space:normal;color:var(--ui-text,#243047);background:var(--ui-surface,#fff);border-color:var(--ui-border,#d9dfeb);}
+.toolbar .toolbar-popover-anchor:has(.academic-library) {position:static;}
+.academic-library>input {width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--ui-border,#d9dfeb);border-radius:8px;color:inherit;background:var(--ui-subtle,#f8fafc);font:14px system-ui;}
+.academic-library-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:min(390px,55vh);overflow:auto;}
+.toolbar .academic-library-grid button {height:auto;min-height:52px;min-width:0;white-space:normal;display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:9px;border:1px solid var(--ui-border,#d9dfeb);background:var(--ui-subtle,#f8fafc);color:inherit;text-align:left;font:13px system-ui;}
+.academic-library-grid small {font:11px system-ui;color:var(--ui-muted,#65758b);}
+.visual-inspector {position:fixed;z-index:90;right:16px;top:90px;width:280px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow-y:auto;box-sizing:border-box;padding:14px;border:1px solid var(--ui-border,#d9dfeb);border-radius:14px;background:var(--ui-surface,#fff);color:var(--ui-text,#243047);box-shadow:0 10px 32px #0002;font:13px system-ui;}
+.visual-inspector header,.visual-inspector footer {display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.visual-inspector header {margin-bottom:12px;}
+.visual-inspector header button {display:grid;place-items:center;padding:6px;}
+.visual-inspector form,.visual-inspector label {display:flex;flex-direction:column;gap:7px;}
+.visual-inspector form {gap:12px;}
+.visual-inspector button,.visual-inspector input,.visual-inspector select,.visual-inspector textarea {box-sizing:border-box;border:1px solid var(--ui-border,#d9dfeb);border-radius:8px;padding:8px;color:inherit;background:var(--ui-subtle,#f8fafc);font:13px system-ui;}
+.visual-inspector input,.visual-inspector select,.visual-inspector textarea {width:100%;min-width:0;}
+.visual-inspector textarea {resize:vertical;min-height:90px;max-height:35vh;line-height:1.4;}
+.visual-inspector button {cursor:pointer;}
+.visual-inspector button:disabled {opacity:.45;cursor:default;}
+.visual-inspector input[type='color'] {height:35px;padding:3px;}
+.visual-field-pair {display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.visual-swatches {display:flex;gap:8px;flex-wrap:wrap;padding:3px;}
+.visual-swatches button {width:28px;height:28px;border-radius:50%;padding:0;border-color:#94a3b8;}
+.visual-swatches button[aria-pressed='true'] {outline:2px solid #6366f1;outline-offset:2px;}
+.visual-inspector .visual-primary {background:#4f46e5;color:white;border-color:#4f46e5;}
+/* The profile is a sibling of .app, so its stacking context covers this panel. */
+body:has(.visual-inspector) .anon-profile {display:none!important;}
+.visual-help {color:var(--ui-muted,#65758b);font-size:12px;line-height:1.45;margin:0;}
+.visual-conflicts {border:1px solid #d97706;border-radius:8px;padding:9px;}
+.visual-conflicts p {font-size:12px;}
+.visual-conflicts pre {font:12px system-ui;white-space:pre-wrap;overflow-wrap:anywhere;}
+.visual-conflicts button {margin-top:5px;}
+.visual-edit-button {position:fixed;z-index:20;right:16px;top:90px;padding:9px 12px;border:1px solid var(--ui-border,#d9dfeb);border-radius:10px;color:var(--ui-text,#243047);background:var(--ui-surface,#fff);box-shadow:0 4px 14px #0001;cursor:pointer;font:13px system-ui;}
+.connector-instruction {position:fixed;z-index:11;left:50%;bottom:24px;transform:translateX(-50%);max-width:calc(100vw - 170px);padding:8px 12px;border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#243047);border:1px solid var(--ui-border,#d9dfeb);box-shadow:0 4px 14px #0001;font:12px system-ui;pointer-events:none;}
+.app[data-tool='connector'] :is(.board-video-layer,.board-graph-layer,.sheet-static-layer) * {pointer-events:none!important;}
+@media(max-width:1000px) {
+  .app .toolbar {top:68px;}
+  .app .theme-switcher {top:12px;right:12px;}
+  .visual-inspector,.visual-edit-button {top:148px;}
+}
+@media(max-width:650px) {
+  .academic-library-grid {grid-template-columns:repeat(2,minmax(0,1fr));max-height:45dvh;}
+  .visual-inspector {top:auto;bottom:75px;right:12px;max-height:55dvh;}
+  .visual-edit-button {top:auto;bottom:24px;left:12px;right:auto;}
+}

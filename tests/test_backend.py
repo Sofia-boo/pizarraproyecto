@@ -84,6 +84,46 @@ class BackendTest(unittest.TestCase):
         self.assertIn('/api/excel/import', paths)
         self.assertTrue(any('history' in path for path in paths))
 
+    def test_visual_objects_validate_permissions_and_history(self):
+        import copy
+        with TestClient(self.app, base_url='https://testserver') as owner, \
+                TestClient(self.app, base_url='https://testserver') as editor, \
+                TestClient(self.app, base_url='https://testserver') as viewer:
+            for client, name in ((owner, 'Visual owner'), (editor, 'Visual editor'), (viewer, 'Visual viewer')):
+                self.assertEqual(client.post('/api/auth/guest', json={'name': name, 'password': 'visual-password'}).status_code, 200)
+            board = owner.post('/api/boards', json={'name': 'Visual phase one'}).json()['id']
+            for client, role in ((editor, 'editor'), (viewer, 'viewer')):
+                token = owner.post(f'/api/share/boards/{board}', json={'role': role}).json()['token']
+                self.assertEqual(client.post('/api/share/join', json={'token': token}).status_code, 200)
+            note = {'id': 'note-a', 'kind': 'rectangle', 'visualType': 'sticky', 'x': 10, 'y': 20, 'width': 230,
+                    'height': 180, 'color': '#202020', 'strokeWidth': 1,
+                    'note': {'text': 'Study together', 'fontSize': 20, 'background': '#fff0a6'}}
+            connector = {'id': 'edge', 'kind': 'arrow', 'visualType': 'connector', 'x': 10, 'y': 20, 'width': 300,
+                         'height': 100, 'color': '#2563eb', 'strokeWidth': 2, 'connector': {
+                             'start': {'x': 10, 'y': 20}, 'end': {'x': 300, 'y': 100},
+                             'from': {'object': {'kind': 'shape', 'id': 'note-a'}, 'u': .5, 'v': .5, 'auto': True},
+                             'route': 'curve', 'startCap': 'circle', 'endCap': 'arrow', 'style': 'dash', 'label': 'explains'}}
+            content = {'strokes': [], 'texts': [], 'media': [], 'shapes': [note, connector], 'camera': {'x': 0, 'y': 0, 'zoom': 1}}
+            result = owner.put(f'/api/boards/{board}', json={'version': 0, 'content': content})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(viewer.get(f'/api/boards/{board}').json()['content'], content)
+            self.assertEqual(viewer.put(f'/api/boards/{board}', json={'version': 1, 'content': content}).status_code, 403)
+            snapshot = owner.post(f'/api/boards/{board}/history', json={'title': 'Phase one', 'expected_version': 1})
+            self.assertEqual(snapshot.status_code, 201, snapshot.text)
+            edited = copy.deepcopy(content)
+            edited['shapes'][0]['note']['text'] = 'Edited by another contributor'
+            self.assertEqual(editor.put(f'/api/boards/{board}', json={'version': 1, 'content': edited}).status_code, 200)
+            invalid = copy.deepcopy(edited)
+            invalid['shapes'][1]['connector']['route'] = 'execute-script'
+            self.assertEqual(editor.put(f'/api/boards/{board}', json={'version': 2, 'content': invalid}).status_code, 422)
+            self.assertEqual(owner.get(f'/api/boards/{board}').json()['content'], edited)
+            restored = owner.post(f"/api/boards/{board}/history/{snapshot.json()['id']}/restore", json={'expected_version': 2})
+            self.assertEqual(restored.status_code, 200, restored.text)
+            self.assertEqual(owner.get(f'/api/boards/{board}').json()['content'], content)
+            with TestClient(self.app, base_url='https://testserver') as outsider:
+                outsider.post('/api/auth/guest', json={'name': 'Visual outsider', 'password': 'visual-password'})
+                self.assertEqual(outsider.get(f'/api/boards/{board}').status_code, 403)
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={
