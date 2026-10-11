@@ -9,6 +9,11 @@ import { academicTemplate } from './canvas/academicTemplates'
 import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
+import BinaryTreePanel from './components/BinaryTreePanel'
+import { binaryTreeExpression, binaryTreeFromShapes, binaryTreeShapes } from './canvas/binaryTrees'
+import type { BinaryTree } from './canvas/binaryTrees'
+import { canResumePen, PEN_RECOVERY_MS } from './canvas/penRecovery'
+import type { PenBreak } from './canvas/penRecovery'
 import type { Ref, CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { PointerEvent as ReactPointerEvent, DragEvent as ReactDragEvent, ChangeEvent, MouseEvent as ReactMouseEvent } from 'react'
 import * as pdfjs from 'pdfjs-dist'
@@ -348,7 +353,7 @@ function SyncedYouTubePlayer({item,signal,connected,onBroadcast,onRange,onPointe
       <div className="board-video-player" ref={mountRef}/>
       {(['pen','eraser','shape','text'] as Tool[]).includes(interactionTool)&&<div className="board-video-ink-overlay"
         title="Dibujar sobre el video" onPointerDown={onInkPointerDown}
-        onPointerMove={onInkPointerMove} onPointerUp={onInkPointerUp} onPointerCancel={onInkPointerCancel}/>}
+        onPointerMove={onInkPointerMove} onPointerUp={onInkPointerUp} onPointerCancel={onInkPointerCancel} onLostPointerCapture={onInkPointerCancel}/>}
       {interactionTool==='select'&&<div className="board-video-select-overlay" tabIndex={0}
         aria-label="Seleccionar el video para moverlo, copiarlo o borrarlo"
         title="Seleccionar o arrastrar el video"
@@ -841,6 +846,10 @@ function App() {
   const lastGraphInsertAtRef = useRef<number>(-Infinity)
 
   const activeStroke = useRef<Stroke | null>(null)
+  const penBreakRef = useRef<PenBreak | null>(null)
+  const penTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [treePanel,setTreePanel]=useState<{initial?:string}|null>(null)
+  const [,refreshSelection]=useState(0)
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 })
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null)
   const followRef = useRef<string | null>(null)
@@ -1212,6 +1221,7 @@ function App() {
     setBoardName(data.boards.find(b => b.id === getActiveBoardId())?.name || 'Mi pizarra')
   }
   async function openLibrary() {
+    finishPendingPen();setTreePanel(null)
     setContextMenu(null)
     setBoardSearchOpen(false)
     try { await refreshLibrary(); setLibraryError(''); setLibraryOpen(true) }
@@ -1252,6 +1262,7 @@ function App() {
   }
 
   async function switchBoard(id: string) {
+    finishPendingPen()
     setBoardSearchOpen(false)
     setBoardSearchQuery('')
     setContextMenu(null)
@@ -1267,6 +1278,7 @@ function App() {
 
 
   function selectElement(value: Selection | null) {
+    refreshSelection(n=>n+1)
     selectedRef.current = value
     const id=value?groupIdFor(value):undefined
     groupRef.current=id?everySelection().filter(sel=>groupIdFor(sel)===id):(value?[value]:[])
@@ -1753,6 +1765,7 @@ function App() {
   }
 
   function selectInRectangle(area: Bounds) {
+    refreshSelection(n=>n+1)
     const ctx = canvasRef.current?.getContext('2d')
     const matches: Selection[] = []
     for (const item of mediaRef.current) {
@@ -1918,12 +1931,14 @@ function App() {
   }
 
   function rememberChange() {
+    finishPendingPen()
     undoRef.current.push(snapshot())
     if (undoRef.current.length > 100) undoRef.current.shift()
     redoRef.current = []
   }
 
   function applySnapshot(state: Snapshot) {
+    setTreePanel(null)
     setVisualEditor(null)
     strokesRef.current = state.strokes
     textsRef.current = state.texts
@@ -1943,6 +1958,7 @@ function App() {
   }
 
   function undo() {
+    finishPendingPen()
     if (editingRef.current) commitText()
     if (!undoRef.current.length) return
     redoRef.current.push(snapshot())
@@ -1950,6 +1966,7 @@ function App() {
   }
 
   function redo() {
+    finishPendingPen()
     if (editingRef.current) commitText()
     if (!redoRef.current.length) return
     undoRef.current.push(snapshot())
@@ -1957,6 +1974,7 @@ function App() {
   }
 
   async function persistBoard() {
+    finishPendingPen()
     if (!loadedRef.current || savingRef.current || !dirtyRef.current) return
     savingRef.current = true
     dirtyRef.current = false
@@ -2007,6 +2025,7 @@ function App() {
   // Esperar los guardados en curso antes de crear o restaurar una versión.
   // Evita capturar un estado incompleto y no altera la cola de autoguardado.
   async function flushBoardForHistory(): Promise<void> {
+    finishPendingPen()
     if (!loadedRef.current) throw new Error('La pizarra todavía se está cargando.')
     if (editingRef.current) commitText()
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null }
@@ -2622,7 +2641,7 @@ function App() {
     if (e.pointerType === 'touch') {
       e.preventDefault()
       // Rechazar la palma mientras se escribe con el lápiz activo.
-      if (!loadedRef.current || pointerRef.current !== null) return
+      if (!loadedRef.current || pointerRef.current !== null || activeStroke.current) return
       touchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
       e.currentTarget.setPointerCapture(e.pointerId)
       touchGestureRef.current = readTouchGesture(e.currentTarget)
@@ -2633,6 +2652,18 @@ function App() {
     if (!loadedRef.current || pointerRef.current !== null) return
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const point = toWorld(e.clientX, e.clientY)
+    if(penBreakRef.current) {
+      if(e.pointerType==='pen' && tool==='pen' && activeStroke.current && canResumePen(penBreakRef.current,performance.now(),point,cameraRef.current,
+        {color,width:brushMode==='highlighter'?highlightWidth:width,highlighter:brushMode==='highlighter'})) {
+        if(penTimerRef.current)clearTimeout(penTimerRef.current)
+        penTimerRef.current=null;penBreakRef.current=null
+        pointerRef.current=e.pointerId
+        e.currentTarget.setPointerCapture(e.pointerId)
+        activeStroke.current.points.push(point)
+        flushLiveStroke();redraw();return
+      }
+      finishPendingPen()
+    }
     if(tool==='connector') {
       if(editingRef.current)commitText()
       rememberChange()
@@ -2744,6 +2775,8 @@ function App() {
     }
     if (e.pointerType === 'mouse' || e.pointerType === 'pen')
       sendCursorPosition(e.clientX,e.clientY)
+    // Some drivers resume contact with a move rather than another down.
+    if(e.pointerType==='pen' && (e.buttons&1)!==0 && pointerRef.current===null && penBreakRef.current)pointerDown(e)
     // Se calcula el hover incluso sin un gesto activo: los controles + de la
     // tabla deben aparecer SIN necesidad de seleccionarla con un clic.
     if (e.pointerType === 'mouse' && pointerRef.current === null) {
@@ -2808,10 +2841,15 @@ function App() {
       redraw();return
     }
     if (!activeStroke.current) return
+    if(e.pointerType==='pen' && (e.buttons&1)===0) {
+      pausePen(e);return
+    }
     const native = e.nativeEvent
     const events = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : []
     if (events.length) {
-      for (const event of events) activeStroke.current.points.push(toWorld(event.clientX, event.clientY))
+      for (const event of events) {
+        if(e.pointerType!=='pen'||(event.buttons&1)!==0)activeStroke.current.points.push(toWorld(event.clientX, event.clientY))
+      }
     } else activeStroke.current.points.push(point)
     flushLiveStroke()
     redraw()
@@ -2820,6 +2858,9 @@ function App() {
   function pointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
+    if(e.pointerType==='pen' && activeStroke.current) {
+      pausePen(e);return
+    }
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     if(activeShape.current){
       const sh=activeShape.current
@@ -2838,19 +2879,7 @@ function App() {
       }
       scheduleSave()
     }
-    if (activeStroke.current) {
-      finishLiveStroke()
-      const finalStroke=activeStroke.current
-      const xs=finalStroke.points.map(p=>p.x),ys=finalStroke.points.map(p=>p.y)
-      if(xs.length){
-        const bounds={x:Math.min(...xs),y:Math.min(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)}
-        const videoZ=videosRef.current.filter(v=>overlaps(v,bounds)).map(v=>v.zIndex??-150000)
-        if(videoZ.length)(finalStroke as Stroke & {zIndex?:number}).zIndex=Math.max(...videoZ)+1
-      }
-      strokesRef.current.push(finalStroke)
-      activeStroke.current = null
-      scheduleSave()
-    }
+    commitActiveStroke()
     if (transformRef.current) {
       if(transformRef.current.group.some(s=>s.kind==='table'))refreshTables(n=>n+1)
       transformRef.current = null
@@ -2875,6 +2904,9 @@ function App() {
   function pointerCancel(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
+    if(e.pointerType==='pen' && activeStroke.current) {
+      pausePen(e);return
+    }
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     marqueeRef.current = null
     transformRef.current = null
@@ -2888,7 +2920,47 @@ function App() {
     redraw()
   }
 
+  function commitActiveStroke() {
+    const stroke=activeStroke.current
+    if(!stroke)return
+    finishLiveStroke()
+    const bounds=pointsBounds(stroke.points)
+    const videoZ=videosRef.current.filter(v=>overlaps(v,bounds)).map(v=>v.zIndex??-150000)
+    if(videoZ.length)(stroke as Stroke & {zIndex?:number}).zIndex=Math.max(...videoZ)+1
+    strokesRef.current.push(stroke);activeStroke.current=null
+    scheduleSave()
+  }
+  function finishPendingPen() {
+    if(!penBreakRef.current)return
+    if(penTimerRef.current)clearTimeout(penTimerRef.current)
+    penTimerRef.current=null;penBreakRef.current=null
+    commitActiveStroke();redraw()
+  }
+  function pausePen(e:ReactPointerEvent<HTMLCanvasElement>) {
+    const stroke=activeStroke.current
+    if(!stroke)return
+    // Keep the last actual contact, never the cancel/up position or hover points.
+    penBreakRef.current={at:performance.now(),point:stroke.points.at(-1)!,camera:{...cameraRef.current},
+      color:stroke.color,width:stroke.width,highlighter:!!(stroke as Stroke & {highlighter?:boolean}).highlighter}
+    pointerRef.current=null;lastPointerRef.current=null
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)
+    flushLiveStroke(true)
+    if(penTimerRef.current)clearTimeout(penTimerRef.current)
+    penTimerRef.current=setTimeout(finishPendingPen,PEN_RECOVERY_MS)
+  }
+
+  useEffect(()=>{
+    const finish=()=>finishPendingPen()
+    window.addEventListener('blur',finish)
+    window.addEventListener('pagehide',finish)
+    return ()=>{
+      window.removeEventListener('blur',finish);window.removeEventListener('pagehide',finish)
+      if(penTimerRef.current)clearTimeout(penTimerRef.current)
+    }
+  },[])
+
   function changeZoom(factor: number, px: number, py: number) {
+    finishPendingPen()
     if (!loadedRef.current) return
     const cam = cameraRef.current
     const next = Math.min(5, Math.max(0.01, cam.zoom * factor))
@@ -2908,6 +2980,7 @@ function App() {
       if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer')) return
       if(e.target.closest('input,textarea,select,[contenteditable="true"]')) return
       e.preventDefault()
+      finishPendingPen()
       e.stopPropagation()
       stopFollowing()
       const rect = canvas!.getBoundingClientRect()
@@ -2947,8 +3020,10 @@ function App() {
   }, [])
 
   function selectTool(next: Tool) {
+    finishPendingPen()
     if (editingRef.current && (next !== 'text' || tool !== 'text')) commitText()
     setVisualEditor(null)
+    setTreePanel(null)
     setTool(next)
     if (next !== 'select') {setTableEditorId(null);selectElement(null)}
   }
@@ -2987,6 +3062,36 @@ function App() {
     rememberChange()
     shapesRef.current[index]=mergeVisual(base,next,materializeConnector(shapesRef.current[index],resolveObject))
     redraw();scheduleSave()
+  }
+
+  function selectedTreeExpression():string|undefined {
+    if(!groupRef.current.length||groupRef.current.some(item=>item.kind!=='shape'))return
+    const ids=new Set(groupRef.current.map(item=>String(item.id)))
+    const items=shapesRef.current.filter(item=>ids.has(item.id))
+    if(items.length===1&&!items[0].groupId)return
+    try{return binaryTreeExpression(binaryTreeFromShapes(items))}catch{return}
+  }
+  function openTreePanel(initial?:string) {
+    finishPendingPen();setVisualEditor(null);setOpenMenu(null);setTreePanel({initial})
+  }
+  function insertTree(tree:BinaryTree) {
+    if(!loadedRef.current)return
+    if(editingRef.current)commitText()
+    rememberChange()
+    const items=binaryTreeShapes(tree,boardCenter(),createId,color)
+    shapesRef.current.push(...items)
+    selectTool('select')
+    groupRef.current=items.map(item=>({kind:'shape',id:item.id}))
+    selectedRef.current=null;setSelection(null);redraw();scheduleSave()
+  }
+  function insertTreeExpression(text:string) {
+    if(!loadedRef.current)return
+    if(editingRef.current)commitText()
+    rememberChange()
+    const center=boardCenter(),item:TextItem={id:createId(),color,text,fontSize:18,
+      x:center.x-Math.min(520,text.length*10)/2,y:center.y}
+    textsRef.current.push(item)
+    selectTool('select');selectElement({kind:'text',id:item.id});redraw();scheduleSave()
   }
 
   function selectShape(kind: ShapeKind) {
@@ -4157,6 +4262,7 @@ function App() {
   }
 
   function selectAllBoard() {
+    refreshSelection(n=>n+1)
     groupRef.current = [
       ...strokesRef.current.map((_, i): Selection => ({ kind: 'stroke', id: i })),
       ...textsRef.current.map((item): Selection => ({ kind: 'text', id: item.id })),
@@ -4179,8 +4285,8 @@ function App() {
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
-      if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null)}
-      if (editingRef.current || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
+      if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null)}
+      if (editingRef.current || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
@@ -4208,7 +4314,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [libraryOpen, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
+  }, [libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
 
   const cam = cameraRef.current
   const editorX = editing ? editing.x * cam.zoom + cam.x : 0
@@ -4267,7 +4373,7 @@ function App() {
           const next = e.relatedTarget
           if (!(next instanceof Element) || !next.closest('.sheet-hover-controls')) setHoveredTableId(null)
         }}
-        onPointerUp={pointerUp} onPointerCancel={pointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
+        onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={pointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
         <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y}}>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{copySelected();setContextMenu(null)}}>Copiar <small>Ctrl+C</small></button>
@@ -4594,7 +4700,7 @@ function App() {
           if(selected.length!==1||selected[0].kind!=='shape')return null
           const item=shapesRef.current.find(item=>item.id===selected[0].id)
           return item?matrixCells(item):null
-        }} addMatrixToBoard={cells=>insertAcademic('matrix',cells)} onOpenPanel={()=>{setVisualEditor(null);setOpenMenu(null)}}/>
+        }} addMatrixToBoard={cells=>insertAcademic('matrix',cells)} onOpenPanel={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(null)}}/>
       <div className="toolbar" role="toolbar" aria-label="Herramientas de pizarra">
         <div className="toolbar-tools">
       <div className="board-search-dock">
@@ -4683,8 +4789,8 @@ function App() {
           className={tool==='connector'?'active':''} onClick={()=>{selectTool('connector');setVisualEditor(null);setOpenMenu(null)}}><LuWorkflow/></button>
         <div className="toolbar-popover-anchor">
           <button type="button" title="Elementos académicos" aria-label="Elementos académicos" aria-expanded={openMenu==='academic'}
-            onClick={()=>{setVisualEditor(null);setOpenMenu(openMenu==='academic'?null:'academic')}}><LuBookOpen/></button>
-          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic}/>}
+            onClick={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(openMenu==='academic'?null:'academic')}}><LuBookOpen/></button>
+          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic} onBinaryExpression={()=>openTreePanel()}/>}
         </div>
         <div className="toolbar-popover-anchor">
           <button className={openMenu === 'add' ? 'active' : ''} title="Agregar imagen o PDF" aria-label="Agregar imagen o PDF" aria-expanded={openMenu === 'add'} onClick={() => setOpenMenu(openMenu === 'add' ? null : 'add')}>＋</button>
@@ -4802,7 +4908,10 @@ function App() {
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
-      {!visualEditor && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
+      {!visualEditor && !treePanel && !openMenu && selectedTreeExpression() && <button type="button" className="visual-edit-button tree-expression-button"
+        onClick={()=>openTreePanel(selectedTreeExpression())}>Expresión del árbol</button>}
+      {treePanel&&<BinaryTreePanel initial={treePanel.initial} onTree={insertTree} onExpression={insertTreeExpression} onClose={()=>setTreePanel(null)}/>}
+      {!visualEditor && !treePanel && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
         return item && (item.visualType || item.label!==undefined)
           ?<button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>:null

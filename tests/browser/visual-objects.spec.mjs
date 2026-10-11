@@ -218,6 +218,37 @@ test('real backend synchronizes notes and connectors across contributors, includ
   await Promise.all([a.getByRole('button',{name:'Aplicar',exact:true}).click(),b.getByRole('button',{name:'Aplicar',exact:true}).click()])
   await expect.poll(async()=>(await remote()).find(s=>s.symbol==='matrix')?.matrix).toEqual([['2','0'],['0','3']])
   await expect.poll(async()=>(await cachedShapes(b)).find(s=>s.symbol==='matrix')?.matrix).toEqual([['2','0'],['0','3']])
+  // Expression-created trees use the existing API and preserve their anchors in B's copy.
+  await a.getByRole('button',{name:'Elementos académicos',exact:true}).click()
+  await a.getByRole('button',{name:'Árbol desde expresión…',exact:true}).click()
+  await a.getByRole('textbox',{name:'Expresión del árbol binario'}).fill('(R L (D . E))')
+  await a.getByRole('button',{name:'Crear árbol visual',exact:true}).click()
+  await expect.poll(async()=>(await cachedShapes(b)).filter(s=>['R','L','D','E'].includes(s.label)).length).toBe(4)
+  await a.getByRole('button',{name:'Expresión del árbol',exact:true}).click()
+  await expect(a.getByRole('textbox',{name:'Expresión del árbol binario'})).toHaveValue('(R L (D . E))')
+  await a.getByRole('button',{name:'Cancelar',exact:true}).click()
+  // Observe actual frames on B, including the end of A's recovered pen stroke.
+  const observer=await contexts[1].newCDPSession(b),frames=[]
+  await observer.send('Network.enable')
+  observer.on('Network.webSocketFrameReceived',event=>{
+    try{const frame=JSON.parse(event.response.payloadData);if(frame.type?.startsWith('stroke_'))frames.push(frame)}catch{/* non-JSON frame */}
+  })
+  await a.keyboard.press('p')
+  await a.evaluate(()=>document.addEventListener('pointerdown',e=>{window.lastPenId=e.pointerId},{once:true}))
+  const stylus=await contexts[0].newCDPSession(a)
+  const pen=(type,x,buttons)=>stylus.send('Input.dispatchMouseEvent',{type,x,y:650,buttons,pointerType:'pen',
+    button:type==='mouseMoved'?'none':'left',clickCount:type==='mouseMoved'?0:1})
+  await pen('mousePressed',120,1);await pen('mouseMoved',140,1)
+  await a.evaluate(()=>document.querySelector('canvas').dispatchEvent(new PointerEvent('pointercancel',{
+    bubbles:true,pointerId:window.lastPenId,pointerType:'pen',clientX:140,clientY:650})))
+  await pen('mouseReleased',140,0);await pen('mousePressed',143,1)
+  await pen('mouseMoved',165,1);await pen('mouseReleased',165,0)
+  await expect.poll(()=>frames.filter(f=>f.type==='stroke_end').length).toBe(1)
+  expect(frames.filter(f=>f.type==='stroke_start')).toHaveLength(1)
+  expect(frames.filter(f=>f.type==='stroke_cancel')).toHaveLength(0)
+  const remoteStrokes=async()=>(await (await owner.get(`${api}/api/boards/${board}`)).json()).content.strokes??[]
+  await expect.poll(async()=>(await remoteStrokes()).length).toBe(1)
+  expect((await remoteStrokes())[0].points.map(p=>p.x)).toEqual([120,140,143,165])
   await a.screenshot({path:'test-results/fase1-colaboracion.png'})
   expect(userA.id).not.toBe(userB.id)
   await Promise.all(contexts.map(c=>c.close()))

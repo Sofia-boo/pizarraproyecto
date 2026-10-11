@@ -29,6 +29,9 @@ body:has(.visual-inspector) .anon-profile {display:none!important;}
 .visual-conflicts pre {font:12px system-ui;white-space:pre-wrap;overflow-wrap:anywhere;}
 .visual-conflicts button {margin-top:5px;}
 .visual-edit-button {position:fixed;z-index:20;right:16px;top:90px;padding:9px 12px;border:1px solid var(--ui-border,#d9dfeb);border-radius:10px;color:var(--ui-text,#243047);background:var(--ui-surface,#fff);box-shadow:0 4px 14px #0001;cursor:pointer;font:13px system-ui;}
+.binary-tree-panel {width:340px;}
+.binary-tree-panel textarea {font-family:ui-monospace,Consolas,monospace;}
+.tree-expression-button {right:160px;}
 .connector-instruction {position:fixed;z-index:11;left:50%;bottom:24px;transform:translateX(-50%);max-width:calc(100vw - 170px);padding:8px 12px;border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#243047);border:1px solid var(--ui-border,#d9dfeb);box-shadow:0 4px 14px #0001;font:12px system-ui;pointer-events:none;}
 .app[data-tool='connector'] :is(.board-video-layer,.board-graph-layer,.sheet-static-layer) * {pointer-events:none!important;}
 @media(max-width:1000px) {
@@ -40,4 +43,5 @@ body:has(.visual-inspector) .anon-profile {display:none!important;}
   .academic-library-grid {grid-template-columns:repeat(2,minmax(0,1fr));max-height:45dvh;}
   .visual-inspector {top:auto;bottom:75px;right:12px;max-height:55dvh;}
   .visual-edit-button {top:auto;bottom:24px;left:12px;right:auto;}
+  .tree-expression-button {bottom:65px;}
 }
