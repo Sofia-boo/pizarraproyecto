@@ -4556,7 +4556,7 @@ function App() {
         }}
         onPointerUp={tabletPointerUp} onPointerCancel={tabletPointerCancel} onLostPointerCapture={tabletPointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
-        <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y}}>
+        <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y,maxHeight:Math.max(80,window.innerHeight-contextMenu.y-8),overflowY:'auto'}}>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{copySelected();setContextMenu(null)}}>Copiar <small>Ctrl+C</small></button>
           <button role="menuitem" onClick={()=>{void pasteFromBoardMenu()}}>Pegar <small>Ctrl+V</small></button>
           <hr/>
