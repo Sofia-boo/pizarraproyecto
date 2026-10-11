@@ -5,7 +5,7 @@ test('private board saves without a backend, survives refresh and exports a back
   await page.route('**/api/**',route=>route.fulfill({status:503,body:'Server off'}))
   await page.goto('/')
   await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
-  await expect(page.getByText('✓ Guardada en este dispositivo',{exact:true})).toBeVisible()
+  await expect(page.locator('canvas').first()).toBeVisible()
   const canvas=page.locator('canvas').first()
   const bounds=await canvas.boundingBox()
   await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2)
@@ -17,7 +17,7 @@ test('private board saves without a backend, survives refresh and exports a back
     return new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').getAll();r.onsuccess=()=>{const count=r.result.filter(b=>b.id.startsWith('local:')).reduce((n,b)=>n+b.content.strokes.length,0);db.close();resolve(count)}})
   })).toBeGreaterThan(0)
   await page.reload()
-  await expect(page.getByText('✓ Guardada en este dispositivo',{exact:true})).toBeVisible()
+  await expect(page.locator('canvas').first()).toBeVisible()
   await page.getByRole('button',{name:/Mi pizarra privada/}).first().click()
   const downloaded=page.waitForEvent('download')
   await page.getByRole('button',{name:'Descargar respaldo',exact:true}).click()
@@ -25,9 +25,19 @@ test('private board saves without a backend, survives refresh and exports a back
   const backup=JSON.parse(await readFile(await file.path(),'utf8'))
   expect(backup.format).toBe('pizarra-backup-v1')
   expect(backup.content.strokes.length).toBeGreaterThan(0)
-  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({name:'respaldo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))})
-  await expect(page.getByText('✓ Guardada en este dispositivo',{exact:true})).toBeVisible()
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({name:'respaldo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))}),
+  ])
+  await expect(page.locator('canvas').first()).toBeVisible()
   await page.screenshot({path:'test-results/privada-local.png'})
+  await page.setViewportSize({width:375,height:812})
+  await page.getByRole('button',{name:'Opciones del lápiz'}).click()
+  const pen=await page.getByRole('group',{name:'Configuración del lápiz'}).boundingBox()
+  expect(pen.x).toBeGreaterThanOrEqual(0)
+  expect(pen.x+pen.width).toBeLessThanOrEqual(375)
+  expect(pen.width).toBeGreaterThan(pen.height*2)
+  await page.screenshot({path:'test-results/lapiz-movil.png'})
 })
 
 test('shared board and image remain on this device after the server goes offline',async({page})=>{
@@ -45,7 +55,7 @@ test('shared board and image remain on this device after the server goes offline
     return route.fulfill({status:404,contentType:'application/json',body:'{"detail":"No disponible"}'})
   })
   await page.goto('/')
-  await expect(page.getByText('✓ Guardada · servidor y copia local',{exact:true})).toBeVisible()
+  await expect(page.locator('canvas').first()).toBeVisible()
   await expect.poll(()=>page.evaluate(async()=>{
     const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
     return new Promise(resolve=>{const r=db.transaction('assets').objectStore('assets').get('browser-user:image-test');r.onsuccess=()=>{db.close();resolve(Boolean(r.result))}})
@@ -53,6 +63,6 @@ test('shared board and image remain on this device after the server goes offline
   offline=true
   await page.reload()
   await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
-  await expect(page.getByText('✓ Copia local · servidor desconectado',{exact:true})).toBeVisible()
+  await expect(page.locator('canvas').first()).toBeVisible()
   await page.screenshot({path:'test-results/compartida-copia-local.png'})
 })

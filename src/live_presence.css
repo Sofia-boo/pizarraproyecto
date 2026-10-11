@@ -38,5 +38,11 @@
   .live-presence-more{font-size:10px}
 }
 @media(max-width:390px){
-  .live-presence{top:68px;right:12px;max-width:calc(100vw - 24px)}
+  .live-presence{top:17px;right:88px;max-width:calc(100vw - 240px)}
 }
+
+.live-presence {overflow-x:auto;}
+.live-presence-avatar {padding:0;border:0;flex-shrink:0;cursor:pointer;}
+.live-presence-avatar:disabled {cursor:default;opacity:1;}
+.live-presence-avatar.following {outline:3px solid #6366f1;outline-offset:2px;}
+.live-follow-stop {pointer-events:auto;border:0;border-radius:14px;padding:5px 8px;font:12px system-ui;cursor:pointer;background:#e0e7ff;color:#312e81;white-space:nowrap;}

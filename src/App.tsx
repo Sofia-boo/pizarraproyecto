@@ -1,3 +1,4 @@
+import { mergeBoard } from './storage/merge'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { LuHand } from 'react-icons/lu'
 import type { Ref, CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -60,7 +61,7 @@ function ToolbarShapesIcon() {
 
 
 const TOOL_COLORS = ['#202020', '#ef4444', '#2563eb', '#16a34a'] as const
-const TOOL_PALETTE = ['#f59e0b', '#eab308', '#06b6d4', '#8b5cf6', '#ec4899', '#ffffff'] as const
+const TOOL_PALETTE = ['#eab308', '#ffffff'] as const
 
 function ToolColorPalette({ value, custom, onPick, onCustom }: {
   value: string; custom: string; onPick: (color: string) => void; onCustom: (color: string) => void
@@ -130,7 +131,7 @@ function occursOn(event: CalendarEvent, date: string): boolean {
 
 type ThemeMode = 'light' | 'dark' | 'rest'
 type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape'
-type LiveUser = {id:string;name:string;color:string;emoji?:string}
+type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:{center:Point;zoom:number};client_ids?:string[]}
 type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number}
 // PERFILES_Y_CURSORES_V1
 type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
@@ -834,6 +835,13 @@ function App() {
 
   const activeStroke = useRef<Stroke | null>(null)
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 })
+  const cursorCanvasRef = useRef<HTMLCanvasElement>(null)
+  const followRef = useRef<string | null>(null)
+  const [following, setFollowing] = useState<string | null>(null)
+  const viewsRef = useRef(new Map<string, {center:Point;zoom:number}>())
+  const lastViewSentRef = useRef(0)
+  const lastViewValueRef = useRef('')
+  const cursorScreenRef = useRef<Point | null>(null)
   const pointerRef = useRef<number | null>(null)
   /* GESTOS_TABLET_PEN_2_DEDOS_V1 */
   // Los dedos solo navegan. El lápiz activo (pointerType pen) y el mouse
@@ -864,11 +872,40 @@ function App() {
   }
 
   function sendCursorPosition(clientX: number, clientY: number) {
+    cursorScreenRef.current = {x:clientX,y:clientY}
     if (!loadedRef.current) return
     const now = performance.now()
     if (now - lastCursorSentRef.current < 42) return
     lastCursorSentRef.current = now
     sendLive({type:'cursor_move',point:toWorld(clientX,clientY)})
+  }
+
+  function stopFollowing() {
+    if (!followRef.current) return
+    followRef.current = null
+    setFollowing(null)
+  }
+
+  function followView(userId: string) {
+    const view = viewsRef.current.get(userId)
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!view || !rect) return
+    cameraRef.current = {zoom:view.zoom,x:rect.width/2-view.center.x*view.zoom,y:rect.height/2-view.center.y*view.zoom}
+    setZoomLabel(Math.round(view.zoom*100))
+    redraw()
+  }
+
+  function sendCamera(force = false) {
+    const now = performance.now()
+    if (!loadedRef.current || (!force && now-lastViewSentRef.current<100)) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const cam = cameraRef.current
+    const value = `${cam.x}:${cam.y}:${cam.zoom}:${rect.width}:${rect.height}`
+    if (!force && value===lastViewValueRef.current) return
+    lastViewSentRef.current = now
+    lastViewValueRef.current = value
+    sendLive({type:'camera_move',center:{x:(rect.width/2-cam.x)/cam.zoom,y:(rect.height/2-cam.y)/cam.zoom},zoom:cam.zoom})
   }
 
   function broadcastVideo(videoId:string,action:string,position:number) {
@@ -1462,6 +1499,7 @@ function App() {
   }
 
   function redraw() {
+    sendCamera()
     const staticLayer=staticTableLayerRef.current
     if(staticLayer){
       const cam=cameraRef.current
@@ -1661,28 +1699,29 @@ function App() {
     }
     // Los cursores remotos se dibujan en píxeles de pantalla pero se reciben
     // como coordenadas del mundo: no se desalinean con zooms distintos.
-    uiCtx.save()
-    uiCtx.setTransform(dpr,0,0,dpr,0,0)
+    const cursorCtx = cursorCanvasRef.current?.getContext('2d')
+    if (!cursorCtx) return
+    cursorCtx.setTransform(1,0,0,1,0,0)
+    cursorCtx.clearRect(0,0,cursorCtx.canvas.width,cursorCtx.canvas.height)
+    cursorCtx.setTransform(dpr,0,0,dpr,0,0)
     for (const cursor of remoteCursorsRef.current.values()) {
-      if (Date.now()-cursor.updated > 6500) continue
       const px=cursor.point.x*cam.zoom+cam.x
       const py=cursor.point.y*cam.zoom+cam.y
       if(px < -30 || py < -30 || px > viewWidth+30 || py > viewHeight+30) continue
       const color=/^#[0-9a-fA-F]{6}$/.test(cursor.color)?cursor.color:'#6366f1'
-      uiCtx.save()
-      uiCtx.translate(px,py)
-      uiCtx.shadowColor='#0004';uiCtx.shadowBlur=3
-      uiCtx.fillStyle='#fff';uiCtx.strokeStyle=color;uiCtx.lineWidth=2
-      uiCtx.beginPath();uiCtx.moveTo(0,0);uiCtx.lineTo(0,23);uiCtx.lineTo(6,17);uiCtx.lineTo(12,25);uiCtx.lineTo(16,23);uiCtx.lineTo(10,15);uiCtx.lineTo(17,15);uiCtx.closePath();uiCtx.fill();uiCtx.stroke()
-      uiCtx.shadowBlur=0
+      cursorCtx.save()
+      cursorCtx.translate(px,py)
+      cursorCtx.shadowColor='#0004';cursorCtx.shadowBlur=3
+      cursorCtx.fillStyle='#fff';cursorCtx.strokeStyle=color;cursorCtx.lineWidth=2
+      cursorCtx.beginPath();cursorCtx.moveTo(0,0);cursorCtx.lineTo(0,23);cursorCtx.lineTo(6,17);cursorCtx.lineTo(12,25);cursorCtx.lineTo(16,23);cursorCtx.lineTo(10,15);cursorCtx.lineTo(17,15);cursorCtx.closePath();cursorCtx.fill();cursorCtx.stroke()
+      cursorCtx.shadowBlur=0
       const label=`${cursor.emoji} ${cursor.name}`
-      uiCtx.font='600 12px system-ui,sans-serif'
-      const w=Math.min(170,uiCtx.measureText(label).width+18)
-      uiCtx.fillStyle=color;uiCtx.beginPath();uiCtx.roundRect(16,24,w,25,7);uiCtx.fill()
-      uiCtx.fillStyle='#fff';uiCtx.fillText(label,23,41,Math.max(6,w-14))
-      uiCtx.restore()
+      cursorCtx.font='600 12px system-ui,sans-serif'
+      const w=Math.min(170,cursorCtx.measureText(label).width+18)
+      cursorCtx.fillStyle=color;cursorCtx.beginPath();cursorCtx.roundRect(16,24,w,25,7);cursorCtx.fill()
+      cursorCtx.fillStyle='#fff';cursorCtx.fillText(label,23,41,Math.max(6,w-14))
+      cursorCtx.restore()
     }
-    uiCtx.restore()
   }
 
   // Al dejar de editar una tabla, esta pasa inmediatamente a su vista normal.
@@ -1918,6 +1957,23 @@ function App() {
     }
     try {
       const result = await saveBoard(data)
+      if (result.merged) {
+        const merged = mergeBoard(data, {
+          ...data, strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
+          shapes:shapesRef.current,tables:tablesRef.current,graphs:graphsRef.current,
+          videos:videosRef.current,camera:cameraRef.current,
+        }, result.merged)
+        strokesRef.current=merged.strokes
+        textsRef.current=merged.texts
+        mediaRef.current=merged.media
+        shapesRef.current=merged.shapes as ShapeItem[]
+        tablesRef.current=merged.tables as SheetItem[]
+        graphsRef.current=merged.graphs as BoardGraphItem[]
+        videosRef.current=merged.videos as YouTubeItem[]
+        setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1)
+        for(const [key,remote] of remoteStrokesRef.current) if(remote.done) remoteStrokesRef.current.delete(key)
+        redraw();hydrateMedia(mediaRef.current)
+      }
       setSaveStatus(dirtyRef.current ? 'pending' : result.pending ? 'local' : 'saved')
     } catch (error) {
       dirtyRef.current = true
@@ -2121,11 +2177,11 @@ function App() {
         if (stopped) return
         socket = new WebSocket(url)
         liveSocketRef.current = socket
-        socket.onopen = () => { if (!stopped) setLiveConnected(true) }
+        socket.onopen = () => { if (!stopped) { setLiveConnected(true);sendCamera(true) } }
         socket.onmessage = event => {
           try {
             const msg = JSON.parse(event.data) as {
-              type?:string;board_id?:string;version?:number;you?:string;
+              type?:string;board_id?:string;version?:number;you?:string;center?:Point;zoom?:number;
               users?:LiveUser[];client_id?:string;stroke_id?:string;user_id?:string;
               name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
@@ -2136,6 +2192,17 @@ function App() {
             } else if (msg.type === 'presence' && Array.isArray(msg.users)) {
               setLiveUsers(msg.users)
               setLiveSelf(msg.you ?? null)
+              const present = new Set(msg.users.map(user=>user.id))
+              for(const [key,cursor] of remoteCursorsRef.current) {
+                const user=msg.users.find(user=>user.id===cursor.userId)
+                if(!user || (user.client_ids && !user.client_ids.includes(cursor.clientId))) remoteCursorsRef.current.delete(key)
+              }
+              for(const user of msg.users) if(user.view) viewsRef.current.set(user.id,user.view)
+              if(followRef.current && !present.has(followRef.current)) stopFollowing()
+              redraw()
+            } else if (msg.type === 'camera_move' && msg.user_id && msg.center && typeof msg.zoom==='number') {
+              viewsRef.current.set(msg.user_id,{center:msg.center,zoom:msg.zoom})
+              if(followRef.current===msg.user_id) followView(msg.user_id)
             } else if (msg.type === 'video_state' && typeof msg.video_id==='string' &&
                        typeof msg.position==='number' && typeof msg.playing==='boolean' &&
                        typeof msg.start==='number' && typeof msg.at==='number') {
@@ -2211,12 +2278,6 @@ function App() {
           removed=true
         }
       }
-      for (const [key, cursor] of remoteCursorsRef.current) {
-        if (now-cursor.updated > 6500) {
-          remoteCursorsRef.current.delete(key)
-          removed=true
-        }
-      }
       if (removed) redraw()
     }, 3000)
     window.addEventListener('focus', onFocus)
@@ -2233,6 +2294,8 @@ function App() {
       liveStrokeProgressRef.current = null
       remoteStrokesRef.current.clear()
       remoteCursorsRef.current.clear()
+      viewsRef.current.clear()
+      stopFollowing()
     }
   }, [liveBoardId])
 
@@ -2249,6 +2312,9 @@ function App() {
         foreground.width = canvas.width
         foreground.height = canvas.height
       }
+      const cursorCanvas = cursorCanvasRef.current
+      if(cursorCanvas) { cursorCanvas.width=canvas.width;cursorCanvas.height=canvas.height }
+      if(followRef.current) followView(followRef.current)
       redraw()
     }
     window.addEventListener('resize', resize)
@@ -2572,7 +2638,7 @@ function App() {
       return
     }
     rememberChange()
-    activeStroke.current = { points: [point], color, width: brushMode === 'highlighter' ? highlightWidth : width, highlighter: brushMode === 'highlighter' } as Stroke
+    activeStroke.current = { id: createId(), points: [point], color, width: brushMode === 'highlighter' ? highlightWidth : width, highlighter: brushMode === 'highlighter' } as Stroke
     startLiveStroke(activeStroke.current)
     redraw()
   }
@@ -2757,12 +2823,45 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
     function onWheel(e: WheelEvent) {
+      if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer')) return
+      if(e.target.closest('input,textarea,select,[contenteditable="true"]')) return
       e.preventDefault()
+      e.stopPropagation()
+      stopFollowing()
       const rect = canvas!.getBoundingClientRect()
-      changeZoom(Math.exp(-e.deltaY * 0.004), e.clientX - rect.left, e.clientY - rect.top)
+      const scale = e.deltaMode===1 ? 16 : e.deltaMode===2 ? rect.height : 1
+      if(e.ctrlKey) changeZoom(Math.exp(-e.deltaY * scale * 0.004), e.clientX - rect.left, e.clientY - rect.top)
+      else {
+        cameraRef.current.x-=e.deltaX*scale
+        cameraRef.current.y-=e.deltaY*scale
+        redraw();scheduleSave()
+      }
     }
-    canvas.addEventListener('wheel', onWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', onWheel)
+    const onMove = (e:PointerEvent) => sendCursorPosition(e.clientX,e.clientY)
+    const onAction = (e:Event) => {
+      if(e.target instanceof Element && e.target.closest('.live-presence')) return
+      stopFollowing()
+    }
+    const heartbeat = setInterval(()=>{
+      sendCamera(true)
+      const p=cursorScreenRef.current
+      if(p && document.visibilityState==='visible') sendCursorPosition(p.x,p.y)
+    },1000)
+    document.addEventListener('wheel', onWheel, { passive: false, capture:true })
+    document.addEventListener('pointermove',onMove,true)
+    document.addEventListener('pointerdown',onAction,true)
+    document.addEventListener('keydown',onAction,true)
+    // Clicking inside a cross-origin player focuses its iframe.
+    const onBlur = () => { if(document.activeElement instanceof HTMLIFrameElement) stopFollowing() }
+    window.addEventListener('blur',onBlur)
+    return () => {
+      clearInterval(heartbeat)
+      document.removeEventListener('wheel',onWheel,true)
+      document.removeEventListener('pointermove',onMove,true)
+      document.removeEventListener('pointerdown',onAction,true)
+      document.removeEventListener('keydown',onAction,true)
+      window.removeEventListener('blur',onBlur)
+    }
   }, [])
 
   function selectTool(next: Tool) {
@@ -4008,18 +4107,18 @@ function App() {
     <div className="app" data-theme={theme}
       onDragEnter={onFileDragEnter} onDragOver={onFileDragOver}
       onDragLeave={onFileDragLeave} onDrop={onFileDrop}>
-      {liveBoardId && <aside className="live-presence" aria-label="Usuarios activos en esta pizarra">
+      {liveBoardId && !privateBoard(liveBoardId) && <aside className="live-presence" aria-label="Usuarios activos en esta pizarra">
         <span className={`live-presence-state ${liveConnected?'':'disconnected'}`} title={liveConnected?'Conectado':'Reconectando'} />
-        {liveUsers.slice(0,3).map(user=><span key={user.id} className={`live-presence-avatar ${user.id===liveSelf?'live-presence-self':''}`}
-            style={{backgroundColor:/^#[0-9a-fA-F]{6}$/.test(user.color)?user.color:'#6366f1'}}
-            title={`${user.name}${user.id===liveSelf?' (vos)':''}`} aria-label={user.name}>
+        {liveUsers.map(user=><button type="button" key={user.id}
+          className={`live-presence-avatar ${user.id===liveSelf?'live-presence-self':''} ${following===user.id?'following':''}`}
+          style={{backgroundColor:/^#[0-9a-fA-F]{6}$/.test(user.color)?user.color:'#6366f1'}}
+          title={`${user.name}${user.id===liveSelf?' (vos)':following===user.id?' · Siguiendo cámara':' · Seguir cámara'}`}
+          aria-label={user.id===liveSelf?`${user.name} (vos)`:`Seguir a ${user.name}`}
+          aria-pressed={following===user.id} disabled={user.id===liveSelf}
+          onClick={()=>{if(followRef.current===user.id)stopFollowing();else{followRef.current=user.id;setFollowing(user.id);followView(user.id)}}}>
           {user.emoji||'🙂'}
-        </span>)}
-        {liveUsers.length>3&&<span className="live-presence-more"
-          title={liveUsers.slice(3).map(user=>user.name).join(', ')}
-          aria-label={`${liveUsers.length-3} participantes más: ${liveUsers.slice(3).map(user=>user.name).join(', ')}`}>
-          +{liveUsers.length-3}
-        </span>}
+        </button>)}
+        {following&&<button type="button" className="live-follow-stop" onClick={stopFollowing}>Dejar de seguir</button>}
         {!liveConnected&&<span className="live-presence-empty" title="Reconectando">…</span>}
       </aside>}
       <canvas ref={canvasRef} onPointerDown={pointerDown} onPointerMove={pointerMove}
@@ -4027,7 +4126,6 @@ function App() {
           // No ocultar los controles cuando el puntero pasa del canvas a un botón +.
           const next = e.relatedTarget
           if (!(next instanceof Element) || !next.closest('.sheet-hover-controls')) setHoveredTableId(null)
-          sendLive({type:'cursor_hide'})
         }}
         onPointerUp={pointerUp} onPointerCancel={pointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
@@ -4102,6 +4200,7 @@ function App() {
         </div>)}
       </div>
       <canvas ref={foregroundCanvasRef} className="board-foreground-canvas" aria-hidden="true" />
+      <canvas ref={cursorCanvasRef} className="board-cursor-canvas" aria-hidden="true" />
       {hoveredTableId && !tableEditorId && (() => {
         const table = tablesRef.current.find(item => item.id === hoveredTableId)
         if (!table) return null
@@ -4372,7 +4471,7 @@ function App() {
               onClick={() => { selectTool('pen'); setOpenMenu(openMenu === 'pen' ? null : 'pen') }}>
               {brushMode === 'highlighter' ? <span aria-hidden="true">▰</span> : <span aria-hidden="true">✎</span>}
             </button>
-            {openMenu === 'pen' && <div className="toolbar-popover tool-settings-popover" role="group" aria-label="Configuración del lápiz">
+            {openMenu === 'pen' && <div className="toolbar-popover tool-settings-popover pen-settings-popover" role="group" aria-label="Configuración del lápiz">
               <div className="tool-type-switch">
                 <button type="button" className={brushMode==='pen'?'selected':''} aria-pressed={brushMode==='pen'} onClick={()=>setBrushMode('pen')}>Lápiz</button>
                 <button type="button" className={brushMode==='highlighter'?'selected':''} aria-pressed={brushMode==='highlighter'} onClick={()=>setBrushMode('highlighter')}>Resaltador</button>
@@ -4548,14 +4647,6 @@ function App() {
         </div>
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
-      <div className="status" title={deviceNotice}>
-        {saveStatus === 'loading' && 'Cargando...'}
-        {saveStatus === 'saved' && (privateBoard()?'✓ Guardada en este dispositivo':'✓ Guardada · servidor y copia local')}
-        {saveStatus === 'local' && '✓ Copia local · pendiente de sincronizar'}
-        {saveStatus === 'copy' && '✓ Copia local · servidor desconectado'}
-        {saveStatus === 'pending' && 'Guardando...'}
-        {saveStatus === 'error' && '⚠ Error de almacenamiento'}
-      </div>
       <div className="zoom-controls">
         <button onClick={() => changeZoom(2 / 3, window.innerWidth / 2, window.innerHeight / 2)}>−</button>
         <span>{zoomLabel}%</span>

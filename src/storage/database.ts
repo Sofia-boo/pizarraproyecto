@@ -1,7 +1,7 @@
 import { openDB } from 'idb'
 
 export type Point = { x: number; y: number; pressure?: number }
-export type Stroke = { points: Point[]; color: string; width: number }
+export type Stroke = { id?: string; points: Point[]; color: string; width: number }
 export type TextItem = { id: string; x: number; y: number; text: string; color: string; fontSize: number }
 export type MediaItem = {
   id: string

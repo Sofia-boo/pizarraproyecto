@@ -1,8 +1,9 @@
 import type { Point, Stroke, TextItem, MediaItem, BoardData } from './storage/database'
 import { deviceDB, isPrivate, newLocalId, emptyContent, readDeviceBoard, writeDeviceBoard, localLibrary, migrateLegacy } from './storage/device'
 import type { DeviceBoard } from './storage/device'
+import { mergeBoard, strokeIds } from './storage/merge'
 export type { Point, Stroke, TextItem, MediaItem, BoardData }
-export type BoardContentWithExtras = BoardData & { shapes?: unknown[]; tables?: unknown[]; graphs?: unknown[] }
+export type BoardContentWithExtras = BoardData & { shapes?: unknown[]; tables?: unknown[]; graphs?: unknown[]; videos?: unknown[] }
 
 const API = import.meta.env.DEV ? `${location.protocol}//${location.hostname}:8765` : location.origin
 let activeId = localStorage.getItem('pizarra_activa') || 'principal'
@@ -146,7 +147,7 @@ async function cacheRemote(result: { id: string; name?: string; version: number;
   if (previous?.draft) return
   await writeDeviceBoard({ ...previous, key, id: result.id, name: result.name ?? previous?.name ?? 'Compartida',
     folder_id: previous?.folder_id ?? null, storage: 'shared', version: result.version,
-    updated_at: new Date().toISOString(), content: { ...emptyContent(), ...result.content } })
+    updated_at: new Date().toISOString(), content: strokeIds({ ...emptyContent(), ...result.content }) })
   announce('Compartida: copia guardada en este dispositivo.')
   if (cacheMedia) await cacheAssets({ ...emptyContent(), ...result.content })
 }
@@ -163,24 +164,24 @@ export async function loadBoard(): Promise<BoardContentWithExtras | undefined> {
     if (!saved) throw new Error('No se encontró la pizarra privada.')
     activeVersion = saved.version
     announce('Privada: guardada solo en este dispositivo.')
-    return saved.content
+    return strokeIds(saved.content)
   }
   if (saved?.draft) {
     activeVersion = saved.version
     announce('Cambios guardados en este dispositivo, pendientes de sincronizar. No se reemplazaron por la copia del servidor.')
-    return saved.draft
+    return strokeIds(saved.draft)
   }
   try {
     if (!remoteEnabled) throw new Unavailable()
     const result = await request<{id:string;name:string;version:number;content:BoardContentWithExtras}>(`/api/boards/${encodeURIComponent(activeId)}`)
     activeVersion = result.version
     await cacheRemote(result)
-    return { ...emptyContent(), ...result.content }
+    return strokeIds({ ...emptyContent(), ...result.content })
   } catch (error) {
     if (!(error instanceof Unavailable) || !saved) throw error
     activeVersion = saved.version
     announce('Copia local de la compartida. El servidor no está disponible.')
-    return saved.content
+    return strokeIds(saved.content)
   }
 }
 
@@ -227,11 +228,28 @@ export async function saveBoard(content: BoardContentWithExtras) {
         await db.delete('meta', `upload:${assetKey(media.assetId)}`)
       }
     }
-    const result = await request<{version:number}>(`/api/boards/${id}`, json('PUT', {content, version:activeVersion}))
+    let version = activeVersion
+    let merged = content
+    let base = strokeIds(previous.content)
+    let result: {version:number} | undefined
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        result = await request<{version:number}>(`/api/boards/${id}`, json('PUT', {content:merged, version}))
+        break
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status !== 409) throw error
+        const latest = await request<{version:number;content:BoardContentWithExtras}>(`/api/boards/${id}`)
+        const remote = strokeIds({ ...emptyContent(), ...latest.content })
+        merged = mergeBoard(base, merged, remote)
+        base = remote
+        version = latest.version
+      }
+    }
+    if (!result) throw new Unavailable('La pizarra sigue recibiendo cambios; se reintentará el envío.')
     activeVersion = result.version
-    await writeDeviceBoard({ ...previous, content, draft: undefined, version: result.version, updated_at: new Date().toISOString() })
+    await writeDeviceBoard({ ...previous, content: merged, draft: undefined, version: result.version, updated_at: new Date().toISOString() })
     announce('Compartida: guardada en el servidor y en este dispositivo.')
-    return { pending: false }
+    return { pending: false, merged: merged === content ? undefined : merged }
   } catch (error) {
     if (error instanceof Unavailable) {
       announce('Guardada en este dispositivo. Pendiente de enviar al servidor.')
@@ -344,7 +362,8 @@ export async function fetchBoardForLiveSync(boardId: string): Promise<{
   id: string; version: number; content: BoardContentWithExtras
 }> {
   if (isPrivate(boardId) || !remoteEnabled || await hasPendingShared()) throw new Error('Hay cambios locales o no hay conexión de sincronización.')
-  return request(`/api/boards/${encodeURIComponent(boardId)}`)
+  const snapshot = await request<{id:string;version:number;content:BoardContentWithExtras}>(`/api/boards/${encodeURIComponent(boardId)}`)
+  return { ...snapshot, content: strokeIds({ ...emptyContent(), ...snapshot.content }) }
 }
 export async function acceptBoardLiveVersion(boardId: string, version: number, content?: BoardContentWithExtras) {
   if (content) await cacheRemote({id:boardId, version, content})

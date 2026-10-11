@@ -60,7 +60,7 @@ describe('private boards and shared device replicas',()=>{
     expect(await library.loadAsset('asset-1')).toBeInstanceOf(Blob)
     expect(fetched).not.toHaveBeenCalled()
   })
-  it('retains offline edits across reopen and refuses to overwrite a conflicting server version',async()=>{
+  it('retains offline edits across reopen and preserves the draft when reconciliation cannot fetch the server',async()=>{
     server()
     await library.loadBoard()
     library.setStorageSession(owner,false)
@@ -70,12 +70,37 @@ describe('private boards and shared device replicas',()=>{
     expect(await library.hasPendingShared()).toBe(true)
     library.setStorageSession(owner)
     fetched.mockResolvedValue(Response.json({detail:'Modificada en otra pestaña'},{status:409}))
-    await expect(library.saveBoard(draft)).rejects.toThrow('otra pestaña')
+    await expect(library.saveBoard(draft)).rejects.toThrow('409')
     expect((await device.readDeviceBoard(`${owner}:${remoteId}`))?.draft).toEqual(draft)
     const id=await library.duplicateAsPrivate()
     library.selectBoard(id)
     library.setStorageSession(null,false)
     expect(await library.loadBoard()).toEqual(draft)
+  })
+  it('merges simultaneous additions and lets a contributor edit and delete another user’s content',async()=>{
+    server()
+    const original=(await library.loadBoard())!
+    const remote={...original,texts:[...original.texts,{id:'remote-text',x:10,y:10,text:'From A',color:'#000',fontSize:16}]}
+    const local={...original,texts:[{...original.texts[0],text:'Edited by B'}]}
+    let writes=0
+    fetched.mockImplementation(async(input:string,init?:RequestInit)=>{
+      if(init?.method==='PUT') {
+        writes++
+        if(writes===1)return Response.json({detail:'Conflict'},{status:409})
+        const body=JSON.parse(init.body as string)
+        expect(body.version).toBe(5)
+        expect(body.content.texts).toEqual([local.texts[0],remote.texts[1]])
+        return Response.json({version:6})
+      }
+      return Response.json({id:remoteId,content:remote,version:5})
+    })
+    const saved=await library.saveBoard(local)
+    expect(saved.merged?.texts).toHaveLength(2)
+    fetched.mockResolvedValue(Response.json({version:7}))
+    await library.saveBoard({...saved.merged!,texts:[]})
+    const body=JSON.parse(fetched.mock.calls.at(-1)![1].body)
+    expect(body.content.texts).toEqual([])
+    expect((await device.readDeviceBoard(`${owner}:${remoteId}`))?.content.texts).toEqual([])
   })
   it('isolates shared replicas from other signed-in users and denies cached fallback on a 403',async()=>{
     server()

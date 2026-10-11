@@ -84,6 +84,42 @@ class BackendTest(unittest.TestCase):
         self.assertIn('/api/excel/import', paths)
         self.assertTrue(any('history' in path for path in paths))
 
+    def test_contributor_edits_and_camera_presence(self):
+        with TestClient(self.app, base_url='https://testserver') as client:
+            owner = client.post('/api/auth/guest', json={
+                'name': 'Camera owner', 'password': 'camera-password'}).json()
+            board = client.post('/api/boards', json={'name': 'Collaboration'}).json()['id']
+            token = client.post(f'/api/share/boards/{board}', json={'role': 'editor'}).json()['token']
+            content = {'strokes': [{'id': 'a-stroke', 'points': [{'x': 1, 'y': 2}], 'width': 3, 'color': '#202020'}],
+                       'texts': [], 'media': [], 'camera': {'x': 0, 'y': 0, 'zoom': 1}}
+            self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 0, 'content': content}).status_code, 200)
+            with client.websocket_connect(f'wss://testserver/api/live/{board}') as a:
+                a.receive_json()
+                a.receive_json()
+                a.send_json({'type': 'camera_move', 'center': {'x': 400, 'y': 500}, 'zoom': 2})
+                client.cookies.clear()
+                other = client.post('/api/auth/guest', json={
+                    'name': 'Camera editor', 'password': 'editor-password'}).json()
+                self.assertEqual(client.post('/api/share/join', json={'token': token}).status_code, 200)
+                with client.websocket_connect(f'wss://testserver/api/live/{board}') as b:
+                    b.receive_json()
+                    presence = b.receive_json()
+                    owner_view = next(u['view'] for u in presence['users'] if u['id'] == owner['id'])
+                    self.assertEqual(owner_view, {'center': {'x': 400, 'y': 500}, 'zoom': 2})
+                    a.receive_json()  # New participant.
+                    b.send_json({'type': 'camera_move', 'center': {'x': 50, 'y': 60}, 'zoom': 100})
+                    b.send_json({'type': 'camera_move', 'center': {'x': 50, 'y': 60}, 'zoom': 1.5})
+                    event = a.receive_json()
+                    self.assertEqual(event['type'], 'camera_move')
+                    self.assertEqual(event['zoom'], 1.5)
+                    self.assertEqual(event['user_id'], other['id'])
+                    # An editor may erase content originally committed by the owner.
+                    content['strokes'] = []
+                    result = client.put(f'/api/boards/{board}', json={'version': 1, 'content': content})
+                    self.assertEqual(result.status_code, 200, result.text)
+                    self.assertEqual(a.receive_json()['version'], 2)
+                    self.assertEqual(b.receive_json()['version'], 2)
+                    self.assertEqual(client.get(f'/api/boards/{board}').json()['content']['strokes'], [])
 
 if __name__ == '__main__':
     unittest.main()

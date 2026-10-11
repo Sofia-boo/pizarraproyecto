@@ -77,11 +77,14 @@ async def _presence(board_id: str):
     # Una misma identidad abierta en dos pestañas se presenta una sola vez.
     by_user = {}
     for participant in peers.values():
+        previous = by_user.get(participant['uid'], {})
         by_user[participant['uid']] = {
             'id': participant['uid'],
             'name': participant['name'],
             'color': participant['color'],
             'emoji': participant['emoji'],
+            'view': participant.get('view') or previous.get('view'),
+            'client_ids': previous.get('client_ids', []) + [participant['client_id']],
         }
     users = sorted(by_user.values(), key=lambda item: item['name'].casefold())
     for socket, participant in list(peers.items()):
@@ -149,6 +152,7 @@ def attach_live_sync(app, db_connection):
             'active': None,
             'points': 0,
             'traffic': deque(),
+            'view': None,
         }
         peers = _clients.setdefault(board_id, {})
         peers[websocket] = participant
@@ -171,7 +175,7 @@ def attach_live_sync(app, db_connection):
                 if not isinstance(payload, dict):
                     continue
                 event_type = payload.get('type')
-                if event_type not in ('stroke_start', 'stroke_points', 'stroke_end', 'stroke_cancel', 'cursor_move', 'cursor_hide', 'video_control'):
+                if event_type not in ('stroke_start', 'stroke_points', 'stroke_end', 'stroke_cancel', 'cursor_move', 'cursor_hide', 'video_control', 'camera_move'):
                     continue
                 if not _allowed(board_id, user_id, 'viewer'):
                     await websocket.close(code=1008)
@@ -184,6 +188,16 @@ def attach_live_sync(app, db_connection):
                 if len(traffic) > 120:
                     await websocket.close(code=1008)
                     break
+                if event_type == 'camera_move':
+                    center, zoom = _point(payload.get('center')), payload.get('zoom')
+                    if (center is None or type(zoom) not in (int, float)
+                            or not math.isfinite(zoom) or not 0.01 <= zoom <= 5):
+                        continue
+                    participant['view'] = {'center': center, 'zoom': zoom}
+                    await _broadcast(board_id, {'type': 'camera_move', 'board_id': board_id,
+                                               'user_id': user_id, 'client_id': participant['client_id'],
+                                               'center': center, 'zoom': zoom}, exclude=websocket)
+                    continue
                 if event_type in ('cursor_move', 'cursor_hide'):
                     # Los lectores pueden mostrar cursor, pero nunca dibujar.
                     outgoing = {'type': event_type, 'board_id': board_id,
