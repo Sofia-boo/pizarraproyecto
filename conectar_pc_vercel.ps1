@@ -26,8 +26,6 @@ try {
         Start-Sleep -Milliseconds 200
     }
     if (-not $pizarraUrl) { throw 'No se obtuvo el enlace del túnel. Revisá logs/.' }
-    & node scripts/conectar-vercel.mjs $pizarraUrl $Pagina
-    if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar Vercel.' }
     $env:PIZARRA_PUBLIC_ORIGINS = $Pagina.TrimEnd('/')
     $env:PIZARRA_WS_ORIGIN = $pizarraUrl
     $pizarraServer = Start-Process -FilePath $pizarraPython -ArgumentList @('-m','uvicorn','web_host:app','--host','127.0.0.1','--port','8765','--workers','1','--proxy-headers') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru -RedirectStandardError (Join-Path $pizarraLogs "servidor-$pizarraStamp.log") -RedirectStandardOutput (Join-Path $pizarraLogs "servidor-$pizarraStamp.stdout.log")
@@ -40,6 +38,8 @@ try {
         } catch { Start-Sleep -Milliseconds 200 }
     }
     if (-not $pizarraReady) { throw 'El servidor no respondió a la comprobación de inicio. Revisá logs/.' }
+    & node scripts/conectar-vercel.mjs $pizarraUrl $Pagina
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar Vercel.' }
     [pscustomobject]@{ServidorPID=$pizarraServer.Id;TunelPID=$pizarraTunnel.Id;URL=$pizarraUrl;Pagina=$Pagina} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $pizarraLogs 'conexion-actual.json')
     Write-Host "Página en Vercel: $Pagina"
     Write-Host "Conexión temporal de tu PC: $pizarraUrl"
