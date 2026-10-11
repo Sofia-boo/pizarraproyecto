@@ -14,7 +14,8 @@ export type Connector = {
 }
 export type AcademicSymbol = 'and'|'or'|'not'|'xor'|'matrix'|'vector'|'resistor'|'capacitor'|'ground'|'voltage'|'code'
 export type StudyContent = {question:string;answer:string}
-export type StudyNote = StudyContent & {deck:string;face:'question'|'answer';alternatives?:StudyContent[]}
+export type StudyDeckCard = StudyContent & {deck:string}
+export type StudyNote = StudyDeckCard & {face:'question'|'answer';alternatives?:StudyContent[];cards?:StudyDeckCard[];index?:number}
 export type NoteData = {text:string;background:string;fontSize:number;alternatives?:string[];study?:StudyNote}
 export function studyNoteText(study:StudyNote):string {
   return `${study.deck} · ${study.face==='question'?'Pregunta':'Respuesta'}\n${study[study.face]}`.slice(0,10000)
@@ -190,7 +191,11 @@ export function mergeVisual(base:ShapeItem,local:ShapeItem,remote:ShapeItem):Sha
   }
   if(base.note?.study&&local.note?.study&&remote.note?.study&&result.note?.study) {
     const b=base.note.study,l=local.note.study,r=remote.note.study
-    if((['question','answer'] as const).some(key=>l[key]!==b[key]&&r[key]!==b[key]&&l[key]!==r[key])) {
+    if(b.cards&&l.cards&&r.cards&&b.cards.length===l.cards.length&&b.cards.length===r.cards.length) {
+      result.note.study.cards=r.cards.map((card,i)=>merge(b.cards![i],l.cards![i],card) as StudyDeckCard)
+      Object.assign(result.note.study,result.note.study.cards[result.note.study.index??0])
+    }
+    if((l.index??0)===(b.index??0)&&(r.index??0)===(b.index??0)&&(['question','answer'] as const).some(key=>l[key]!==b[key]&&r[key]!==b[key]&&l[key]!==r[key])) {
       const variants=[...(l.alternatives??[]),...(r.alternatives??[]),{question:r.question,answer:r.answer}]
       result.note.study.alternatives=variants.filter((variant,index)=>!variants.slice(0,index).some(other=>same(other,variant))).slice(-64)
     }

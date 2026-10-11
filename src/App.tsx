@@ -34,7 +34,7 @@ import './static_tables.css'
 import {createFormulaEvaluator} from './formulas_excel'
 import RightMathDock from './RightMathDock'
 import type { Flashcard } from './study/flashcards'
-import { studyCardNotes, updateStudyNote } from './canvas/studyCards'
+import { studyCardNotes, studyDeckNote, updateStudyNote, navigateStudyNote } from './canvas/studyCards'
 import { matrixCells, matrixLabel } from './study/matrices'
 import type { MatrixCells } from './study/matrices'
 import BoardVersionHistory from './BoardVersionHistory'
@@ -3040,9 +3040,9 @@ function App() {
     setOpenMenu(null);setVisualEditor(note.id);redraw();scheduleSave()
   }
 
-  function insertStudyCards(cards:Flashcard[]) {
+  function insertStudyCards(cards:Flashcard[],asDeck=false) {
     if(!loadedRef.current)throw new Error('Esperá a que termine de cargar la pizarra.')
-    const items=studyCardNotes(cards,boardCenter(),createId,window.innerWidth/cameraRef.current.zoom)
+    const items=asDeck?[studyDeckNote(cards,boardCenter(),createId,window.innerWidth/cameraRef.current.zoom)]:studyCardNotes(cards,boardCenter(),createId,window.innerWidth/cameraRef.current.zoom)
     if(editingRef.current)commitText()
     rememberChange()
     shapesRef.current.push(...items)
@@ -4929,9 +4929,16 @@ function App() {
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
         return item && (item.visualType || item.label!==undefined)
           ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
-            {item.note?.study&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
+            {item.note?.study&&!item.note.study.cards&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
               rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()
-            }}>{item.note.study.face==='question'?'Mostrar respuesta':'Mostrar pregunta'}</button>}</>:null
+            }}>{item.note.study.face==='question'?'Mostrar respuesta':'Mostrar pregunta'}</button>}
+            {item.note?.study?.cards&&<div className="visual-edit-button study-deck-controls" role="group" aria-label="Repaso del mazo en pizarra">
+              <span>{(item.note.study.index??0)+1} / {item.note.study.cards.length}</span>
+              <button type="button" onClick={()=>{rememberChange();item.note=navigateStudyNote(item.note!,'previous');redraw();scheduleSave()}}>Anterior tarjeta</button>
+              <button type="button" onClick={()=>{rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()}}>{item.note.study.face==='question'?'Mostrar respuesta':'Mostrar pregunta'}</button>
+              <button type="button" onClick={()=>{rememberChange();item.note=navigateStudyNote(item.note!,'repeat');redraw();scheduleSave()}}>Repetir tarjeta</button>
+              <button type="button" onClick={()=>{rememberChange();item.note=navigateStudyNote(item.note!,'next');redraw();scheduleSave()}}>Siguiente tarjeta</button>
+            </div>}</>:null
       })()}
       {visualEditor && (()=>{
         const item=shapesRef.current.find(item=>item.id===visualEditor)

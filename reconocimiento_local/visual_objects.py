@@ -54,7 +54,7 @@ def validate_visual_content(content: dict):
         if kind == 'sticky':
             note = item.get('note')
             require(isinstance(note, dict), 'Faltan los datos de la nota.')
-            require(text(note.get('text'), 10000) and number(note.get('fontSize'), .1, 10000), 'El texto de la nota no es válido.')
+            require(text(note.get('text'), 10000) and number(note.get('fontSize'), .1, math.inf), 'El texto de la nota no es válido.')
             require(isinstance(note.get('background'), str) and re.fullmatch(r'#[0-9a-fA-F]{6}', note['background']),
                     'El color de la nota no es válido.')
             if 'study' in note:
@@ -65,6 +65,14 @@ def validate_visual_content(content: dict):
                         and text(study.get('deck'), 100) and study.get('face') in ('question', 'answer'),
                         'La pregunta, respuesta o cara de la tarjeta adhesiva no es válida.')
                 variants = study.get('alternatives', [])
+                if 'cards' in study:
+                    cards = study['cards']
+                    require(isinstance(cards, list) and 1 <= len(cards) <= 100 and all(
+                        isinstance(card, dict) and text(card.get('question'), 10000) and bool(card['question'].strip())
+                        and text(card.get('answer'), 20000) and bool(card['answer'].strip())
+                        and text(card.get('deck'), 100) for card in cards), 'El mazo de la tarjeta no es válido.')
+                    require(type(study.get('index')) is int and 0 <= study['index'] < len(cards),
+                            'La posición de la tarjeta en el mazo no es válida.')
                 require(isinstance(variants, list) and len(variants) <= 64 and all(
                     isinstance(v, dict) and text(v.get('question'), 10000) and text(v.get('answer'), 20000)
                     for v in variants), 'Las versiones de la tarjeta adhesiva no son válidas.')

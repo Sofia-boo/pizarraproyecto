@@ -37,7 +37,7 @@ export default function RightMathDock({getSelection,addGraphToBoard,getSelectedM
   addGraphToBoard:(formulas:GraphFormula[],settings?:GraphSettings)=>void;
   getSelectedMatrix:()=>MatrixCells|null;
   addMatrixToBoard:(cells:MatrixCells)=>void;
-  addCardsToBoard:(cards:Flashcard[])=>void;
+  addCardsToBoard:(cards:Flashcard[],asDeck?:boolean)=>void;
   onOpenPanel:()=>void;
 }){
   const [mode,setMode]=useState<Mode>('closed')

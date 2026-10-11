@@ -163,6 +163,48 @@ class BackendTest(unittest.TestCase):
                 self.assertEqual(result.status_code, 422, result.text)
             self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], content)
 
+    def test_local_handwriting_routes_recognize_seed_strokes_without_training_real_data(self):
+        import json
+        from reconocimiento_local import server
+        def ink(sample):
+            return {'strokes': [{'width': 3, 'points': [{'x': x*100+10, 'y': y*100+20} for x, y in path]}
+                                for path in sample['stroke_paths']]}
+        with TestClient(self.app, base_url='https://testserver') as client:
+            client.post('/api/auth/guest', json={'name': 'Handwriting validator', 'password': 'ink-password'})
+            letters = json.loads(server.LETTER_DATA.read_text(encoding='utf-8'))
+            letter = next(s for s in letters if s.get('stroke_paths'))
+            for route in ('letters', 'words', 'text-local', 'calendar-handwriting'):
+                result = client.post('/recognize/'+route, json=ink(letter))
+                self.assertEqual(result.status_code, 200, result.text)
+                self.assertTrue(result.json()['text'])
+            math_file = Path(self.storage.name)/'math_samples.json'
+            sample = next(s for s in json.loads(math_file.read_text(encoding='utf-8')) if s.get('stroke_paths'))
+            before = math_file.read_bytes()
+            for route in ('math-symbols', 'math-local'):
+                result = client.post('/recognize/'+route, json=ink(sample))
+                self.assertEqual(result.status_code, 200, result.text)
+                self.assertTrue(result.json()['text'])
+            self.assertEqual(client.post('/recognize/math-symbols/train', json={**ink(sample), 'label': '3'}).status_code, 403)
+            self.assertEqual(math_file.read_bytes(), before)
+
+    def test_deck_notes_and_large_fractional_fonts_save_without_an_upper_font_limit(self):
+        import copy
+        with TestClient(self.app, base_url='https://testserver') as client:
+            client.post('/api/auth/guest', json={'name': 'Deck validator', 'password': 'deck-password'})
+            board = client.post('/api/boards', json={'name': 'Deck'}).json()['id']
+            cards = [{'question': 'Q1', 'answer': 'A1', 'deck': 'General'}, {'question': 'Q2', 'answer': 'A2', 'deck': 'General'}]
+            content = {'shapes': [{'id': 'deck-note', 'kind': 'rectangle', 'visualType': 'sticky', 'x': 0, 'y': 0,
+                'width': 2000, 'height': 1700, 'color': '#b79b43', 'strokeWidth': 1,
+                'note': {'text': 'Q1', 'background': '#fff0a6', 'fontSize': 135.5,
+                         'study': {**cards[0], 'face': 'question', 'cards': cards, 'index': 0}}}]}
+            result = client.put(f'/api/boards/{board}', json={'version': 0, 'content': content})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], content)
+            for index in (-1, 2, .5, True):
+                invalid = copy.deepcopy(content)
+                invalid['shapes'][0]['note']['study']['index'] = index
+                self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 1, 'content': invalid}).status_code, 422)
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={

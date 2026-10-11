@@ -4,9 +4,26 @@ import { DAY, newFlashcard, reviewCard, validateCard } from '../src/study/flashc
 import { academicTemplate } from '../src/canvas/academicTemplates'
 import { mergeVisual } from '../src/canvas/visualObjects'
 import { calculateScientific } from '../src/study/scientificCalculator'
-import { studyCardNotes, updateStudyNote } from '../src/canvas/studyCards'
+import { studyCardNotes, studyDeckNote, navigateStudyNote, updateStudyNote } from '../src/canvas/studyCards'
 
 describe('study cards as native adhesive notes',()=>{
+  it('cycles a whole deck in one object, repeats the question, and preserves edits between cards',()=>{
+    const cards=[newFlashcard('Q1','A1','General'),newFlashcard('Q2','A2','General')],original=structuredClone(cards)
+    const note=studyDeckNote(cards,{x:100,y:100},()=>'single-note',800)
+    expect(note.id).toBe('single-note')
+    let data=updateStudyNote(note.note!,{answer:'A1 editada',face:'answer'})
+    data=navigateStudyNote(data,'repeat');expect(data.study).toMatchObject({index:0,face:'question',answer:'A1 editada'})
+    data=navigateStudyNote(data,'next');expect(data.study).toMatchObject({index:1,question:'Q2',face:'question'})
+    data=navigateStudyNote(data,'next');expect(data.study).toMatchObject({index:0,answer:'A1 editada'})
+    data=navigateStudyNote(data,'previous');expect(data.study!.index).toBe(1)
+    expect(cards).toEqual(original)
+    const next={...note,note:navigateStudyNote(note.note!,'next')}
+    const edited={...note,note:updateStudyNote(note.note!,{answer:'Edición de otra persona'})}
+    const merged=mergeVisual(note,next,edited)
+    expect(merged.note!.study!.question).toBe('Q2')
+    expect(merged.note!.study!.cards![0].answer).toBe('Edición de otra persona')
+    expect(merged.note!.study!.alternatives).toBeUndefined()
+  })
   it('copies full content without personal progress and lays out independent notes for the viewport',()=>{
     const cards=Array.from({length:4},(_,i)=>newFlashcard(`Pregunta ${i}`,'a'.repeat(20000),'General','private-board',1000))
     cards[0]=reviewCard(cards[0],'good',2000)

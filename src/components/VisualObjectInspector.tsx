@@ -40,8 +40,8 @@ export default function VisualObjectInspector({item,onApply,onClose}:{
           {NOTE_COLORS.map((color,i)=><button type="button" key={color} aria-label={`Color de nota ${i+1}`} aria-pressed={note.background===color}
             style={{background:color}} onClick={()=>patch({note:{...note,background:color}})}/>)}
         </div>
-        <label>Tamaño de letra<input type="number" aria-label="Tamaño de letra de nota" min={10} max={80} value={note.fontSize}
-          onChange={e=>patch({note:{...note,fontSize:Math.max(10,Math.min(80,Number(e.target.value)||10))}})}/></label>
+        <label>Tamaño de letra<input type="number" aria-label="Tamaño de letra de nota" min={0.1} step="any" value={note.fontSize}
+          onChange={e=>{const size=Number(e.target.value);if(Number.isFinite(size))patch({note:{...note,fontSize:Math.max(.1,size)}})}}/></label>
         {!!note.study?.alternatives?.length&&<section className="visual-conflicts" aria-label="Ediciones simultáneas de tarjeta">
           <strong>Otras versiones de la tarjeta</strong><p>Se conservaron las ediciones simultáneas para que puedas revisarlas.</p>
           {note.study.alternatives.map((version,i)=><div key={i}><pre>{version.question}{'\n'}{version.answer}</pre>

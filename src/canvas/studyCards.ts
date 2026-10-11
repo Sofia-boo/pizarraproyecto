@@ -6,7 +6,23 @@ import type { NoteData, ShapeItem, StudyNote } from './visualObjects'
 export const MAX_STUDY_NOTES = 100
 export function updateStudyNote(note:NoteData,change:Partial<StudyNote>):NoteData {
   const study={...note.study!,...change}
+  if(study.cards&&(['question','answer','deck'] as const).some(key=>change[key]!==undefined)) {
+    study.cards=study.cards.map((card,index)=>index===(study.index??0)?{question:study.question,answer:study.answer,deck:study.deck}:{...card})
+  }
   return {...note,study,text:studyNoteText(study)}
+}
+export function navigateStudyNote(note:NoteData,action:'next'|'previous'|'repeat'):NoteData {
+  const study=note.study!,cards=study.cards
+  if(!cards?.length)return updateStudyNote(note,{face:'question'})
+  const index=((study.index??0)+(action==='next'?1:action==='previous'?-1:0)+cards.length)%cards.length
+  return {...note,study:{...study,...cards[index],index,face:'question'},text:studyNoteText({...study,...cards[index],index,face:'question'})}
+}
+export function studyDeckNote(cards:Flashcard[],center:Point,id:()=>string,viewportWidth:number):ShapeItem {
+  // Validate the same batch limit without creating extra canvas objects.
+  if(cards.length>MAX_STUDY_NOTES)throw new Error(`Podés insertar hasta ${MAX_STUDY_NOTES} tarjetas por mazo en la pizarra.`)
+  const note=studyCardNotes(cards.slice(0,1),center,id,viewportWidth)[0]
+  note.note!.study={...note.note!.study!,cards:cards.map(({question,answer,deck})=>({question,answer,deck})),index:0}
+  return note
 }
 // Copies only learning content. IDs, scheduling and review history stay personal.
 export function studyCardNotes(cards:Flashcard[],center:Point,id:()=>string,viewportWidth:number):ShapeItem[] {

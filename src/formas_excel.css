@@ -31,7 +31,7 @@
 @media (max-width:650px) { .excel-dialog { max-height: 97vh; } .excel-dialog-heading { padding: 12px; } .excel-name { padding: 0 12px 10px; } .excel-actions {padding:10px; } .excel-help {margin:8px 12px 12px} }
 
 /* Edición directa de tablas, anclada a las coordenadas del canvas. */
-.sheet-inline-anchor { position: fixed; z-index: 32; transform-origin: top left; color: #1e293b; font-family: system-ui,sans-serif; box-sizing: border-box; border: 1px solid #818cf8; box-shadow: 0 2px 13px #1e293b27; background: #fff; overflow: visible; }
+.sheet-inline-anchor { position: fixed; z-index: 9; transform-origin: top left; color: #1e293b; font-family: system-ui,sans-serif; box-sizing: border-box; border: 1px solid #818cf8; box-shadow: 0 2px 13px #1e293b27; background: #fff; overflow: visible; }
 .sheet-inline-toolbar { position:absolute; bottom:calc(100% + 12px); left:0; display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #c7d2fe; border-radius:10px; padding:7px 9px; width:max-content; max-width:900px; box-shadow:0 5px 24px #0002; }
 .sheet-inline-toolbar .sheet-inline-name { box-sizing:border-box; width:110px; min-width:50px; height:30px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:5px; color:#1e293b; background:#fff; font:13px system-ui; }
 .sheet-inline-toolbar label { display:flex; align-items:center; gap:5px; white-space:nowrap; font:12px system-ui; cursor:pointer; }
@@ -56,7 +56,7 @@
 /* Los botones + de tablas no seleccionadas aparecen al pasar el mouse
    sobre el lienzo. El contenedor es transparente a los eventos; solo los
    propios botones reciben clics y no activan la herramienta de dibujo. */
-.sheet-hover-controls { position:fixed; z-index:31; pointer-events:none; }
+.sheet-hover-controls { position:fixed; z-index:9; pointer-events:none; }
 .sheet-hover-add-col, .sheet-hover-add-row {
   position:absolute; display:flex; align-items:center; justify-content:center;
   width:30px; height:30px; padding:0;

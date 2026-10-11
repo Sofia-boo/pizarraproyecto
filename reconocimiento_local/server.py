@@ -1680,6 +1680,8 @@ def _word_stroke_groups(strokes):
     return groups, height
 
 
+@app.post('/recognize/text-local')
+@app.post('/recognize/calendar-handwriting')
 @app.post('/recognize/words')
 def recognize_word(payload: StrokeRequest):
     strokes = _valid_strokes(payload.strokes)
@@ -1753,6 +1755,8 @@ app.include_router(excel_router)
 attach_version_history(app, db_connection)
 attach_anonymous_users(app, db_connection, DATA_DIR)
 attach_live_sync(app, db_connection)
+from reconocimiento_local.local_handwriting import attach_local_math
+attach_local_math(app)
 
 @app.middleware('http')
 async def private_response_cache(request, call_next):

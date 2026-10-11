@@ -55,7 +55,7 @@ export function paintVisual(ctx:CanvasRenderingContext2D,item:ShapeItem,resolve:
       ctx.save();ctx.beginPath();ctx.rect(x+inset,y+inset,Math.max(1,w-inset*2),Math.max(1,h-inset*2));ctx.clip()
       ctx.fillStyle='#202530';ctx.textBaseline='top';ctx.textAlign='left'
       ctx.font=`600 ${11*scale}px system-ui,sans-serif`
-      ctx.fillText(`${study.deck} · ${study.face==='question'?'PREGUNTA':'RESPUESTA'}`,x+inset,y+inset,Math.max(1,w-inset*2-18*scale))
+      ctx.fillText(`${study.deck}${study.cards?` · ${(study.index??0)+1}/${study.cards.length}`:''} · ${study.face==='question'?'PREGUNTA':'RESPUESTA'}`,x+inset,y+inset,Math.max(1,w-inset*2-18*scale))
       ctx.strokeStyle='#20253022';ctx.beginPath();ctx.moveTo(x+inset,y+header-8*scale);ctx.lineTo(x+w-inset,y+header-8*scale);ctx.stroke()
       ctx.font=`${11*scale}px system-ui,sans-serif`;ctx.fillStyle='#20253099'
       ctx.fillText('Tarjeta de estudio',x+inset,y+h-footer,Math.max(1,w-inset*2))

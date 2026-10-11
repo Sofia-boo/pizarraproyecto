@@ -33,6 +33,8 @@ body:has(.visual-inspector) .anon-profile {display:none!important;}
 .binary-tree-panel textarea {font-family:ui-monospace,Consolas,monospace;}
 .tree-expression-button {right:160px;}
 .study-flip-button {top:134px;}
+.study-deck-controls {top:134px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;max-width:330px;}
+.study-deck-controls button {font:inherit;color:inherit;border:1px solid var(--ui-border,#d9dfeb);background:var(--ui-subtle,#f8fafc);border-radius:7px;padding:7px;cursor:pointer;}
 .connector-instruction {position:fixed;z-index:11;left:50%;bottom:24px;transform:translateX(-50%);max-width:calc(100vw - 170px);padding:8px 12px;border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#243047);border:1px solid var(--ui-border,#d9dfeb);box-shadow:0 4px 14px #0001;font:12px system-ui;pointer-events:none;}
 .app[data-tool='connector'] :is(.board-video-layer,.board-graph-layer,.sheet-static-layer) * {pointer-events:none!important;}
 @media(max-width:1000px) {
@@ -40,11 +42,13 @@ body:has(.visual-inspector) .anon-profile {display:none!important;}
   .app .theme-switcher {top:12px;right:12px;}
   .visual-inspector,.visual-edit-button {top:148px;}
   .study-flip-button {top:192px;}
+  .study-deck-controls {top:192px;}
 }
 @media(max-width:650px) {
   .academic-library-grid {grid-template-columns:repeat(2,minmax(0,1fr));max-height:45dvh;}
   .visual-inspector {top:auto;bottom:75px;right:12px;max-height:55dvh;}
   .visual-edit-button {top:auto;bottom:24px;left:12px;right:auto;}
   .study-flip-button {bottom:65px;}
+  .study-deck-controls {top:auto;bottom:65px;max-width:calc(100vw - 110px);}
   .tree-expression-button {bottom:65px;}
 }

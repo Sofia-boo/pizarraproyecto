@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { createServer } from 'node:net'
@@ -141,6 +141,25 @@ test('private notes and academic templates support transform, group, layers, und
   expect(editor.y+editor.height).toBeLessThan(844)
   await page.screenshot({path:'test-results/fase1-nota-movil.png'})
   await page.getByRole('button',{name:'Cancelar',exact:true}).click()
+})
+
+test('the real text handwriting menu reaches its registered POST route and recognizes trained ink',async({browser})=>{
+  const context=await browser.newContext()
+  await signedIn(context,'Handwriting browser')
+  const board=(await (await context.request.post(api+'/api/boards',{data:{name:'Reconocimiento de prueba'}})).json()).id
+  const seed=JSON.parse(await readFile('reconocimiento_local/letter_samples.json','utf8')).find(s=>s.stroke_paths?.length)
+  const strokes=seed.stroke_paths.map((path,i)=>({id:'ink-'+i,width:3,color:'#202020',points:path.map(([x,y])=>({x:x*100+100,y:y*100+200}))}))
+  expect((await context.request.put(api+'/api/boards/'+board,{data:{version:0,content:{strokes,texts:[],shapes:[],camera:{x:0,y:0,zoom:1}}}})).status()).toBe(200)
+  const page=await context.newPage()
+  await page.goto(api)
+  await page.getByRole('button',{name:'Seleccionar área',exact:true}).click();await page.keyboard.press('Control+a')
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  const response=page.waitForResponse(r=>r.url().endsWith('/recognize/text-local'))
+  await page.getByRole('menuitem',{name:/Reconocer texto con espacios/}).click()
+  expect((await response).status()).toBe(200)
+  await expect(page.locator('#recognized-latex')).not.toHaveValue('')
+  await page.screenshot({path:'test-results/reconocimiento-texto-local.png'})
+  await context.close()
 })
 
 test('real backend synchronizes notes and connectors across contributors, including text conflicts and offline edits',async({browser})=>{
