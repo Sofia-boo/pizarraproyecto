@@ -650,6 +650,7 @@ class BoardInput(BaseModel):
 class BoardSave(BaseModel):
     content: dict
     version: int
+    changes: dict | None = None
 
 @app.get('/api/library')
 def get_library():
@@ -702,26 +703,29 @@ def read_board(board_id: str):
 @app.put('/api/boards/{board_id}')
 async def save_board(board_id: str, item: BoardSave):
     from reconocimiento_local.visual_objects import validate_visual_content
-    validate_visual_content(item.content)
+    from reconocimiento_local.live_sync_api import apply_scene_changes
     with db_connection() as db:
         row = db.execute('SELECT version,content FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')
         if row['version'] != item.version:
             raise HTTPException(409, 'Esta pizarra fue modificada en otra pestaña. Recargá antes de guardar.')
+        before = json.loads(row['content'])
+        content = apply_scene_changes(before, item.content, item.changes) if item.changes is not None else item.content
+        validate_visual_content(content)
         new_version = item.version + 1
         db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
-                   (json.dumps(item.content, ensure_ascii=False), new_version,
+                   (json.dumps(content, ensure_ascii=False), new_version,
                     datetime.now(timezone.utc).isoformat(), board_id))
         # Publish image permissions in the SAME transaction as the scene, before
         # notifying peers. Otherwise the first GET after a WS event returns 404.
         db.execute('DELETE FROM board_assets WHERE board_id=?', (board_id,))
-        for media in item.content.get('media', []):
+        for media in content.get('media', []):
             if isinstance(media, dict) and isinstance(media.get('assetId'), str):
                 db.execute('INSERT OR IGNORE INTO board_assets VALUES (?,?)',
                            (board_id, media['assetId']))
     from reconocimiento_local.live_sync_api import notify_board_saved
-    await notify_board_saved(board_id, new_version, json.loads(row['content']), item.content)
-    return {'version': new_version}
+    await notify_board_saved(board_id, new_version, before, content)
+    return {'version': new_version, **({'content': content} if content != item.content else {})}
 
 @app.put('/api/boards/{board_id}/info')
 def update_board_info(board_id: str, item: BoardInput):

@@ -5,6 +5,7 @@ export type DeviceBoard = BoardInfo & {
   key: string
   content: BoardContentWithExtras
   draft?: BoardContentWithExtras
+  draftBase?: {version:number;content:BoardContentWithExtras}
 }
 export const deviceDB = openDB('pizarra-dispositivo', 1, {
   upgrade(db) {

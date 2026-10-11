@@ -10,6 +10,30 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_explicit_changes_preserve_unseen_objects_and_acknowledge_the_complete_scene(self):
+        with TestClient(self.app, base_url='https://testserver') as client:
+            client.post('/api/auth/guest', json={'name':'Delta contributor','password':'delta-password'})
+            board=client.post('/api/boards', json={'name':'Explicit changes'}).json()['id']
+            known={'id':'known','text':'Known','x':10,'y':10,'fontSize':18,'color':'#000000'}
+            unseen={**known,'id':'unseen','text':'Another contribution'}
+            self.assertEqual(client.put('/api/boards/'+board,json={'version':0,'content':{'texts':[known,unseen]}}).status_code,200)
+            edited={**known,'text':'My edit'}
+            result=client.put('/api/boards/'+board,json={'version':1,'content':{'texts':[edited]},
+                'changes':{'texts':{'upsert':[edited],'remove':[]}}})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(result.json()['content']['texts'],[edited,unseen])
+            self.assertEqual(client.get('/api/boards/'+board).json()['content']['texts'],[edited,unseen])
+            result=client.put('/api/boards/'+board,json={'version':2,'content':{'texts':[edited]},
+                'changes':{'texts':{'upsert':[],'remove':['unseen']}}})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(client.get('/api/boards/'+board).json()['content']['texts'],[edited])
+            # A delta cannot bypass the body checked by the permissions middleware.
+            injected={'id':'injected','assetId':'private-asset','x':0,'y':0,'width':20,'height':20}
+            bad=client.put('/api/boards/'+board,json={'version':3,'content':{'texts':[edited],'media':[]},
+                'changes':{'media':{'upsert':[injected],'remove':[]}}})
+            self.assertEqual(bad.status_code,422,bad.text)
+            self.assertEqual(client.get('/api/boards/'+board).json()['version'],3)
+
     def test_live_patch_only_sends_changes_and_falls_back_for_order_or_large_payloads(self):
         from reconocimiento_local.live_sync_api import scene_patch
         before={'texts':[{'id':'a','text':'Original'}],'graphs':[]}

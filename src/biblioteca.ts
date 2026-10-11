@@ -2,19 +2,23 @@ import type { Point, Stroke, TextItem, MediaItem, BoardData } from './storage/da
 import { deviceDB, isPrivate, newLocalId, emptyContent, readDeviceBoard, writeDeviceBoard, localLibrary, migrateLegacy } from './storage/device'
 import type { DeviceBoard } from './storage/device'
 import { mergeBoard, strokeIds } from './storage/merge'
+import { createScenePatch } from './storage/livePatch'
 export type { Point, Stroke, TextItem, MediaItem, BoardData }
 export type BoardContentWithExtras = BoardData & { shapes?: unknown[]; tables?: unknown[]; graphs?: unknown[]; videos?: unknown[] }
 
 const API = import.meta.env.DEV ? `${location.protocol}//${location.hostname}:8765` : location.origin
 let activeId = localStorage.getItem('pizarra_activa') || 'principal'
 let activeVersion = 0
+// IndexedDB belongs to every tab. Only this pair describes the scene that THIS
+// tab has actually displayed; never mix a cached base with a different version.
+let committed: {key:string;version:number;content:BoardContentWithExtras}|null = null
 export type Folder = { id: string; name: string }
 export type BoardInfo = { id: string; name: string; folder_id: string | null; version: number; updated_at: string; storage?: 'private' | 'shared'; role?: string }
 let account: string | null = null
 let remoteEnabled = false
 let notice = ''
 let disconnected = false
-export function setStorageSession(id: string | null, remote = true) { account = id; remoteEnabled = remote && id !== null }
+export function setStorageSession(id: string | null, remote = true) { if(account!==id)committed=null;account = id; remoteEnabled = remote && id !== null }
 export function personalStorageScope() { return account??'device' }
 export function privateBoard(id = activeId) { return isPrivate(id) }
 export function canUseServer() { return remoteEnabled }
@@ -58,7 +62,15 @@ async function request<T>(path: string, init?: RequestInit, timeout=12000): Prom
 
 const json = (method: string, body: unknown): RequestInit => ({method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
 export function getActiveBoardId() { return activeId }
-export function selectBoard(id: string) { activeId = id; activeVersion = 0; localStorage.setItem('pizarra_activa', id) }
+export function selectBoard(id: string) { activeId = id; activeVersion = 0; committed=null;localStorage.setItem('pizarra_activa', id) }
+function rememberCommitted(id:string,version:number,content:BoardContentWithExtras) {
+  if(id!==activeId)return
+  activeVersion=version
+  committed={key:cacheKey(id),version,content:structuredClone(strokeIds(content))}
+}
+export function getCommittedBoardContent() {
+  return committed?.key===cacheKey(activeId)?structuredClone(committed.content):null
+}
 export async function getLibrary() {
   await migrateLegacy()
   const local = await localLibrary()
@@ -145,12 +157,16 @@ async function cacheAssets(content: BoardContentWithExtras) {
 }
 async function cacheRemote(result: { id: string; name?: string; version: number; content: BoardContentWithExtras }, cacheMedia = true) {
   const key = cacheKey(result.id)
-  const previous = await readDeviceBoard(key)
-  // A draft must never be silently replaced by a downloaded snapshot.
-  if (previous?.draft) return
-  await writeDeviceBoard({ ...previous, key, id: result.id, name: result.name ?? previous?.name ?? 'Compartida',
+  const db=await deviceDB
+  const tx=db.transaction('boards','readwrite')
+  const previous = await tx.store.get(key) as DeviceBoard|undefined
+  // The read and write must be atomic with respect to a new draft or a newer
+  // snapshot from another tab. A slow download cannot roll that replica back.
+  if (previous?.draft || (previous && previous.version>result.version)) {await tx.done;return}
+  await tx.store.put({ ...previous, key, id: result.id, name: result.name ?? previous?.name ?? 'Compartida',
     folder_id: previous?.folder_id ?? null, storage: 'shared', version: result.version,
     updated_at: new Date().toISOString(), content: strokeIds({ ...emptyContent(), ...result.content }) })
+  await tx.done
   announce('Compartida: copia guardada en este dispositivo.')
   if (cacheMedia) await cacheAssets({ ...emptyContent(), ...result.content })
 }
@@ -170,20 +186,20 @@ export async function loadBoard(): Promise<BoardContentWithExtras | undefined> {
     return strokeIds(saved.content)
   }
   if (saved?.draft) {
-    activeVersion = saved.version
+    rememberCommitted(activeId,saved.draftBase?.version??saved.version,saved.draftBase?.content??saved.content)
     announce('Cambios guardados en este dispositivo, pendientes de sincronizar. No se reemplazaron por la copia del servidor.')
     return strokeIds(saved.draft)
   }
   try {
     if (!remoteEnabled) throw new Unavailable()
     const result = await request<{id:string;name:string;version:number;content:BoardContentWithExtras}>(`/api/boards/${encodeURIComponent(activeId)}`)
-    activeVersion = result.version
+    rememberCommitted(activeId,result.version,{ ...emptyContent(), ...result.content })
     await cacheRemote(result, false)
     void cacheAssets({ ...emptyContent(), ...result.content }).catch(console.warn)
     return strokeIds({ ...emptyContent(), ...result.content })
   } catch (error) {
     if (!(error instanceof Unavailable) || !saved) throw error
-    activeVersion = saved.version
+    rememberCommitted(activeId,saved.version,saved.content)
     announce('Copia local de la compartida. El servidor no está disponible.')
     return strokeIds(saved.content)
   }
@@ -192,6 +208,7 @@ export async function loadBoard(): Promise<BoardContentWithExtras | undefined> {
 export async function saveBoard(content: BoardContentWithExtras) {
   const id = activeId
   const key = cacheKey(id)
+  const confirmed=committed?.key===key?committed:null
   const previous = await readDeviceBoard(key)
   if (!previous) throw new Error('La pizarra aún no tiene una copia local. Volvé a abrirla.')
   if (isPrivate(id)) {
@@ -220,20 +237,22 @@ export async function saveBoard(content: BoardContentWithExtras) {
     return { pending: false }
   }
   // Persist first, so a disconnect or rejected save cannot discard the user's work.
-  await writeDeviceBoard({ ...previous, draft: content })
+  const draftBase=confirmed?{version:confirmed.version,content:confirmed.content}:previous.draftBase??{version:previous.version,content:previous.content}
+  await writeDeviceBoard({ ...previous, draft: content, draftBase })
   try {
     if (!remoteEnabled) throw new Unavailable()
     const uploads=[...new Set(content.media.map(media=>media.assetId))]
     await Promise.all(Array.from({length:Math.min(4,uploads.length)},async()=>{
       while(uploads.length)await uploadPendingAsset(uploads.shift()!)
     }))
-    let version = activeVersion
+    let version = draftBase.version
     let merged = content
-    let base = strokeIds(previous.content)
-    let result: {version:number} | undefined
+    let base = strokeIds(draftBase.content)
+    let result: {version:number;content?:BoardContentWithExtras} | undefined
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
-        result = await request<{version:number}>(`/api/boards/${id}`, json('PUT', {content:merged, version}))
+        const changes=createScenePatch(base,merged)
+        result = await request<{version:number;content?:BoardContentWithExtras}>(`/api/boards/${id}`, json('PUT', {content:merged, version,...(changes?{changes}:{})}))
         break
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 409) throw error
@@ -245,8 +264,9 @@ export async function saveBoard(content: BoardContentWithExtras) {
       }
     }
     if (!result) throw new Unavailable('La pizarra sigue recibiendo cambios; se reintentará el envío.')
-    activeVersion = result.version
-    await writeDeviceBoard({ ...previous, content: merged, draft: undefined, version: result.version, updated_at: new Date().toISOString() })
+    if(result.content)merged=strokeIds({...emptyContent(),...result.content})
+    if(cacheKey(id)===key)rememberCommitted(id,result.version,merged)
+    await writeDeviceBoard({ ...previous, content: merged, draft: undefined, draftBase: undefined, version: result.version, updated_at: new Date().toISOString() })
     announce('Compartida: guardada en el servidor y en este dispositivo.')
     return { pending: false, merged: merged === content ? undefined : merged }
   } catch (error) {
@@ -408,7 +428,7 @@ export async function fetchBoardForLiveSync(boardId: string): Promise<{
   return { ...snapshot, content: strokeIds({ ...emptyContent(), ...snapshot.content }) }
 }
 export async function acceptBoardLiveVersion(boardId: string, version: number, content?: BoardContentWithExtras) {
-  if (boardId === activeId && version > activeVersion) activeVersion = version
+  if (boardId === activeId && version >= activeVersion && content) rememberCommitted(boardId,version,content)
   // Do not block the live scene on every image in a PDF. Visible media is
   // fetched on demand; the remaining assets can populate the offline replica.
   if (content) {

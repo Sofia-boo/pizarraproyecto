@@ -329,9 +329,64 @@ def attach_live_sync(app, db_connection):
                 await _presence(board_id)
 
 
+SCENE_LISTS = ('strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos')
+
+
+def apply_scene_changes(current: dict, desired: dict, changes: dict):
+    """Apply explicit actions; an absent object is not an implicit deletion."""
+    if any(key not in SCENE_LISTS for key in changes):
+        raise HTTPException(422, 'Lista de cambios desconocida.')
+    result = dict(desired)
+    for key in SCENE_LISTS:
+        camera = current.get('camera') if isinstance(current.get('camera'), dict) else {}
+        old = current.get(key, camera.get('youtubeVideos', []) if key == 'videos' else [])
+        change = changes.get(key)
+        if change is None:
+            result[key] = old
+            continue
+        if not isinstance(change, dict):
+            raise HTTPException(422, 'Los cambios de la pizarra no son válidos.')
+        upsert, remove, order = change.get('upsert'), change.get('remove'), change.get('order')
+        if (not isinstance(upsert, list) or not isinstance(remove, list)
+                or any(not isinstance(item, dict) or not isinstance(item.get('id'), str) for item in upsert)
+                or any(not isinstance(identifier, str) for identifier in remove)
+                or len({item['id'] for item in upsert}) != len(upsert)
+                or (order is not None and (not isinstance(order, list)
+                    or any(not isinstance(identifier, str) for identifier in order) or len(set(order)) != len(order)))):
+            raise HTTPException(422, 'Los identificadores de los cambios no son válidos.')
+        requested = desired.get(key, [])
+        if not isinstance(requested, list) or any(not isinstance(item, dict) for item in requested):
+            raise HTTPException(422, 'La colección modificada no es válida.')
+        requested_by_id = {item.get('id'): item for item in requested if isinstance(item.get('id'), str)}
+        # Permission middleware validates assets in desired. A patch may never
+        # smuggle an additional asset/object that wasn't in that checked body.
+        if (any(requested_by_id.get(item['id']) != item for item in upsert)
+                or any(identifier in requested_by_id for identifier in remove)
+                or (order is not None and order != [item.get('id') for item in requested])):
+            raise HTTPException(422, 'Los cambios no coinciden con los objetos enviados.')
+        # The first edit of old ink gives it deterministic IDs in the client.
+        # Replace only that legacy list, leaving every other collection intact.
+        if not isinstance(old, list) or any(not isinstance(item, dict) or not isinstance(item.get('id'), str) for item in old):
+            result[key] = desired.get(key, [])
+            continue
+        items = {item['id']: item for item in old}
+        for identifier in remove:
+            items.pop(identifier, None)
+        for item in upsert:
+            items[item['id']] = item
+        if order is not None:
+            if any(identifier not in items for identifier in order):
+                raise HTTPException(422, 'El orden de los objetos no es válido.')
+            items = {**{identifier: items[identifier] for identifier in order}, **items}
+        result[key] = list(items.values())
+    if isinstance(result.get('camera'), dict):
+        result['camera'] = {**result['camera'], 'youtubeVideos': result['videos']}
+    return result
+
+
 def scene_patch(before: dict, after: dict):
     patch = {}
-    for key in ('strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos'):
+    for key in SCENE_LISTS:
         def values(content):
             camera = content.get('camera')
             return content.get(key, camera.get('youtubeVideos', []) if key == 'videos' and isinstance(camera, dict) else [])

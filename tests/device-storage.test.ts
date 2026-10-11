@@ -40,6 +40,66 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('sends explicit object actions and accepts additional objects returned by the server',async()=>{
+    server();const original=(await library.loadBoard())!
+    const changed={...original,texts:[{...original.texts[0],text:'My edit'}]}
+    const other=createNote('unseen-contribution',{x:500,y:500})
+    const complete={...changed,shapes:[...changed.shapes!,other]}
+    fetched.mockImplementation(async(_input:string,init?:RequestInit)=>{
+      const body=JSON.parse(init!.body as string)
+      expect(body.changes).toEqual({texts:{upsert:changed.texts,remove:[]}})
+      return Response.json({version:5,content:complete})
+    })
+    expect((await library.saveBoard(changed)).merged?.shapes).toEqual(complete.shapes)
+    expect(library.getCommittedBoardContent()).toEqual(complete)
+    const {createScenePatch,applyScenePatch}=await import('../src/storage/livePatch')
+    const base={...original,shapes:[{id:'a'},{id:'b'}]},reordered={...base,shapes:[{id:'b'},{id:'a'}]}
+    expect(applyScenePatch(base,createScenePatch(base,reordered))?.shapes).toEqual(reordered.shapes)
+  })
+  it('does not interpret another tab\'s cached additions as local deletions',async()=>{
+    server()
+    const original=(await library.loadBoard())!
+    const remote={...original,shapes:[...original.shapes!,createNote('other-tab',{x:200,y:200})]}
+    const cached=(await device.readDeviceBoard(`${owner}:${remoteId}`))!
+    // IndexedDB is shared between tabs, but this tab has not seen that scene.
+    await device.writeDeviceBoard({...cached,version:5,content:remote})
+    let writes=0
+    fetched.mockImplementation(async(_input:string,init?:RequestInit)=>{
+      if(init?.method==='PUT') {
+        if(++writes===1)return Response.json({detail:'Conflict'},{status:409})
+        const body=JSON.parse(init.body as string)
+        expect(body.content.shapes.map((s:{id:string})=>s.id)).toContain('other-tab')
+        return Response.json({version:6})
+      }
+      return Response.json({id:remoteId,version:5,content:remote})
+    })
+    const local={...original,texts:[{...original.texts[0],text:'My edit'}]}
+    expect((await library.saveBoard(local)).merged?.shapes).toEqual(remote.shapes)
+  })
+  it('keeps the save version paired with its base while an image upload is pending',async()=>{
+    server();const original=(await library.loadBoard())!
+    let release!:()=>void
+    const upload=new Promise<void>(resolve=>{release=resolve})
+    let writes=0
+    const remote={...original,shapes:[...original.shapes!,createNote('during-upload',{x:300,y:300})]}
+    fetched.mockImplementation(async(input:string,init?:RequestInit)=>{
+      if(input.includes('/api/assets/')){await upload;return Response.json({ok:true})}
+      if(init?.method==='PUT'){
+        const body=JSON.parse(init.body as string)
+        if(++writes===1){expect(body.version).toBe(4);return Response.json({detail:'Conflict'},{status:409})}
+        expect(body.content.shapes.map((s:{id:string})=>s.id)).toContain('during-upload')
+        return Response.json({version:6})
+      }
+      return Response.json({id:remoteId,version:5,content:remote})
+    })
+    await library.saveAsset('pending-image',new Blob(['image'],{type:'image/png'}))
+    const local={...original,media:[{id:'image',assetId:'pending-image',x:0,y:0,width:10,height:10,name:'Image',kind:'image' as const}]}
+    const saving=library.saveBoard(local)
+    await vi.waitFor(async()=>expect(await library.hasPendingShared()).toBe(true))
+    await library.acceptBoardLiveVersion(remoteId,5,remote)
+    release()
+    expect((await saving).merged?.shapes).toEqual(remote.shapes)
+  })
   it('applies committed live additions, edits and deletions without moving the local camera',async()=>{
     const {applyScenePatch}=await import('../src/storage/livePatch')
     const data=content()

@@ -60,6 +60,7 @@ async function drag(page,x,y,dx,dy) {
 test('all shared object types appear live and either contributor can delete them',async({browser})=>{
   test.setTimeout(60000)
   const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  let releaseVerification=()=>{}
   try {
     await Promise.all(contexts.map((c,i)=>signedIn(c,`Multimedia contributor ${i}`)))
     const owner=contexts[0].request,contributor=contexts[1].request
@@ -70,15 +71,23 @@ test('all shared object types appear live and either contributor can delete them
     await Promise.all(pages.map(p=>p.goto(api)))
     await expect(pages[0].locator('.toolbar')).toBeVisible()
     await expect(pages[1].locator('.toolbar')).toBeVisible()
+    await expect(pages[0].getByTitle('Conectado',{exact:true})).toBeVisible()
     await note(pages[0],'Nota en edición')
     await expect.poll(async()=>(await cachedShapes(pages[1]))[0]?.note?.text).toBe('Nota en edición')
     await pages[0].getByRole('button',{name:'Editar nota',exact:true}).click()
     await pages[0].getByRole('textbox',{name:'Texto de la nota',exact:true}).fill('Borrador sin terminar')
-    let snapshotDownloads=0
-    await pages[0].route(`**/api/boards/${board}`,route=>{
-      if(route.request().method()==='GET'){snapshotDownloads++;return route.abort('failed')}
+    let waitingForSnapshot=false
+    const verification=new Promise(resolve=>{releaseVerification=resolve})
+    await pages[0].route(`**/api/boards/${board}`,async route=>{
+      if(route.request().method()==='GET'){
+        waitingForSnapshot=true
+        await verification
+        return route.abort('failed')
+      }
       return route.continue()
     })
+    await pages[0].evaluate(()=>window.dispatchEvent(new Event('focus')))
+    await expect.poll(()=>waitingForSnapshot).toBe(true)
     const asset='multimedia-png'
     const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0N8AAAAASUVORK5CYII=','base64')
     expect((await contributor.put(`${api}/api/assets/${asset}`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
@@ -101,8 +110,8 @@ test('all shared object types appear live and either contributor can delete them
       await expect(page.locator('[data-table-id="table-b"]')).toBeVisible()
       await expect(page.locator('.board-live-graph')).toBeVisible()
     }
-    expect(snapshotDownloads).toBe(0)
     await expect(pages[0].getByRole('textbox',{name:'Texto de la nota',exact:true})).toHaveValue('Borrador sin terminar')
+    releaseVerification()
     await pages[0].getByRole('button',{name:'Cancelar',exact:true}).click()
     await pages[0].keyboard.press('v')
     await pages[0].keyboard.press('Control+a')
@@ -113,6 +122,84 @@ test('all shared object types appear live and either contributor can delete them
     }).toEqual([0,0,0,0,0,0])
     await expect(pages[1].locator('[data-table-id="table-b"]')).toHaveCount(0)
     await expect(pages[1].locator('.board-live-graph')).toHaveCount(0)
+  } finally {releaseVerification();await Promise.all(contexts.map(c=>c.close()))}
+})
+
+test('an older tab preserves notes added in another tab of the same account',async({browser})=>{
+  const context=await browser.newContext()
+  try {
+    await signedIn(context,'Two tabs contributor')
+    const owner=context.request
+    const board=(await (await owner.post(`${api}/api/boards`,{data:{name:'Same account tabs'}})).json()).id
+    const [a,b]=await Promise.all([context.newPage(),context.newPage()])
+    await a.addInitScript(()=>{
+      const Native=window.WebSocket;window.testSockets=[]
+      window.WebSocket=class extends Native{constructor(...args){super(...args);window.testSockets.push(this)}}
+    })
+    await Promise.all([a.goto(api),b.goto(api)])
+    await expect(a.locator('.toolbar')).toBeVisible()
+    await expect(b.locator('.toolbar')).toBeVisible()
+    await expect.poll(()=>a.evaluate(()=>window.testSockets.some(s=>s.readyState===1))).toBe(true)
+    await a.route('**/live-ticket',route=>route.abort('failed'))
+    await a.route('**/api/library',route=>route.fulfill({json:{folders:[],boards:[{id:board,name:'Same account tabs',version:0,role:'owner'}]}}))
+    let saving=false
+    await a.route(`**/api/boards/${board}`,route=>{
+      if(route.request().method()==='PUT')saving=true
+      return route.request().method()==='GET'&&!saving?route.abort('failed'):route.continue()
+    })
+    await a.evaluate(()=>window.testSockets.forEach(s=>s.close()))
+    await note(b,'Aporte desde la otra pestaña')
+    await expect.poll(async()=>(await cachedShapes(b)).map(s=>s.note?.text)).toEqual(['Aporte desde la otra pestaña'])
+    await note(a,'Aporte desde la pestaña anterior')
+    const expected=['Aporte desde la otra pestaña','Aporte desde la pestaña anterior']
+    await expect.poll(async()=>((await (await owner.get(`${api}/api/boards/${board}`)).json()).content.shapes??[]).map(s=>s.note?.text)).toEqual(expected)
+    await expect.poll(async()=>(await cachedShapes(b)).map(s=>s.note?.text)).toEqual(expected)
+  } finally {await context.close()}
+})
+
+test('rechecks scene contents at the same version and keeps an unfinished editor draft',async({browser})=>{
+  test.setTimeout(45000)
+  const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  try {
+    await Promise.all(contexts.map((c,i)=>signedIn(c,`Scene recovery ${i}`)))
+    const owner=contexts[0].request
+    const board=(await (await owner.post(`${api}/api/boards`,{data:{name:'Scene recovery'}})).json()).id
+    const token=(await (await owner.post(`${api}/api/share/boards/${board}`,{data:{role:'editor'}})).json()).token
+    await contexts[1].request.post(`${api}/api/share/join`,{data:{token}})
+    const a=await contexts[0].newPage();await a.goto(api)
+    await expect(a.getByTitle('Conectado',{exact:true})).toBeVisible()
+    await note(a,'Nota existente')
+    await expect.poll(async()=>((await (await owner.get(`${api}/api/boards/${board}`)).json()).content.shapes??[])[0]?.note?.text).toBe('Nota existente')
+    const saved=await (await owner.get(`${api}/api/boards/${board}`)).json()
+    const extra={...saved.content.shapes[0],id:'missing-note',x:200,y:200,note:{...saved.content.shapes[0].note,text:'Tarjeta que faltaba'}}
+    const complete={...saved.content,shapes:[...saved.content.shapes,extra],graphs:[{id:'recovered-graph',x:800,y:300,width:300,height:240,formulas:[{id:'f',expr:'x^2',enabled:true,color:'#6366f1'}]}]}
+    expect((await owner.put(`${api}/api/boards/${board}`,{data:{version:saved.version,content:complete}})).status()).toBe(200)
+    const b=await contexts[1].newPage()
+    const diagnostics=[]
+    b.on('console',msg=>{if(msg.type()==='warning'||msg.type()==='error')diagnostics.push(msg.text())})
+    b.on('request',request=>{if(request.url().includes('/api/'))diagnostics.push(request.method()+' '+new URL(request.url()).pathname)})
+    // Emulate an older client which marked an incomplete scene with the correct
+    // revision. No new save or version notification is sent after B opens it.
+    await b.route(`**/api/boards/${board}`,async route=>{
+      if(route.request().method()!=='GET')return route.continue()
+      const response=await route.fetch(),data=await response.json()
+      await route.fulfill({json:{...data,content:saved.content}})
+    })
+    await b.goto(api)
+    await expect(b.locator('.toolbar')).toBeVisible()
+    await expect.poll(async()=>(await cachedShapes(b)).length).toBe(1)
+    await b.keyboard.press('v');await b.mouse.dblclick(683,450)
+    await b.getByRole('textbox',{name:'Texto de la nota',exact:true}).fill('Borrador que no debe perderse')
+    await b.unroute(`**/api/boards/${board}`)
+    try {
+      await expect.poll(async()=>(await cachedShapes(b)).map(s=>s.note?.text),{timeout:22000}).toEqual(['Nota existente','Tarjeta que faltaba'])
+    } catch(error) {
+      const actual=await (await owner.get(`${api}/api/boards/${board}`)).json()
+      throw new Error(String(error)+'\n'+JSON.stringify({version:actual.version,shapes:actual.content.shapes.map(s=>s.note?.text),diagnostics}))
+    }
+    await expect(b.locator('.board-live-graph')).toBeVisible()
+    await expect(b.getByRole('textbox',{name:'Texto de la nota',exact:true})).toHaveValue('Borrador que no debe perderse')
+    expect((await (await owner.get(`${api}/api/boards/${board}`)).json()).version).toBe(saved.version+1)
   } finally {await Promise.all(contexts.map(c=>c.close()))}
 })
 

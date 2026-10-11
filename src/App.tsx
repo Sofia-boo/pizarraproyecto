@@ -24,7 +24,7 @@ import type { PointerEvent as ReactPointerEvent, DragEvent as ReactDragEvent, Ch
 import * as pdfjs from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
-  loadBoard, saveBoard, saveAsset, loadAsset, getLibrary, fetchBoardForLiveSync, acceptBoardLiveVersion, getActiveBoardVersion, addFolder, addBoard, renameBoard, removeBoard, removeFolder, selectBoard, getActiveBoardId,
+  loadBoard, saveBoard, saveAsset, loadAsset, getLibrary, fetchBoardForLiveSync, acceptBoardLiveVersion, getActiveBoardVersion, getCommittedBoardContent, addFolder, addBoard, renameBoard, removeBoard, removeFolder, selectBoard, getActiveBoardId,
   privateBoard, storageNotice, hasPendingShared, duplicateAsPrivate, publishPrivateCopy, exportBoardBackup, importBoardBackup, canUseServer,
   liveSocketUrl,
   usingOfflineCopy,
@@ -383,7 +383,7 @@ type BoardClipboard = Snapshot
 type Selection = { kind: 'media' | 'text' | 'stroke' | 'shape' | 'table' | 'graph' | 'video'; id: string | number }
 type Marquee = { start: Point; end: Point }
 type ScreenMarquee = { startX: number; startY: number; endX: number; endY: number }
-type Transform = { mode: 'move' | 'resize' | 'rotate'; start: Point; bounds: Bounds; initial: Snapshot; group: Selection[] }
+type Transform = { mode: 'move' | 'resize' | 'rotate'; start: Point; bounds: Bounds; initial: Snapshot; group: Selection[]; changed?:boolean }
 
 const BOARD_COLORS = ['#64748b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']
 const LEGACY_ICONS = ['📄', '📘', '📕', '📗', '📙', '📐', '🧮', '✏️', '📝', '💡', '🔬', '💻', '⭐']
@@ -1844,6 +1844,7 @@ function App() {
   }
 
   function transformSelection(t: Transform, point: Point) {
+    if(point.x!==t.start.x||point.y!==t.start.y)t.changed=true
     const selectedObjects=new Set(t.group.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null).map(refKey))
     if (t.mode === 'rotate') {
       const pivot = {x:t.bounds.x+t.bounds.width/2,y:t.bounds.y+t.bounds.height/2}
@@ -2115,8 +2116,7 @@ function App() {
           shapesRef.current = (data.shapes as ShapeItem[] | undefined) ?? []
           tablesRef.current = (data.tables as SheetItem[] | undefined) ?? []
           graphsRef.current = (data.graphs as BoardGraphItem[] | undefined) ?? []
-          videosRef.current = ((data.camera as Camera & {youtubeVideos?:YouTubeItem[]})?.youtubeVideos ??
-            (data as typeof data & {videos?:YouTubeItem[]}).videos) ?? []
+          videosRef.current = (data.videos ?? (data.camera as Camera & {youtubeVideos?:YouTubeItem[]})?.youtubeVideos ?? []) as YouTubeItem[]
           setVideos([...videosRef.current])
           setGraphs([...graphsRef.current])
           refreshTables(n=>n+1)
@@ -2165,7 +2165,10 @@ function App() {
     let applyTimer: ReturnType<typeof setTimeout> | null = null
     let polling: ReturnType<typeof setInterval> | null = null
     let fetching = false
+    let applying = false
     let newestSeen = getActiveBoardVersion()
+    let verifyScene = false
+    let lastVerified = Date.now()
 
     const localIsBusy = () => !loadedRef.current || dirtyRef.current || savingRef.current ||
       pointerRef.current !== null || activeStroke.current !== null ||
@@ -2187,8 +2190,7 @@ function App() {
         shapesRef.current = (content.shapes as ShapeItem[] | undefined) ?? []
         tablesRef.current = (content.tables as SheetItem[] | undefined) ?? []
         graphsRef.current = (content.graphs as BoardGraphItem[] | undefined) ?? []
-        videosRef.current = ((content.camera as Camera & {youtubeVideos?:YouTubeItem[]})?.youtubeVideos ??
-          (content as typeof content & {videos?:YouTubeItem[]}).videos) ?? []
+        videosRef.current = (content.videos ?? (content.camera as Camera & {youtubeVideos?:YouTubeItem[]})?.youtubeVideos ?? []) as YouTubeItem[]
         setVideos([...videosRef.current])
         // No modificar cameraRef.current: cada pantalla puede navegar libremente.
         setGraphs([...graphsRef.current])
@@ -2214,20 +2216,33 @@ function App() {
     }
 
     async function applyLatest() {
-      if (stopped || fetching || newestSeen <= getActiveBoardVersion()) return
+      if (stopped || fetching || applying || (!verifyScene && newestSeen <= getActiveBoardVersion())) return
       if (localIsBusy()) { retryApply(80); return }
       fetching = true
       try {
         const snapshot = await fetchBoardForLiveSync(boardId)
         // El usuario pudo empezar a dibujar mientras llegaba la respuesta.
-        if (stopped || boardId !== getActiveBoardId() || localIsBusy()) return
-        if (snapshot.version <= getActiveBoardVersion()) return
-        await showCommitted(snapshot)
+        if (stopped || boardId !== getActiveBoardId() || localIsBusy() || applying) return
+        if (snapshot.version < getActiveBoardVersion()) return
+        // A matching version alone cannot prove that both screens contain the
+        // same objects (old clients and interrupted saves may have diverged).
+        const current={strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
+          shapes:shapesRef.current,tables:tablesRef.current,graphs:graphsRef.current,videos:videosRef.current}
+        const differs=Object.entries(current).some(([key,value])=>JSON.stringify(value)!==JSON.stringify(snapshot.content[key as keyof typeof current]??[]))
+        applying=true
+        try {
+          if(snapshot.version>getActiveBoardVersion() || differs)await showCommitted(snapshot)
+          else await acceptBoardLiveVersion(boardId,snapshot.version,snapshot.content)
+        } finally {applying=false}
+        // Retry visible resources even when the object list hasn't changed.
+        mediaFailedRef.current.clear();hydrateMedia(mediaRef.current)
+        verifyScene=false
+        lastVerified=Date.now()
       } catch (cause) {
         console.warn('Sincronizacion temporalmente no disponible:', cause)
       } finally {
         fetching = false
-        if (!stopped && newestSeen > getActiveBoardVersion()) retryApply(180)
+        if (!stopped && (verifyScene || newestSeen > getActiveBoardVersion())) retryApply(180)
       }
     }
 
@@ -2248,6 +2263,7 @@ function App() {
         if (stopped) return
         const found = library.boards.find(b => b.id === boardId)
         if (found) receivedVersion(found.version)
+        if(Date.now()-lastVerified>=15000){verifyScene=true;retryApply(0)}
       } catch { /* El WebSocket se reconecta; no bloquear el dibujo. */ }
     }
 
@@ -2258,7 +2274,7 @@ function App() {
         if (stopped) return
         socket = new WebSocket(url)
         liveSocketRef.current = socket
-        socket.onopen = () => { if (!stopped) { setLiveConnected(true);sendCamera(true) } }
+        socket.onopen = () => { if (!stopped) { setLiveConnected(true);sendCamera(true);verifyScene=true;retryApply(0) } }
         socket.onmessage = event => {
           try {
             const msg = JSON.parse(event.data) as {
@@ -2269,16 +2285,17 @@ function App() {
             }
             if (msg.board_id !== boardId) return
             if (msg.type === 'board_version' && typeof msg.version === 'number') {
-              if (!fetching && !pendingReplicaRef.current && !localIsBusy() && msg.base_version===getActiveBoardVersion() && msg.version===msg.base_version+1) {
-                const content=applyScenePatch({...snapshot(),camera:{...cameraRef.current}},msg.patch)
+              if (!applying && !pendingReplicaRef.current && !localIsBusy() && msg.base_version===getActiveBoardVersion() && msg.version===msg.base_version+1) {
+                const base=getCommittedBoardContent()
+                const content=base?applyScenePatch(base,msg.patch):null
                 if(content){
                   newestSeen=Math.max(newestSeen,msg.version)
-                  fetching=true
+                  applying=true
                   void showCommitted({id:boardId,version:msg.version,content}).catch(cause=>{
                     console.warn('No se pudo conservar la copia recibida:',cause)
                   }).finally(()=>{
-                    fetching=false
-                    if(!stopped && newestSeen>getActiveBoardVersion())retryApply(0)
+                    applying=false
+                    if(!stopped && (verifyScene || newestSeen>getActiveBoardVersion()))retryApply(0)
                   })
                   return
                 }
@@ -2360,7 +2377,7 @@ function App() {
       }
     }
 
-    const onFocus = () => { void checkMissedEvents() }
+    const onFocus = () => { if(document.hidden)return;verifyScene=true;retryApply(0);void checkMissedEvents() }
     connect()
     polling = setInterval(() => {
       void checkMissedEvents()
@@ -2997,9 +3014,10 @@ function App() {
     }
     commitActiveStroke()
     if (transformRef.current) {
+      const changed=transformRef.current.changed
       if(transformRef.current.group.some(s=>s.kind==='table'))refreshTables(n=>n+1)
       transformRef.current = null
-      scheduleSave()
+      if(changed)scheduleSave()
     }
     if (marqueeRef.current) {
       const area = rectangle(marqueeRef.current.start, marqueeRef.current.end)
