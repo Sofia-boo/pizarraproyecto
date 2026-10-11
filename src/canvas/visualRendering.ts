@@ -2,6 +2,7 @@ import { connectorPath, pathMidpoint } from './visualObjects'
 import type { ConnectorCap, ResolveObject, ShapeItem } from './visualObjects'
 import type { Point } from '../storage/database'
 import { matrixCells } from '../study/matrices'
+import { CODE_COLORS, cppTokens } from './cppHighlight'
 
 function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number,limit=10000):string[] {
   const lines:string[]=[]
@@ -45,6 +46,40 @@ function cap(ctx:CanvasRenderingContext2D,tip:Point,previous:Point,kind:Connecto
   ctx.restore()
 }
 export function paintVisual(ctx:CanvasRenderingContext2D,item:ShapeItem,resolve:ResolveObject,color:string,dark=false):boolean {
+  if(item.visualType==='page') {
+    ctx.fillStyle='#fff';ctx.fillRect(item.x,item.y,item.width,item.height)
+    ctx.strokeStyle='#94a3b8';ctx.lineWidth=1;ctx.strokeRect(item.x,item.y,item.width,item.height)
+    return true
+  }
+  if(item.visualType==='code'&&item.code) {
+    const {x,y,width:w,height:h,code}=item,scale=w/520,font=13*scale,line=18*scale,split=h*.64
+    ctx.save();ctx.fillStyle='#080808';ctx.fillRect(x,y,w,h);ctx.beginPath();ctx.rect(x+8*scale,y+8*scale,w-16*scale,h-16*scale);ctx.clip()
+    ctx.font=`${font}px Consolas,ui-monospace,monospace`;ctx.textBaseline='top';ctx.textAlign='left'
+    ctx.fillStyle='#9cdcfe';ctx.fillText('C++ · Judge0',x+12*scale,y+10*scale)
+    let px=x+12*scale,py=y+38*scale
+    for(const token of cppTokens(code.source)) {
+      ctx.fillStyle=CODE_COLORS[token.kind]
+      token.text.split('\n').forEach((part,i)=>{if(i){px=x+12*scale;py+=line}if(py+line<y+split)ctx.fillText(part,px,py);px+=ctx.measureText(part).width})
+    }
+    ctx.fillStyle='#292929';ctx.fillRect(x,y+split,w,1)
+    ctx.fillStyle='#9cdcfe';ctx.fillText(`CONSOLA · ${code.status}`,x+12*scale,y+split+10*scale,w-24*scale)
+    ctx.fillStyle='#d4d4d4';code.output.split('\n').slice(0,Math.max(0,Math.floor((h-split-42*scale)/line))).forEach((s,i)=>ctx.fillText(s,x+12*scale,y+split+36*scale+i*line,w-24*scale))
+    ctx.restore();return true
+  }
+  if(item.symbol==='cartesian') {
+    const {x,y,width:w,height:h}=item,stepX=w/20,stepY=h/20
+    ctx.save();ctx.fillStyle=dark?'#151a23':'#fff';ctx.fillRect(x,y,w,h)
+    ctx.strokeStyle=dark?'#384454':'#d8e0eb';ctx.lineWidth=Math.max(.5,w/800);ctx.beginPath()
+    for(let i=0;i<=20;i++){ctx.moveTo(x+i*stepX,y);ctx.lineTo(x+i*stepX,y+h);ctx.moveTo(x,y+i*stepY);ctx.lineTo(x+w,y+i*stepY)}ctx.stroke()
+    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=Math.max(1,w/240);ctx.beginPath()
+    ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.moveTo(x+w/2,y+h);ctx.lineTo(x+w/2,y);ctx.stroke()
+    cap(ctx,{x:x+w,y:y+h/2},{x,y:y+h/2},'arrow',w/35)
+    cap(ctx,{x:x+w/2,y},{x:x+w/2,y:y+h},'arrow',h/35)
+    ctx.font=`${Math.max(6,Math.min(w,h)/28)}px system-ui`;ctx.textAlign='center';ctx.textBaseline='top'
+    for(let i=-8;i<=8;i+=2){if(!i)continue;ctx.fillText(String(i),x+w/2+i*stepX,y+h/2+4);ctx.fillText(String(i),x+w/2-14,y+h/2-i*stepY+3)}
+    ctx.fillText('0',x+w/2-12,y+h/2+4);ctx.fillText('x',x+w-12,y+h/2+10);ctx.fillText('y',x+w/2+12,y+6)
+    ctx.restore();return true
+  }
   if(item.visualType==='sticky' && item.note) {
     const {x,y,width:w,height:h}=item,note=item.note
     ctx.save();ctx.shadowColor='#0002';ctx.shadowBlur=7;ctx.shadowOffsetY=3

@@ -152,6 +152,7 @@ test('the real text handwriting menu reaches its registered POST route and recog
   expect((await context.request.put(api+'/api/boards/'+board,{data:{version:0,content:{strokes,texts:[],shapes:[],camera:{x:0,y:0,zoom:1}}}})).status()).toBe(200)
   const page=await context.newPage()
   await page.goto(api)
+  await expect(page.locator('.library-open-button')).toContainText('Reconocimiento de prueba')
   await page.getByRole('button',{name:'Seleccionar área',exact:true}).click();await page.keyboard.press('Control+a')
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   const response=page.waitForResponse(r=>r.url().endsWith('/recognize/text-local'))

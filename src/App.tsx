@@ -9,6 +9,9 @@ import { academicTemplate } from './canvas/academicTemplates'
 import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
+import CodeWorkspace from './components/CodeWorkspace'
+import A4PrintPreview from './components/A4PrintPreview'
+import type { PrintPreview } from './components/A4PrintPreview'
 import BinaryTreePanel from './components/BinaryTreePanel'
 import { binaryTreeExpression, binaryTreeFromShapes, binaryTreeShapes } from './canvas/binaryTrees'
 import type { BinaryTree } from './canvas/binaryTrees'
@@ -1041,6 +1044,8 @@ function App() {
   const [correctionNotice, setCorrectionNotice] = useState('')
   const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | null>(null)
   const [visualEditor,setVisualEditor] = useState<string|null>(null)
+  const [printPreview,setPrintPreview]=useState<PrintPreview|null>(null)
+  const printRequestRef=useRef(0)
   const visualEditorRef=useRef<string|null>(null)
   visualEditorRef.current=visualEditor
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -1324,11 +1329,11 @@ function App() {
     return `rgb(${Math.round(r + (235-r)*mix)}, ${Math.round(g + (237-g)*mix)}, ${Math.round(b + (247-b)*mix)})`
   }
 
-  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
+  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke,onPaper=false) {
     const pts = stroke.points
     if (!pts.length) return
     const enPizarra = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current)
-    const displayColor = enPizarra ? colorVisibleEnOscuro(stroke.color) : stroke.color
+    const displayColor = enPizarra&&!onPaper ? colorVisibleEnOscuro(stroke.color) : stroke.color
     // IMPORTANTE: al alejar mucho la vista, anchoOriginal * zoom puede
     // ser menor que 1 píxel y el antialiasing hace casi invisible la tinta.
     // El mínimo es solo visual: NO modifica los trazos ni el OCR.
@@ -1347,6 +1352,7 @@ function App() {
       ctx.arc(pts[0].x, pts[0].y, displayWidth / 2, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
+      if(!onPaper)paintOnPaper(ctx,()=>drawStroke(ctx,stroke,true))
       return
     }
     ctx.beginPath()
@@ -1354,9 +1360,22 @@ function App() {
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
     ctx.stroke()
     ctx.restore()
+    if(!onPaper)paintOnPaper(ctx,()=>drawStroke(ctx,stroke,true))
   }
 
-  function drawText(ctx: CanvasRenderingContext2D, item: Rotatable<TextItem>) {
+  function paintOnPaper(ctx:CanvasRenderingContext2D,paint:()=>void) {
+    if(themeRef.current!=='dark'||(ctx.canvas!==canvasRef.current&&ctx.canvas!==foregroundCanvasRef.current))return
+    const pages=shapesRef.current.filter(item=>item.visualType==='page')
+    if(!pages.length)return
+    ctx.save();ctx.beginPath()
+    for(const page of pages) {
+      ctx.save();const cx=page.x+page.width/2,cy=page.y+page.height/2
+      ctx.translate(cx,cy);ctx.rotate(page.rotation??0);ctx.rect(-page.width/2,-page.height/2,page.width,page.height);ctx.restore()
+    }
+    ctx.clip();paint();ctx.restore()
+  }
+
+  function drawText(ctx: CanvasRenderingContext2D, item: Rotatable<TextItem>,onPaper=false) {
     ctx.save()
     const rotation = item.rotation || 0
     if (rotation) {
@@ -1367,7 +1386,7 @@ function App() {
       const center = {x:item.x + width/2, y:item.y + height/2}
       ctx.translate(center.x, center.y); ctx.rotate(rotation); ctx.translate(-center.x, -center.y)
     }
-    const inkColor = themeRef.current === 'dark' && /^#(?:000(?:000)?|111(?:111)?|202020|222(?:222)?|333(?:333)?)$/i.test(item.color) ? '#e8edf7' : item.color
+    const inkColor = !onPaper && (ctx.canvas===canvasRef.current||ctx.canvas===foregroundCanvasRef.current) && themeRef.current === 'dark' && /^#(?:000(?:000)?|111(?:111)?|202020|222(?:222)?|333(?:333)?)$/i.test(item.color) ? '#e8edf7' : item.color
     ctx.font = `${item.fontSize}px system-ui, sans-serif`
     ctx.textBaseline = 'top'
     // Resaltado por subcadena DENTRO del texto, no sobre toda su caja.
@@ -1392,9 +1411,10 @@ function App() {
       ctx.fillText(line, item.x, y)
     })
     ctx.restore()
+    if(!onPaper)paintOnPaper(ctx,()=>drawText(ctx,item,true))
   }
 
-  function drawShape(ctx: CanvasRenderingContext2D, shape: ShapeItem) {
+  function drawShape(ctx: CanvasRenderingContext2D, shape: ShapeItem,resolve=resolveObject) {
     const {x, y, width: w, height: h, kind} = shape
     const color = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current) ? colorVisibleEnOscuro(shape.color) : shape.color
     ctx.save()
@@ -1402,7 +1422,7 @@ function App() {
       const center = {x:x+w/2,y:y+h/2}
       ctx.translate(center.x,center.y);ctx.rotate(shape.rotation);ctx.translate(-center.x,-center.y)
     }
-    if(paintVisual(ctx,shape,resolveObject,color,themeRef.current==='dark')){ctx.restore();return}
+    if(paintVisual(ctx,shape,resolve,color,(ctx.canvas===canvasRef.current||ctx.canvas===foregroundCanvasRef.current)&&themeRef.current==='dark')){ctx.restore();return}
     ctx.strokeStyle = color
     ctx.lineWidth = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current) ? Math.max(shape.strokeWidth, 1.35 / Math.max(cameraRef.current.zoom, .01)) : shape.strokeWidth
     ctx.lineJoin = 'round'; ctx.lineCap = 'round'
@@ -2570,6 +2590,7 @@ function App() {
   function hitShapeAt(point:Point):ShapeItem|undefined {
     return [...shapesRef.current].reverse().sort((a,b)=>(b.zIndex??-200000)-(a.zIndex??-200000)).find(item=>
       isConnector(item)?hitsConnector(item,point,resolveObject,8/cameraRef.current.zoom):
+      item.visualType==='page'?shapeTouchesEraser(item,point,12/cameraRef.current.zoom):
       overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(item,item.rotation)))
   }
 
@@ -3057,6 +3078,13 @@ function App() {
     if(editingRef.current)commitText()
     rememberChange()
     const items=academicTemplate(template,boardCenter(),createId,color)
+    if(template==='a4') {
+      const last=shapesRef.current.filter(item=>item.visualType==='page').at(-1),page=items[0]
+      if(last){page.x=last.x+last.width+48;page.y=last.y}
+      const zoom=Math.max(.01,Math.min(cameraRef.current.zoom,(window.innerWidth-70)/page.width,(window.innerHeight-220)/page.height))
+      cameraRef.current={zoom,x:window.innerWidth/2-(page.x+page.width/2)*zoom,y:(window.innerHeight+120)/2-(page.y+page.height/2)*zoom}
+      setZoomLabel(Math.round(zoom*100))
+    }
     if(cells) {
       items[0].matrix=structuredClone(cells);items[0].label=matrixLabel(cells).slice(0,2000);items[0].symbol=cells[0].length===1?'vector':'matrix'
       const cellWidth=Math.max(65,Math.min(200,Math.max(...cells.flat().map(text=>text.length))*14))
@@ -3068,6 +3096,79 @@ function App() {
     groupRef.current=items.map(item=>({kind:'shape',id:item.id}))
     selectedRef.current=items.length===1?groupRef.current[0]:null
     setSelection(selectedRef.current);redraw();scheduleSave()
+    if(template==='cpp')setVisualEditor(items[0].id)
+  }
+
+  function insertCartesian() {
+    if(!loadedRef.current)return
+    rememberChange()
+    const center=boardCenter(),item:ShapeItem={id:createId(),kind:'rectangle',visualType:'symbol',symbol:'cartesian',x:center.x-220,y:center.y-220,width:440,height:440,color,strokeWidth:2}
+    shapesRef.current.push(item);selectTool('select');selectElement({kind:'shape',id:item.id});setOpenMenu(null);redraw();scheduleSave()
+  }
+
+  async function printA4(onlySelected:boolean) {
+    finishPendingPen();if(editingRef.current)commitText()
+    const selected=new Set(groupRef.current.filter(s=>s.kind==='shape').map(s=>s.id))
+    const pages=structuredClone(shapesRef.current.filter(s=>s.visualType==='page'&&(!onlySelected||selected.has(s.id))))
+    if(!pages.length)return
+    const requestId=++printRequestRef.current
+    setOpenMenu(null);setVisualEditor(null);setPrintPreview({busy:true,error:'',images:[]})
+    // Freeze the printable content while media loads; camera and selection never enter it.
+    const data=snapshot(),renderers:{z:number;paint:(ctx:CanvasRenderingContext2D)=>void}[]=[]
+    const intersects=(bounds:Bounds)=>pages.some(page=>rectsIntersect(rotatedRect(page,page.rotation),bounds))
+    const transform=(ctx:CanvasRenderingContext2D,bounds:Bounds,rotation=0)=>{
+      const cx=bounds.x+bounds.width/2,cy=bounds.y+bounds.height/2
+      ctx.translate(cx,cy);ctx.rotate(rotation);ctx.translate(-cx,-cy)
+    }
+    const image=async(src:string)=>{const result=new Image();result.src=src;await result.decode();return result}
+    try {
+      await document.fonts.ready
+      for(const item of data.media.filter(item=>intersects(rotatedRect(item,item.rotation)))) {
+        const blob=await loadAsset(item.assetId)
+        if(!blob)throw new Error(`No se pudo cargar ${item.name} para imprimir.`)
+        const url=URL.createObjectURL(blob);let bitmap:HTMLImageElement
+        try{bitmap=await image(url)}finally{URL.revokeObjectURL(url)}
+        renderers.push({z:(item as GroupedItem).zIndex??-300000,paint:ctx=>{ctx.save();transform(ctx,item,item.rotation);ctx.drawImage(bitmap,item.x,item.y,item.width,item.height);ctx.restore()}})
+      }
+      for(const item of data.shapes.filter(item=>item.visualType!=='page'&&intersects(rotatedRect(visualBounds(item,ref=>resolveObject(ref,data)),item.rotation))))
+        renderers.push({z:item.zIndex??-200000,paint:ctx=>drawShape(ctx,item,ref=>resolveObject(ref,data))})
+      for(const item of data.strokes)renderers.push({z:(item as GroupedItem).zIndex??-100000,paint:ctx=>drawStroke(ctx,item)})
+      for(const item of data.texts)renderers.push({z:(item as GroupedItem).zIndex??0,paint:ctx=>drawText(ctx,item)})
+      for(const item of data.tables.filter(item=>intersects(rotatedRect(tableSize(item),item.rotation)))) {
+        const box=tableSize(item),chrome=tableChrome(item),evaluate=createFormulaEvaluator(item.cells)
+        renderers.push({z:(item as GroupedItem).zIndex??100000,paint:ctx=>{
+          ctx.save();transform(ctx,box,item.rotation);ctx.fillStyle='#fff';ctx.fillRect(box.x,box.y,box.width,box.height)
+          ctx.font=`${tableFontSize(item)}px system-ui`;ctx.textBaseline='middle';ctx.fillStyle='#1f2937';ctx.fillText(item.name,box.x+8,box.y+chrome.title/2)
+          const cols=Math.max(1,...item.cells.map(r=>r.length))
+          for(let r=-1;r<item.cells.length;r++)for(let c=-1;c<cols;c++) {
+            const x=box.x+(c<0?0:chrome.rowHeader+c*item.cellWidth),y=box.y+chrome.title+(r<0?0:chrome.colHeader+r*item.cellHeight)
+            const w=c<0?chrome.rowHeader:item.cellWidth,h=r<0?chrome.colHeader:item.cellHeight,cell=r>=0&&c>=0?item.cells[r]?.[c]:undefined
+            ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.fillStyle=cell?.backgroundColor??(r<0||c<0?'#eef2f7':'#fff');ctx.fillRect(x,y,w,h);ctx.strokeStyle='#cbd5e1';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h)
+            ctx.fillStyle=cell?.textColor??'#1f2937';ctx.fillText(r<0?(c<0?'':labelColumn(c)):c<0?String(r+1):String(evaluate(r,c)),x+5,y+h/2);ctx.restore()
+          }ctx.restore()
+        }})
+      }
+      if(data.graphs.some(item=>intersects(rotatedRect(item,item.rotation)))) {
+        const {graphPrintImage}=await import('./canvas/printGraph')
+        for(const item of data.graphs.filter(item=>intersects(rotatedRect(item,item.rotation)))) {
+          const bitmap=await image(await graphPrintImage(item))
+          renderers.push({z:(item as GroupedItem).zIndex??200000,paint:ctx=>{ctx.save();transform(ctx,item,item.rotation);ctx.drawImage(bitmap,item.x,item.y,item.width,item.height);ctx.restore()}})
+        }
+      }
+      for(const item of data.videos.filter(item=>intersects(item)))renderers.push({z:item.zIndex??-150000,paint:ctx=>{
+        ctx.fillStyle='#111';ctx.fillRect(item.x,item.y,item.width,item.height);ctx.fillStyle='#fff';ctx.font='16px system-ui';ctx.fillText(`YouTube · https://youtu.be/${item.videoId}`,item.x+12,item.y+item.height/2,item.width-24)
+      }})
+      renderers.sort((a,b)=>a.z-b.z)
+      const images=pages.map(page=>{
+        const canvas=document.createElement('canvas');canvas.width=1240;canvas.height=Math.round(1240*297/210)
+        const ctx=canvas.getContext('2d')!;ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height)
+        ctx.scale(canvas.width/page.width,canvas.height/page.height);ctx.translate(-page.x,-page.y)
+        const center={x:page.x+page.width/2,y:page.y+page.height/2};ctx.translate(center.x,center.y);ctx.rotate(-(page.rotation??0));ctx.translate(-center.x,-center.y)
+        for(const renderer of renderers)renderer.paint(ctx)
+        return canvas.toDataURL('image/png')
+      })
+      if(requestId===printRequestRef.current)setPrintPreview({busy:false,error:'',images})
+    }catch(error){if(requestId===printRequestRef.current)setPrintPreview({busy:false,error:String(error instanceof Error?error.message:error),images:[]})}
   }
 
   function applyVisualEdit(base:ShapeItem,next:ShapeItem) {
@@ -4793,6 +4894,7 @@ function App() {
             <div className="shapes-choice-grid">{SHAPE_OPTIONS.map(option=><button type="button" role="menuitem" key={option.kind} title={option.title}
               className={shapeKind===option.kind?'chosen':''} onClick={()=>selectShape(option.kind)}>{option.symbol}</button>)}</div>
             <small>Elegí una forma y arrastrá sobre la pizarra.</small>
+            <button type="button" role="menuitem" onClick={insertCartesian}>Ejes cartesianos X e Y cuadriculados</button>
           </div>}
         </div>
         <div className="toolbar-popover-anchor">
@@ -4804,7 +4906,7 @@ function App() {
         <div className="toolbar-popover-anchor">
           <button type="button" title="Elementos académicos" aria-label="Elementos académicos" aria-expanded={openMenu==='academic'}
             onClick={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(openMenu==='academic'?null:'academic')}}><LuBookOpen/></button>
-          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic} onBinaryExpression={()=>openTreePanel()}/>}
+          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic} onBinaryExpression={()=>openTreePanel()} hasPages={shapesRef.current.some(s=>s.visualType==='page')} onPrint={()=>void printA4(false)}/>}
         </div>
         <div className="toolbar-popover-anchor">
           <button className={openMenu === 'add' ? 'active' : ''} title="Agregar imagen o PDF" aria-label="Agregar imagen o PDF" aria-expanded={openMenu === 'add'} onClick={() => setOpenMenu(openMenu === 'add' ? null : 'add')}>＋</button>
@@ -4922,13 +5024,15 @@ function App() {
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
+      {printPreview&&<A4PrintPreview value={printPreview} onClose={()=>{printRequestRef.current++;setPrintPreview(null)}}/>}
+      {!visualEditor&&!openMenu&&groupRef.current.some(sel=>sel.kind==='shape'&&shapesRef.current.some(s=>s.id===sel.id&&s.visualType==='page'))&&<button type="button" className="visual-edit-button" onClick={()=>void printA4(true)}>Imprimir hojas A4 seleccionadas</button>}
       {!visualEditor && !treePanel && !openMenu && selectedTreeExpression() && <button type="button" className="visual-edit-button tree-expression-button"
         onClick={()=>openTreePanel(selectedTreeExpression())}>Expresión del árbol</button>}
       {treePanel&&<BinaryTreePanel initial={treePanel.initial} onTree={insertTree} onExpression={insertTreeExpression} onClose={()=>setTreePanel(null)}/>}
       {!visualEditor && !treePanel && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
-        return item && (item.visualType || item.label!==undefined)
-          ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
+        return item && item.visualType!=='page' && (item.visualType || item.label!==undefined)
+          ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.code?'Editar código C++':item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
             {item.note?.study&&!item.note.study.cards&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
               rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()
             }}>{item.note.study.face==='question'?'Mostrar respuesta':'Mostrar pregunta'}</button>}
@@ -4942,7 +5046,7 @@ function App() {
       })()}
       {visualEditor && (()=>{
         const item=shapesRef.current.find(item=>item.id===visualEditor)
-        return item?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
+        return item?.code?<CodeWorkspace key={item.id} item={item} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:item?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
       })()}
       <div className="zoom-controls">
         <button onClick={() => changeZoom(2 / 3, window.innerWidth / 2, window.innerHeight / 2)}>−</button>

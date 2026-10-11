@@ -1,0 +1,19 @@
+.code-workspace {position:fixed;z-index:95;right:16px;top:90px;width:min(620px,calc(100vw - 24px));max-height:calc(100dvh - 115px);overflow:auto;box-sizing:border-box;padding:16px;border:1px solid #454545;border-radius:14px;background:#080808!important;color:#d4d4d4!important;font:13px system-ui;box-shadow:0 12px 40px #0005;color-scheme:dark;}
+.code-workspace header,.cpp-actions,.code-workspace footer {display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.code-workspace label {display:block;margin:12px 0 6px;color:#9cdcfe;}
+.code-workspace p {line-height:1.5;color:#aaa;}
+.code-workspace button {border:1px solid #555;border-radius:7px;padding:9px 12px;background:#252526;color:#fff;cursor:pointer;font:inherit;}
+.code-workspace button:disabled {opacity:.5;cursor:default;}
+.cpp-actions {justify-content:flex-start;margin:12px 0;}
+.cpp-actions button:first-child {background:#075a98;}
+.cpp-editor {position:relative;height:270px;background:#080808!important;}
+.cpp-editor pre,.cpp-editor textarea {position:absolute;inset:0;box-sizing:border-box;width:100%;height:100%;margin:0;padding:12px;border:1px solid #454545;border-radius:7px;font:14px/1.55 Consolas,ui-monospace,monospace!important;letter-spacing:normal;white-space:pre;tab-size:4;overflow:auto;overflow-wrap:normal;word-break:normal;text-align:left;}
+.cpp-editor pre {background:#080808;color:#d4d4d4;pointer-events:none;scrollbar-width:none;}
+.cpp-editor textarea {background:transparent!important;color:transparent!important;caret-color:#fff;resize:none;-webkit-text-fill-color:transparent;}
+.cpp-editor textarea::selection {background:#264f7880;}
+.code-workspace .cpp-input,.code-workspace .cpp-console {box-sizing:border-box;width:100%;background:#080808!important;color:#d4d4d4!important;border:1px solid #454545;border-radius:7px;padding:12px;font:13px/1.55 Consolas,ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;}
+.cpp-console {min-height:100px;max-height:240px;overflow:auto;margin-top:6px;}
+.code-workspace .cpp-error {color:#f48771;}
+.code-workspace label span {color:#aaa;font-size:12px;}
+body:has(.code-workspace) .anon-profile {display:none!important;}
+@media(max-width:1000px){.code-workspace{top:150px;max-height:calc(100dvh - 165px);}}

@@ -1,0 +1,15 @@
+#a4-print-root {position:fixed;inset:0;z-index:10000;overflow:auto;overscroll-behavior:contain;background:#e5e7eb;color:#111;padding:16px;font:14px system-ui;}
+.a4-print-actions {position:sticky;top:0;display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:#fff;padding:12px;border-radius:10px;box-shadow:0 2px 10px #0002;margin-bottom:16px;z-index:1;}
+.a4-print-actions button {background:#fff;color:#111;border:1px solid #aaa;border-radius:7px;padding:10px;font:inherit;cursor:pointer;}
+.a4-print-actions button:disabled {opacity:.5;cursor:default;}
+.a4-print-page {width:min(595px,100%);aspect-ratio:210/297;margin:0 auto 20px;background:#fff;box-shadow:0 3px 18px #0003;}
+.a4-print-page img {display:block;width:100%;height:100%;}
+@media print {
+  @page {size:A4 portrait;margin:0;}
+  body:has(#a4-print-root)>*:not(#a4-print-root) {display:none!important;}
+  body:has(#a4-print-root),html:has(#a4-print-root) {margin:0!important;padding:0!important;overflow:visible!important;height:auto!important;background:white!important;}
+  #a4-print-root {position:static!important;inset:auto;padding:0!important;overflow:visible!important;background:white;}
+  #a4-print-root>*:not(.a4-print-page) {display:none!important;}
+  .a4-print-page {display:block;width:210mm!important;height:297mm!important;margin:0!important;padding:0!important;border:0;box-shadow:none;break-after:page;break-inside:avoid;page-break-after:always;print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+  .a4-print-page:last-child {break-after:auto;page-break-after:auto;}
+}

@@ -79,12 +79,14 @@ function validViewport(value:GraphViewport|undefined):GraphViewport {
   return {...value}
 }
 
-export function GraphPlot({formulas,initialViewport,onViewportChange,settings,onSettingsChange,onInsertPiecewise,graphWidth=520,graphHeight=340}: {
+export function GraphPlot({formulas,initialViewport,onViewportChange,settings,onSettingsChange,onInsertPiecewise,graphWidth=520,graphHeight=340,onRendered}: {
   formulas:GraphFormula[];initialViewport?:GraphViewport;
   onViewportChange?:(viewport:GraphViewport)=>void;
-  settings?:GraphSettings; onSettingsChange?:(settings:GraphSettings)=>void; onInsertPiecewise?:()=>void; graphWidth?:number; graphHeight?:number
+  settings?:GraphSettings; onSettingsChange?:(settings:GraphSettings)=>void; onInsertPiecewise?:()=>void; graphWidth?:number; graphHeight?:number;onRendered?:(node:HTMLElement)=>void
 }) {
   const host=useRef<HTMLDivElement>(null)
+  const onRenderedRef=useRef(onRendered)
+  useEffect(()=>{onRenderedRef.current=onRendered},[onRendered])
   const stage=useRef<HTMLDivElement>(null)
   const menuButtonRef=useRef<HTMLButtonElement>(null)
   const [menuPosition,setMenuPosition]=useState({top:12,left:12,maxHeight:440})
@@ -278,6 +280,7 @@ export function GraphPlot({formulas,initialViewport,onViewportChange,settings,on
           minor:{showgrid:true,dtick:tickSize(yspan)/5,gridcolor:'#eff2f7'},zeroline:true,zerolinewidth:1.5,zerolinecolor:'#111827',ticks:'outside',tickfont:{size:axisFont,color:'#253449'}}
       }
       await plotly.react(node,traces,layout,{responsive:true,displaylogo:false,displayModeBar:false,scrollZoom:true})
+      onRenderedRef.current?.(node)
       const plotNode=node as PlotlyInstance
       if(!listenerAttached.current&&plotNode.on&&listenerRef.current){
         plotNode.on('plotly_relayout',listenerRef.current)

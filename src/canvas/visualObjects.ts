@@ -12,7 +12,8 @@ export type Connector = {
   start:Point;end:Point;from?:Anchor;to?:Anchor;route:ConnectorRoute;
   startCap:ConnectorCap;endCap:ConnectorCap;style:ConnectorStyle;label:string
 }
-export type AcademicSymbol = 'and'|'or'|'not'|'xor'|'matrix'|'vector'|'resistor'|'capacitor'|'ground'|'voltage'|'code'
+export type AcademicSymbol = 'and'|'or'|'not'|'xor'|'matrix'|'vector'|'resistor'|'capacitor'|'ground'|'voltage'|'code'|'cartesian'
+export type CodeData = {source:string;stdin:string;output:string;status:string}
 export type StudyContent = {question:string;answer:string}
 export type StudyDeckCard = StudyContent & {deck:string}
 export type StudyNote = StudyDeckCard & {face:'question'|'answer';alternatives?:StudyContent[];cards?:StudyDeckCard[];index?:number}
@@ -22,7 +23,7 @@ export function studyNoteText(study:StudyNote):string {
 }
 export type ShapeItem = Bounds & {
   id:string;kind:ShapeKind;color:string;strokeWidth:number;reverse?:boolean;backwards?:boolean;rotation?:number;
-  groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol';
+  groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol'|'page'|'code';code?:CodeData;
   note?:NoteData;connector?:Connector;symbol?:AcademicSymbol;label?:string;labelFontSize?:number;matrix?:string[][]
 }
 export type TargetGeometry = Bounds & {rotation?:number;shapeKind?:ShapeKind}

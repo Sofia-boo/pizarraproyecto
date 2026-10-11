@@ -205,6 +205,71 @@ class BackendTest(unittest.TestCase):
                 invalid['shapes'][0]['note']['study']['index'] = index
                 self.assertEqual(client.put(f'/api/boards/{board}', json={'version': 1, 'content': invalid}).status_code, 422)
 
+    def test_judge0_proxy_requires_session_isolates_jobs_and_applies_limits(self):
+        import base64, io, json
+        from unittest.mock import patch
+        token='12345678-abcd-1234-abcd-123456789012'
+        encode=lambda value: base64.b64encode(value.encode()).decode()
+        submitted=[]
+        def fake(req,timeout):
+            if req.method=='POST':
+                submitted.append(json.loads(req.data))
+                self.assertEqual(timeout,10)
+                return io.BytesIO(json.dumps({'token':token}).encode())
+            return io.BytesIO(json.dumps({'stdout':encode('Hola, mundo!\n'),'compile_output':None,
+                'stderr':encode('error de ejemplo'),'message':None,'status':{'id':3,'description':'Accepted'},'time':'0.01','exit_code':0}).encode())
+        with patch.dict(os.environ,{'JUDGE0_URL':'http://127.0.0.1:2358'}),patch('reconocimiento_local.judge0_api.urllib.request.urlopen',side_effect=fake):
+            with TestClient(self.app,base_url='https://testserver') as client:
+                self.assertEqual(client.post('/api/code/run',json={'source':'int main(){}'}).status_code,401)
+                client.post('/api/auth/guest',json={'name':'Code owner','password':'code-password'})
+                job=client.post('/api/code/run',json={'source':'int main(){}','stdin':'42'})
+                self.assertEqual(job.status_code,200,job.text)
+                self.assertFalse(submitted[0]['enable_network'])
+                self.assertEqual(submitted[0]['cpu_time_limit'],2)
+                self.assertEqual(submitted[0]['memory_limit'],262144)
+                self.assertEqual(base64.b64decode(submitted[0]['source_code']).decode(),'int main(){}')
+                result=client.get('/api/code/results/'+token)
+                self.assertEqual(result.status_code,200,result.text)
+                self.assertEqual(result.json()['stdout'],'Hola, mundo!\n')
+                self.assertEqual(result.json()['stderr'],'error de ejemplo')
+                compilation={'compile_output':encode('error: expected semicolon'),'status':{'id':6,'description':'Compilation Error'}}
+                with patch('reconocimiento_local.judge0_api.urllib.request.urlopen',return_value=io.BytesIO(json.dumps(compilation).encode())):
+                    failure=client.get('/api/code/results/'+token)
+                    self.assertEqual(failure.status_code,200,failure.text)
+                    self.assertEqual(failure.json()['compile_output'],'error: expected semicolon')
+                for attempt in range(4):
+                    self.assertEqual(client.post('/api/code/run',json={'source':'int main(){}'}).status_code,200)
+                self.assertEqual(client.post('/api/code/run',json={'source':'int main(){}'}).status_code,429)
+                self.assertEqual(client.post('/api/code/run',headers={'Origin':'https://evil.example'},json={'source':'x'}).status_code,403)
+                client.cookies.clear()
+                client.post('/api/auth/guest',json={'name':'Code other','password':'code-password'})
+                self.assertEqual(client.get('/api/code/results/'+token).status_code,404)
+
+    def test_judge0_unconfigured_reports_unavailable_without_running_code(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ,{'JUDGE0_URL':''}),TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Code offline','password':'code-password'})
+            result=client.post('/api/code/run',json={'source':'int main(){}'})
+            self.assertEqual(result.status_code,503,result.text)
+            self.assertIn('instalado',result.json()['detail'])
+
+    def test_printable_pages_cartesian_and_code_save_with_validation(self):
+        import copy
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Academic pages','password':'page-password'})
+            bid=client.post('/api/boards',json={'name':'Pages'}).json()['id']
+            shape={'id':'sheet','kind':'rectangle','visualType':'page','x':0,'y':0,'width':210,'height':297,'strokeWidth':1,'color':'#94a3b8'}
+            code={**shape,'id':'cpp','visualType':'code','code':{'source':'int main(){}','stdin':'','output':'ok','status':'Accepted'}}
+            grid={**shape,'id':'grid','visualType':'symbol','symbol':'cartesian'}
+            content={'shapes':[shape,code,grid]}
+            result=client.put('/api/boards/'+bid,json={'version':0,'content':content})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(client.get('/api/boards/'+bid).json()['content'],content)
+            bad=copy.deepcopy(content);bad['shapes'][0]['height']=100
+            self.assertEqual(client.put('/api/boards/'+bid,json={'version':1,'content':bad}).status_code,422)
+            bad=copy.deepcopy(content);bad['shapes'][1]['code']['source']='x'*100001
+            self.assertEqual(client.put('/api/boards/'+bid,json={'version':1,'content':bad}).status_code,422)
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={

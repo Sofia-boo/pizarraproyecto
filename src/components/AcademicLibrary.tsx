@@ -3,7 +3,7 @@ import { ACADEMIC_TEMPLATES } from '../canvas/academicTemplates'
 import type { TemplateId } from '../canvas/academicTemplates'
 import './visualTools.css'
 
-export default function AcademicLibrary({onInsert,onBinaryExpression}:{onInsert:(id:TemplateId)=>void;onBinaryExpression:()=>void}) {
+export default function AcademicLibrary({onInsert,onBinaryExpression,onPrint,hasPages}:{onInsert:(id:TemplateId)=>void;onBinaryExpression:()=>void;onPrint:()=>void;hasPages:boolean}) {
   const [query,setQuery]=useState('')
   const items=ACADEMIC_TEMPLATES.filter(item=>`${item.name} ${item.category}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')))
   return <div className="toolbar-popover academic-library" role="dialog" aria-label="Biblioteca de elementos académicos">
@@ -14,5 +14,6 @@ export default function AcademicLibrary({onInsert,onBinaryExpression}:{onInsert:
     </button>)}</div>
     {!items.length&&<p>No hay elementos con ese nombre.</p>}
     <button type="button" onClick={onBinaryExpression}>Árbol desde expresión…</button>
+    {hasPages&&<button type="button" onClick={onPrint}>Imprimir todas las hojas A4</button>}
   </div>
 }

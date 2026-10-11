@@ -41,7 +41,7 @@ def validate_visual_content(content: dict):
         if not isinstance(item, dict) or not item.get('visualType'):
             continue
         kind = item['visualType']
-        require(kind in ('sticky', 'connector', 'symbol'), 'Tipo de objeto visual desconocido.')
+        require(kind in ('sticky', 'connector', 'symbol', 'page', 'code'), 'Tipo de objeto visual desconocido.')
         require(isinstance(item.get('id'), str) and 1 <= len(item['id']) <= 150 and counts[item['id']] == 1,
                 'El objeto visual necesita un identificador único.')
         require(number(item.get('x')) and number(item.get('y')) and number(item.get('width'), .001, 1_000_000)
@@ -51,7 +51,14 @@ def validate_visual_content(content: dict):
                 'El color del objeto visual no es válido.')
         if item.get('label') is not None:
             require(text(item['label'], 2000), 'El texto del elemento es demasiado largo.')
-        if kind == 'sticky':
+        if kind == 'page':
+            require(abs(item['width'] / item['height'] - 210 / 297) < .002, 'La hoja debe mantener la proporción A4.')
+        elif kind == 'code':
+            code = item.get('code')
+            require(isinstance(code, dict) and text(code.get('source'), 100000)
+                    and text(code.get('stdin'), 20000) and text(code.get('output'), 40000)
+                    and text(code.get('status'), 200), 'El bloque de código no es válido.')
+        elif kind == 'sticky':
             note = item.get('note')
             require(isinstance(note, dict), 'Faltan los datos de la nota.')
             require(text(note.get('text'), 10000) and number(note.get('fontSize'), .1, math.inf), 'El texto de la nota no es válido.')
@@ -90,7 +97,7 @@ def validate_visual_content(content: dict):
                     and connection.get('style') in ('solid', 'dash', 'dot')
                     and text(connection.get('label'), 120), 'El estilo del conector no es válido.')
         else:
-            require(item.get('symbol') in ('and', 'or', 'not', 'xor', 'matrix', 'vector', 'resistor', 'capacitor', 'ground', 'voltage', 'code'),
+            require(item.get('symbol') in ('and', 'or', 'not', 'xor', 'matrix', 'vector', 'resistor', 'capacitor', 'ground', 'voltage', 'code', 'cartesian'),
                     'El símbolo académico no es válido.')
             if item.get('matrix') is not None:
                 cells = item['matrix']

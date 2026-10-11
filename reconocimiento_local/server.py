@@ -1757,6 +1757,8 @@ attach_anonymous_users(app, db_connection, DATA_DIR)
 attach_live_sync(app, db_connection)
 from reconocimiento_local.local_handwriting import attach_local_math
 attach_local_math(app)
+from reconocimiento_local.judge0_api import attach_judge0
+attach_judge0(app, DATA_DIR)
 
 @app.middleware('http')
 async def private_response_cache(request, call_next):

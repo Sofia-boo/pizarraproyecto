@@ -3,6 +3,8 @@ import type { AcademicSymbol, ShapeItem } from './visualObjects'
 import type { Point } from '../storage/database'
 
 export const ACADEMIC_TEMPLATES = [
+  {id:'a4',name:'Agregar hoja A4',category:'Hojas e impresión'},
+  {id:'cpp',name:'Código C++ y consola',category:'Programación · Judge0'},
   {id:'binary-tree',name:'Árbol binario',category:'Algoritmos'},
   {id:'directed-graph',name:'Grafo dirigido',category:'Algoritmos'},
   {id:'undirected-graph',name:'Grafo no dirigido',category:'Algoritmos'},
@@ -57,6 +59,12 @@ export function academicTemplate(template:TemplateId,center:Point,id:()=>string,
     const a=node('S₀',0,0,'circle',80,80),b=node('S₁',240,0,'circle',80,80),c=node('S₂',120,180,'circle',80,80)
     edge(a,b,'a');edge(b,c,'b');edge(c,a,'c',true,true)
     node('',a.x+7,a.y+7,'circle',66,66)
+  } else if(template==='a4') {
+    const page=node('',0,0,'rectangle',595,595*297/210)
+    page.visualType='page';page.zIndex=-1000000;page.color='#94a3b8'
+  } else if(template==='cpp') {
+    const block=node('',0,0,'rectangle',520,410)
+    block.visualType='code';block.code={source:'#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hola, mundo!" << endl;\n    return 0;\n}\n',stdin:'',output:'',status:'Listo para ejecutar'}
   } else {
     const symbol=template as AcademicSymbol
     const shape=node('',0,0,'rectangle',140,90)
