@@ -2194,6 +2194,14 @@ function App() {
           (content as typeof content & {videos?:YouTubeItem[]}).videos) ?? []
         setVideos([...videosRef.current])
         // No modificar cameraRef.current: cada pantalla puede navegar libremente.
+        setGraphs([...graphsRef.current])
+        refreshTables(n => n + 1)
+        mediaFailedRef.current.clear()
+        redraw()
+        hydrateMedia(mediaRef.current)
+        // Commit the version before asynchronous asset downloads. The user can
+        // start editing while those downloads run; never mark an older scene
+        // with a newer version or overwrite their new draft.
         await acceptBoardLiveVersion(boardId, snapshot.version, snapshot.content)
         // Los trazos terminados ya estan en SQLite; los activos siguen como vista previa.
         for (const [key, remote] of remoteStrokesRef.current)
@@ -2201,8 +2209,6 @@ function App() {
         undoRef.current = []
         redoRef.current = []
         selectElement(null)
-        setGraphs([...graphsRef.current])
-        refreshTables(n => n + 1)
         setSaveStatus('saved')
         redraw()
         hydrateMedia(mediaRef.current)

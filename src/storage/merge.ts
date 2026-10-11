@@ -30,6 +30,9 @@ export function mergeBoard<T extends Content>(base: T, local: T, remote: T): T {
     const merged = new Map(((remote[key] ?? []) as Item[]).map(item => [item.id, item]))
     for (const id of before.keys()) if (!ours.has(id)) merged.delete(id)
     for (const [id, item] of ours) if (!equal(before.get(id), item)) {
+      // Once either contributor deletes an existing object, a concurrent drag
+      // or edit must not bring it back. New local objects are still additions.
+      if (before.has(id) && !merged.has(id)) continue
       const original=before.get(id),other=merged.get(id)
       merged.set(id,key==='shapes' && original && other && (item.visualType || item.label!==undefined)
         ?mergeVisual(original as ShapeItem,item as ShapeItem,other as ShapeItem) as Item:item)

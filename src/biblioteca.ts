@@ -367,8 +367,13 @@ export async function fetchBoardForLiveSync(boardId: string): Promise<{
   return { ...snapshot, content: strokeIds({ ...emptyContent(), ...snapshot.content }) }
 }
 export async function acceptBoardLiveVersion(boardId: string, version: number, content?: BoardContentWithExtras) {
-  if (content) await cacheRemote({id:boardId, version, content})
   if (boardId === activeId && version > activeVersion) activeVersion = version
+  // Do not block the live scene on every image in a PDF. Visible media is
+  // fetched on demand; the remaining assets can populate the offline replica.
+  if (content) {
+    await cacheRemote({id:boardId, version, content}, false)
+    void cacheAssets(content).catch(console.warn)
+  }
 }
 
 export async function publishPrivateCopy() {

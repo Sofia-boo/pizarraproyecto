@@ -712,6 +712,13 @@ async def save_board(board_id: str, item: BoardSave):
         db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
                    (json.dumps(item.content, ensure_ascii=False), new_version,
                     datetime.now(timezone.utc).isoformat(), board_id))
+        # Publish image permissions in the SAME transaction as the scene, before
+        # notifying peers. Otherwise the first GET after a WS event returns 404.
+        db.execute('DELETE FROM board_assets WHERE board_id=?', (board_id,))
+        for media in item.content.get('media', []):
+            if isinstance(media, dict) and isinstance(media.get('assetId'), str):
+                db.execute('INSERT OR IGNORE INTO board_assets VALUES (?,?)',
+                           (board_id, media['assetId']))
     from reconocimiento_local.live_sync_api import notify_board_saved
     await notify_board_saved(board_id, new_version)
     return {'version': new_version}
@@ -739,7 +746,9 @@ async def put_asset(asset_id: str, request: HTTPRequest):
     if mime not in ('image/png','image/jpeg','image/webp'):
         raise HTTPException(415, 'Formato no admitido')
     with db_connection() as db:
-        db.execute('INSERT OR REPLACE INTO assets VALUES (?,?,?)', (asset_id,data,mime))
+        db.execute('''INSERT INTO assets (id,data,mime) VALUES (?,?,?)
+                      ON CONFLICT(id) DO UPDATE SET data=excluded.data,mime=excluded.mime''',
+                   (asset_id,data,mime))
     return {'ok': True}
 
 @app.get('/api/assets/{asset_id}')

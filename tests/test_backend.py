@@ -10,6 +10,26 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_media_permissions_are_committed_before_live_notification(self):
+        from unittest.mock import patch
+        from reconocimiento_local.server import db_connection
+        from reconocimiento_local.anonymous_users import asset_access
+        with TestClient(self.app, base_url='https://testserver') as a, TestClient(self.app, base_url='https://testserver') as b:
+            a.post('/api/auth/guest', json={'name':'Media owner','password':'test-password'})
+            uid=b.post('/api/auth/guest', json={'name':'Media contributor','password':'test-password'}).json()['id']
+            bid=a.post('/api/boards',json={'name':'Media atomic'}).json()['id']
+            token=a.post(f'/api/share/boards/{bid}',json={'role':'editor'}).json()['token']
+            b.post('/api/share/join',json={'token':token})
+            self.assertEqual(a.put('/api/assets/atomic-image',content=b'image',headers={'Content-Type':'image/png'}).status_code,200)
+            async def notified(board_id,version):
+                with db_connection() as db:
+                    self.assertTrue(asset_access(db,uid,'atomic-image'))
+            with patch('reconocimiento_local.live_sync_api.notify_board_saved',side_effect=notified):
+                response=a.put(f'/api/boards/{bid}',json={'version':0,'content':{'media':[{'assetId':'atomic-image'}]}})
+                self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(b.get('/api/assets/atomic-image').status_code,200)
+            self.assertEqual(b.put(f'/api/boards/{bid}',json={'version':1,'content':{'media':[]}}).status_code,200)
+
     @classmethod
     def setUpClass(cls):
         cls.storage = tempfile.TemporaryDirectory()

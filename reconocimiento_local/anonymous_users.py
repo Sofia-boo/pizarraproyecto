@@ -656,11 +656,8 @@ def attach_anonymous_users(app, db_connection, data_dir):
                             return JSONResponse({'detail':'Imagen sin permisos'},status_code=403)
                     # El handler guarda con control optimista de versiones.
                     result = await call_next(request)
-                    if result.status_code < 300:
-                        db.execute('DELETE FROM board_assets WHERE board_id=?',(bid,))
-                        for asset in ids:
-                            db.execute('INSERT OR IGNORE INTO board_assets VALUES(?,?)',(bid,asset))
-                        db.commit()
+                    # The handler updates links atomically with the board. A
+                    # second transaction here could overwrite a newer save.
                     return result
             asset_match = ASSET_PATH.fullmatch(path)
             if asset_match:

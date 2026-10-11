@@ -56,6 +56,52 @@ async function cachedShapes(page) {
 async function drag(page,x,y,dx,dy) {
   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:10});await page.mouse.up()
 }
+
+test('all shared object types appear live and either contributor can delete them',async({browser})=>{
+  test.setTimeout(60000)
+  const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  try {
+    await Promise.all(contexts.map((c,i)=>signedIn(c,`Multimedia contributor ${i}`)))
+    const owner=contexts[0].request,contributor=contexts[1].request
+    const board=(await (await owner.post(`${api}/api/boards`,{data:{name:'Multimedia regression'}})).json()).id
+    const token=(await (await owner.post(`${api}/api/share/boards/${board}`,{data:{role:'editor'}})).json()).token
+    expect((await contributor.post(`${api}/api/share/join`,{data:{token}})).status()).toBe(200)
+    const pages=await Promise.all(contexts.map(c=>c.newPage()))
+    await Promise.all(pages.map(p=>p.goto(api)))
+    await expect(pages[0].locator('.toolbar')).toBeVisible()
+    await expect(pages[1].locator('.toolbar')).toBeVisible()
+    const asset='multimedia-png'
+    const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0N8AAAAASUVORK5CYII=','base64')
+    expect((await contributor.put(`${api}/api/assets/${asset}`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
+    const content={camera:{x:0,y:0,zoom:1},strokes:[{id:'ink-b',points:[{x:60,y:350},{x:150,y:360}],width:3,color:'#000'}],
+      texts:[{id:'text-b',x:40,y:390,text:'Texto compartido',fontSize:20,color:'#000'}],shapes:[],
+      media:[{id:'image-b',assetId:asset,x:40,y:440,width:60,height:60,name:'Imagen compartida',kind:'image'}],
+      tables:[{id:'table-b',name:'Tabla compartida',x:210,y:330,cells:[[{input:'Compartida'},{input:'2'}]],cellWidth:90,cellHeight:30}],
+      graphs:[{id:'graph-b',x:450,y:330,width:300,height:240,formulas:[{id:'f',expr:'x^2',enabled:true,color:'#6366f1'}]}],
+      videos:[{id:'video-b',x:800,y:330,width:320,height:180,videoId:'dQw4w9WgXcQ',url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',start:0}]}
+    expect((await contributor.put(`${api}/api/boards/${board}`,{data:{version:0,content}})).status()).toBe(200)
+    expect((await owner.get(`${api}/api/assets/${asset}`)).status()).toBe(200)
+    for(const page of pages) {
+      await expect.poll(()=>page.evaluate(async()=>{
+        const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+        const boards=await new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').getAll();r.onsuccess=()=>resolve(r.result)})
+        db.close();const c=boards.find(b=>b.id===localStorage.getItem('pizarra_activa'))?.content
+        return ['strokes','texts','media','tables','graphs','videos'].map(key=>c?.[key]?.length??0)
+      }),{timeout:20000}).toEqual([1,1,1,1,1,1])
+      await expect(page.locator('[data-table-id="table-b"]')).toBeVisible()
+      await expect(page.locator('.board-live-graph')).toBeVisible()
+    }
+    await pages[0].keyboard.press('v')
+    await pages[0].keyboard.press('Control+a')
+    await pages[0].keyboard.press('Delete')
+    await expect.poll(async()=>{
+      const c=(await (await owner.get(`${api}/api/boards/${board}`)).json()).content
+      return ['strokes','texts','media','tables','graphs','videos'].map(key=>c[key]?.length??0)
+    }).toEqual([0,0,0,0,0,0])
+    await expect(pages[1].locator('[data-table-id="table-b"]')).toHaveCount(0)
+    await expect(pages[1].locator('.board-live-graph')).toHaveCount(0)
+  } finally {await Promise.all(contexts.map(c=>c.close()))}
+})
 async function note(page,text) {
   await page.getByRole('button',{name:'Agregar nota adhesiva',exact:true}).click()
   await page.getByRole('textbox',{name:'Texto de la nota',exact:true}).fill(text)
