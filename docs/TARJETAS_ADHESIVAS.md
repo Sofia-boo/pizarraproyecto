@@ -1,6 +1,6 @@
 # Tarjetas de estudio en la pizarra
 
-Revisión del 11 de octubre de 2026. Preparada localmente; publicación pendiente.
+Revisión del 11 de octubre de 2026. Publicada en https://pizarraproyecto.vercel.app.
 
 ## Uso
 
@@ -39,14 +39,15 @@ Las privadas siguen guardándose en el navegador de cada dispositivo.
   pequeñas. Los errores 502/503/504 de inicio de sesión explican que el servidor
   compartido no está disponible y mantienen el acceso a las privadas del dispositivo.
 
-## Conexión de Vercel pendiente
+## Conexión de Vercel activa
 
-La web publicada sigue usando el túnel anterior, que caducó. El backend de la
-PC y el túnel de reemplazo responden a `/healthz`. El checkout local ya tiene
-la configuración nueva; falta publicarla y reiniciar el backend público con
-el origen WebSocket actualizado. Se conserva la misma carpeta de datos.
-Ver `CALCULADORA_Y_CONEXION_TABLET.md` para el procedimiento y la restricción
-de publicación del pedido original. Esta fase no despliega ni borra datos reales.
+El usuario revocó explícitamente la restricción anterior y autorizó despliegues
+automáticos el 11 de octubre. Se publicó el commit `340e9e1e` en `main`, Vercel
+sirve la versión nueva y el backend público se reinició con la misma carpeta
+de datos y el origen WebSocket actualizado. El error 502 quedó resuelto.
+Se creó un respaldo consistente de SQLite y del frontend anterior antes de
+reiniciar. El registro local de conexión se actualizó y se retiró el túnel vencido.
+La PC, el servidor y el túnel deben permanecer encendidos para las compartidas.
 
 ## Verificación
 
@@ -65,10 +66,17 @@ participante mediante HTTP y WebSockets reales con almacenamiento temporal.
 - `git diff --check`: aprobado.
 
 Vista local actualizada: http://127.0.0.1:5178, con la carpeta separada
-`datos/revision-fase1`. El backend público de puerto 8765 no se reinició.
+`datos/revision-fase1`. Backend público de puerto 8765 actualizado conservando `datos`.
 Capturas de las pruebas: `test-results/tarjetas-adhesivas.png`,
 `test-results/tarjetas-seleccion-movil.png` y
 `test-results/tarjeta-adhesiva-movil.png` (archivos ignorados por Git).
 
-Próximo paso: publicar la versión revisada después de la aprobación explícita
-y verificar inicio de sesión y colaboración desde el dominio de Vercel.
+La comprobación pública en Chrome de 390 × 844 verificó registro, cierre de
+sesión, inicio de sesión desde la pantalla real, WebSocket/presencia, inserción
+de una tarjeta adhesiva, guardado en la PC y recarga con sesión y contenido
+conservados. Se eliminaron únicamente la cuenta y pizarra temporales de prueba.
+El registro está en `logs/prueba-produccion.json` y la captura en
+`logs/tablet-produccion.png`, ambos ignorados por Git.
+
+Próximo paso: configurar un túnel permanente para que no cambie la dirección
+del backend cuando se reinicie la conexión temporal.

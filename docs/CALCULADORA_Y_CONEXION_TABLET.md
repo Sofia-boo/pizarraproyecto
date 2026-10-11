@@ -2,6 +2,15 @@
 
 Revisión del 11 de octubre de 2026.
 
+**Actualización de publicación:** el usuario revocó explícitamente la restricción
+anterior y autorizó despliegues automáticos. Se publicó `340e9e1e` en `main`,
+se actualizó Vercel y se reinició el backend conservando `datos`. El error 502
+quedó resuelto. Una prueba real en Chrome móvil verificó inicio de sesión,
+WebSocket, guardado de una tarjeta adhesiva y recarga desde el dominio público.
+El registro de conexión actual se actualizó y el túnel caducado se retiró.
+Las secciones de diagnóstico y pasos pendientes de abajo describen el estado
+anterior a esta publicación. Ver `TARJETAS_ADHESIVAS.md` para el estado actual.
+
 ## Cambios listos en la vista local
 
 - Árboles: se admiten varios hijos en un nodo, incluyendo las dos expresiones
@@ -39,12 +48,12 @@ La información del proceso nuevo está en `logs/conexion-pendiente.json`
 (ignorado por Git). El túnel y el servidor actuales todavía no se reemplazaron
 en `logs/conexion-actual.json`.
 
-## Publicación pendiente de aprobación
+## Restricción anterior de publicación (revocada)
 
-El pedido original indica: «No despliegues modificaciones automáticamente al
+El pedido original indicaba: «No despliegues modificaciones automáticamente al
 servidor público ni borres datos reales sin mi aprobación».
 
-Después de aprobar, se debe:
+Pasos completados tras la autorización explícita:
 
 1. Comprobar nuevamente el túnel nuevo y conservar un punto de retorno de la
    versión pública. No borrar bases de datos ni datos del usuario.
