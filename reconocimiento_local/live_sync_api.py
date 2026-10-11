@@ -329,10 +329,42 @@ def attach_live_sync(app, db_connection):
                 await _presence(board_id)
 
 
-async def notify_board_saved(board_id: str, version: int):
+def scene_patch(before: dict, after: dict):
+    patch = {}
+    for key in ('strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos'):
+        def values(content):
+            camera = content.get('camera')
+            return content.get(key, camera.get('youtubeVideos', []) if key == 'videos' and isinstance(camera, dict) else [])
+        old, new = values(before), values(after)
+        if old == new:
+            continue
+        if not isinstance(old, list) or not isinstance(new, list):
+            return None
+        if any(not isinstance(item, dict) or not isinstance(item.get('id'), str) for item in old + new):
+            return None  # Legacy ink without IDs uses the snapshot fallback.
+        previous = {item['id']: item for item in old}
+        current = {item['id']: item for item in new}
+        if len(previous) != len(old) or len(current) != len(new):
+            return None
+        # Reordering changes stacking; preserve it through a full snapshot.
+        retained = [item['id'] for item in old if item['id'] in current]
+        appended = [item['id'] for item in new if item['id'] not in previous]
+        if retained + appended != [item['id'] for item in new]:
+            return None
+        patch[key] = {'upsert': [item for item in new if previous.get(item['id']) != item],
+                      'remove': [item['id'] for item in old if item['id'] not in current]}
+    return patch if len(json.dumps(patch, ensure_ascii=False).encode('utf-8')) <= 512_000 else None
+
+
+async def notify_board_saved(board_id: str, version: int, before=None, after=None):
     if board_id not in _clients:
         return
-    await _broadcast(board_id, {'type': 'board_version', 'board_id': board_id, 'version': version})
+    event = {'type': 'board_version', 'board_id': board_id, 'version': version}
+    if isinstance(before, dict) and isinstance(after, dict):
+        patch = scene_patch(before, after)
+        if patch is not None:
+            event.update(base_version=version-1, patch=patch)
+    await _broadcast(board_id, event)
     await _presence(board_id)  # Retira participantes cuya invitación fue revocada.
 
 

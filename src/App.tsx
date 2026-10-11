@@ -1,4 +1,5 @@
 import { mergeBoard } from './storage/merge'
+import { applyScenePatch } from './storage/livePatch'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { LuHand, LuStickyNote, LuWorkflow, LuBookOpen } from 'react-icons/lu'
 import { createNote, defaultConnector, findAnchor, hitsConnector, isConnector, materializeConnector, mergeVisual,
@@ -844,6 +845,7 @@ function App() {
   const mediaQueueRef = useRef<string[]>([])
   const mediaFailedRef = useRef(new Set<string>())
   const mediaRunningRef = useRef(0)
+  const pendingReplicaRef = useRef(false)
   const strokeTilesRef = useRef(new StrokeTileIndex<Stroke>())
   const viewportFrameRef = useRef<number | null>(null)
   const [, setVisibleTableIds] = useState<string[]>([])
@@ -2022,6 +2024,7 @@ function App() {
     }
     try {
       const result = await saveBoard(data)
+      pendingReplicaRef.current = result.pending
       if (result.merged) {
         const merged = mergeBoard(data, {
           ...data, strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
@@ -2077,7 +2080,7 @@ function App() {
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
       void persistBoard()
-    }, 400)
+    }, privateBoard() ? 400 : 80)
   }
 
   async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {
@@ -2123,6 +2126,7 @@ function App() {
             zoom: Math.min(5, Math.max(0.01, data.camera?.zoom ?? 1)),
           }
         }
+        pendingReplicaRef.current = await hasPendingShared()
         loadedRef.current = true
         setLiveBoardId(getActiveBoardId())
         void refreshLibrary().catch(console.error)
@@ -2165,7 +2169,6 @@ function App() {
 
     const localIsBusy = () => !loadedRef.current || dirtyRef.current || savingRef.current ||
       pointerRef.current !== null || activeStroke.current !== null ||
-      editingRef.current !== null || visualEditorRef.current !== null || tableEditorBusyRef.current ||
       syncConflictRef.current
 
     function retryApply(delay = 180) {
@@ -2176,15 +2179,7 @@ function App() {
       }, delay)
     }
 
-    async function applyLatest() {
-      if (stopped || fetching || newestSeen <= getActiveBoardVersion()) return
-      if (localIsBusy()) { retryApply(250); return }
-      fetching = true
-      try {
-        const snapshot = await fetchBoardForLiveSync(boardId)
-        // El usuario pudo empezar a dibujar mientras llegaba la respuesta.
-        if (stopped || boardId !== getActiveBoardId() || localIsBusy()) return
-        if (snapshot.version <= getActiveBoardVersion()) return
+    async function showCommitted(snapshot: Awaited<ReturnType<typeof fetchBoardForLiveSync>>) {
         const content = snapshot.content || ({} as typeof snapshot.content)
         strokesRef.current = content.strokes ?? []
         textsRef.current = content.texts ?? []
@@ -2203,7 +2198,9 @@ function App() {
         hydrateMedia(mediaRef.current)
         undoRef.current = []
         redoRef.current = []
-        selectElement(null)
+        // An open inspector is a local draft, not a reason to freeze incoming
+        // objects. Preserve it and its selection until the user applies it.
+        if (!editingRef.current && !visualEditorRef.current && !tableEditorBusyRef.current) selectElement(null)
         // Commit the version before asynchronous asset downloads. The user can
         // start editing while those downloads run; never mark an older scene
         // with a newer version or overwrite their new draft.
@@ -2214,11 +2211,23 @@ function App() {
         setSaveStatus('saved')
         redraw()
         hydrateMedia(mediaRef.current)
+    }
+
+    async function applyLatest() {
+      if (stopped || fetching || newestSeen <= getActiveBoardVersion()) return
+      if (localIsBusy()) { retryApply(80); return }
+      fetching = true
+      try {
+        const snapshot = await fetchBoardForLiveSync(boardId)
+        // El usuario pudo empezar a dibujar mientras llegaba la respuesta.
+        if (stopped || boardId !== getActiveBoardId() || localIsBusy()) return
+        if (snapshot.version <= getActiveBoardVersion()) return
+        await showCommitted(snapshot)
       } catch (cause) {
         console.warn('Sincronizacion temporalmente no disponible:', cause)
       } finally {
         fetching = false
-        if (!stopped && newestSeen > getActiveBoardVersion()) retryApply(750)
+        if (!stopped && newestSeen > getActiveBoardVersion()) retryApply(180)
       }
     }
 
@@ -2253,13 +2262,27 @@ function App() {
         socket.onmessage = event => {
           try {
             const msg = JSON.parse(event.data) as {
-              type?:string;board_id?:string;version?:number;you?:string;center?:Point;zoom?:number;
+              type?:string;board_id?:string;version?:number;base_version?:number;patch?:unknown;you?:string;center?:Point;zoom?:number;
               users?:LiveUser[];client_id?:string;stroke_id?:string;user_id?:string;
               name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
             }
             if (msg.board_id !== boardId) return
             if (msg.type === 'board_version' && typeof msg.version === 'number') {
+              if (!fetching && !pendingReplicaRef.current && !localIsBusy() && msg.base_version===getActiveBoardVersion() && msg.version===msg.base_version+1) {
+                const content=applyScenePatch({...snapshot(),camera:{...cameraRef.current}},msg.patch)
+                if(content){
+                  newestSeen=Math.max(newestSeen,msg.version)
+                  fetching=true
+                  void showCommitted({id:boardId,version:msg.version,content}).catch(cause=>{
+                    console.warn('No se pudo conservar la copia recibida:',cause)
+                  }).finally(()=>{
+                    fetching=false
+                    if(!stopped && newestSeen>getActiveBoardVersion())retryApply(0)
+                  })
+                  return
+                }
+              }
               receivedVersion(msg.version)
             } else if (msg.type === 'presence' && Array.isArray(msg.users)) {
               setLiveUsers(msg.users)
@@ -3719,7 +3742,7 @@ function App() {
     const documentId = createId()
     const origin = dropPoint ?? boardCenter()
     let top = origin.y
-    const pending: MediaItem[] = []
+    let firstPage: string | null = null
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       setImportStatus(`Importando PDF: página ${pageNumber} de ${pdf.numPages}`)
       const page = await pdf.getPage(pageNumber)
@@ -3740,25 +3763,26 @@ function App() {
       // La página se guarda, pero no se decodifica hasta que aparezca en pantalla.
       const w = baseViewport.width
       const h = baseViewport.height
-      pending.push({
+      if(!firstPage)rememberChange()
+      const item:MediaItem={
         id: createId(), assetId,
         x: dropPoint ? origin.x : origin.x - w / 2,
         y: top, width: w, height: h,
         name: file.name || 'Documento pegado.pdf', kind: 'pdf-page', documentId, pageNumber,
-      })
+      }
+      mediaRef.current.push(item)
+      firstPage ??= item.id
+      setTool('select')
+      redraw()
+      scheduleSave()
+      // Start saving this page now, independently of rendering the rest.
+      if(!privateBoard())void persistBoard()
       top += h + PAGE_GAP
       page.cleanup()
       // Permitir actualizar el indicador mientras se procesa el PDF.
       await new Promise<void>(resolve => setTimeout(resolve, 0))
     }
-    if (pending.length) {
-      rememberChange()
-      mediaRef.current.push(...pending)
-      selectElement({ kind: 'media', id: pending[0].id })
-      setTool('select')
-      redraw()
-      scheduleSave()
-    }
+    if(firstPage)selectElement({kind:'media',id:firstPage})
   }
 
   async function importFiles(files: File[], at?: Point) {

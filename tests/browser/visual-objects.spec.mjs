@@ -70,16 +70,26 @@ test('all shared object types appear live and either contributor can delete them
     await Promise.all(pages.map(p=>p.goto(api)))
     await expect(pages[0].locator('.toolbar')).toBeVisible()
     await expect(pages[1].locator('.toolbar')).toBeVisible()
+    await note(pages[0],'Nota en edición')
+    await expect.poll(async()=>(await cachedShapes(pages[1]))[0]?.note?.text).toBe('Nota en edición')
+    await pages[0].getByRole('button',{name:'Editar nota',exact:true}).click()
+    await pages[0].getByRole('textbox',{name:'Texto de la nota',exact:true}).fill('Borrador sin terminar')
+    let snapshotDownloads=0
+    await pages[0].route(`**/api/boards/${board}`,route=>{
+      if(route.request().method()==='GET'){snapshotDownloads++;return route.abort('failed')}
+      return route.continue()
+    })
     const asset='multimedia-png'
     const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0N8AAAAASUVORK5CYII=','base64')
     expect((await contributor.put(`${api}/api/assets/${asset}`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
+    const previous=await (await owner.get(`${api}/api/boards/${board}`)).json()
     const content={camera:{x:0,y:0,zoom:1},strokes:[{id:'ink-b',points:[{x:60,y:350},{x:150,y:360}],width:3,color:'#000'}],
-      texts:[{id:'text-b',x:40,y:390,text:'Texto compartido',fontSize:20,color:'#000'}],shapes:[],
+      texts:[{id:'text-b',x:40,y:390,text:'Texto compartido',fontSize:20,color:'#000'}],shapes:previous.content.shapes,
       media:[{id:'image-b',assetId:asset,x:40,y:440,width:60,height:60,name:'Imagen compartida',kind:'image'}],
       tables:[{id:'table-b',name:'Tabla compartida',x:210,y:330,cells:[[{input:'Compartida'},{input:'2'}]],cellWidth:90,cellHeight:30}],
       graphs:[{id:'graph-b',x:450,y:330,width:300,height:240,formulas:[{id:'f',expr:'x^2',enabled:true,color:'#6366f1'}]}],
       videos:[{id:'video-b',x:800,y:330,width:320,height:180,videoId:'dQw4w9WgXcQ',url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',start:0}]}
-    expect((await contributor.put(`${api}/api/boards/${board}`,{data:{version:0,content}})).status()).toBe(200)
+    expect((await contributor.put(`${api}/api/boards/${board}`,{data:{version:previous.version,content}})).status()).toBe(200)
     expect((await owner.get(`${api}/api/assets/${asset}`)).status()).toBe(200)
     for(const page of pages) {
       await expect.poll(()=>page.evaluate(async()=>{
@@ -91,6 +101,9 @@ test('all shared object types appear live and either contributor can delete them
       await expect(page.locator('[data-table-id="table-b"]')).toBeVisible()
       await expect(page.locator('.board-live-graph')).toBeVisible()
     }
+    expect(snapshotDownloads).toBe(0)
+    await expect(pages[0].getByRole('textbox',{name:'Texto de la nota',exact:true})).toHaveValue('Borrador sin terminar')
+    await pages[0].getByRole('button',{name:'Cancelar',exact:true}).click()
     await pages[0].keyboard.press('v')
     await pages[0].keyboard.press('Control+a')
     await pages[0].keyboard.press('Delete')
@@ -101,6 +114,49 @@ test('all shared object types appear live and either contributor can delete them
     await expect(pages[1].locator('[data-table-id="table-b"]')).toHaveCount(0)
     await expect(pages[1].locator('.board-live-graph')).toHaveCount(0)
   } finally {await Promise.all(contexts.map(c=>c.close()))}
+})
+
+test('PDF pages reach the other contributor before the remaining uploads finish',async({browser})=>{
+  const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  let release
+  try {
+    await Promise.all(contexts.map((c,i)=>signedIn(c,`PDF progressive ${i}`)))
+    const owner=contexts[0].request
+    const board=(await (await owner.post(`${api}/api/boards`,{data:{name:'PDF progresivo'}})).json()).id
+    const token=(await (await owner.post(`${api}/api/share/boards/${board}`,{data:{role:'editor'}})).json()).token
+    await contexts[1].request.post(`${api}/api/share/join`,{data:{token}})
+    const [a,b]=await Promise.all(contexts.map(c=>c.newPage()))
+    await Promise.all([a.goto(api),b.goto(api)])
+    await expect(a.getByRole('button',{name:'Seguir a PDF progressive 1'})).toBeVisible()
+    let uploads=0
+    const second=new Promise(resolve=>{release=resolve})
+    await b.route('**/api/assets/*',async route=>{
+      if(route.request().method()==='PUT' && ++uploads===2)await second
+      await route.continue()
+    })
+    // Small, valid two-page PDF, generated in memory without real user files.
+    const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>']
+    for(let i=0;i<2;i++){
+      objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << >> /Contents ${4+i*2} 0 R >>`)
+      const ink='0 0 1 rg 20 20 100 100 re f\n'
+      objects.push(`<< /Length ${ink.length} >>\nstream\n${ink}endstream`)
+    }
+    let pdf='%PDF-1.4\n',offsets=[0]
+    objects.forEach((object,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${object}\nendobj\n`})
+    const xref=pdf.length
+    pdf+=`xref\n0 ${offsets.length}\n0000000000 65535 f \n`+offsets.slice(1).map(n=>`${String(n).padStart(10,'0')} 00000 n \n`).join('')+`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+    await b.locator('input[type="file"][accept="application/pdf,.pdf"]').setInputFiles({name:'two-pages.pdf',mimeType:'application/pdf',buffer:Buffer.from(pdf)})
+    await expect.poll(()=>uploads).toBe(2)
+    const media=()=>a.evaluate(async()=>{
+      const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+      const boards=await new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').getAll();r.onsuccess=()=>resolve(r.result)})
+      db.close();return boards.find(b=>b.id===localStorage.getItem('pizarra_activa'))?.content?.media??[]
+    })
+    await expect.poll(async()=>(await media()).map(m=>m.pageNumber),{timeout:5000}).toEqual([1])
+    release()
+    await expect.poll(async()=>(await media()).map(m=>m.pageNumber)).toEqual([1,2])
+    expect(uploads).toBe(2)
+  } finally {release?.();await Promise.all(contexts.map(c=>c.close()))}
 })
 async function note(page,text) {
   await page.getByRole('button',{name:'Agregar nota adhesiva',exact:true}).click()

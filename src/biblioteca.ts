@@ -39,10 +39,10 @@ class HttpError extends Error {
     this.name = 'HttpError'
   }
 }
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeout=12000): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`${API}${path}`, {...init, credentials: 'include', signal: AbortSignal.timeout(12000)})
+    response = await fetch(`${API}${path}`, {...init, credentials: 'include', signal: AbortSignal.timeout(timeout)})
   } catch {
     disconnected = true
     throw new Unavailable('Tu servidor no está disponible. Se conserva la copia de este dispositivo.')
@@ -130,11 +130,13 @@ export async function removeBoard(id: string) {
 }
 
 async function cacheAssets(content: BoardContentWithExtras) {
+  const scope=account,local=privateBoard()
   const ids = [...new Set(content.media.map(m => m.assetId))]
   const missing: string[] = []
   const queue = [...ids]
   await Promise.all(Array.from({length: Math.min(4, ids.length)}, async () => {
     while (queue.length) {
+      if(scope!==account || local!==privateBoard())return
       const id = queue.shift()!
       try { if (!await loadAsset(id)) missing.push(id) } catch { missing.push(id) }
     }
@@ -176,7 +178,8 @@ export async function loadBoard(): Promise<BoardContentWithExtras | undefined> {
     if (!remoteEnabled) throw new Unavailable()
     const result = await request<{id:string;name:string;version:number;content:BoardContentWithExtras}>(`/api/boards/${encodeURIComponent(activeId)}`)
     activeVersion = result.version
-    await cacheRemote(result)
+    await cacheRemote(result, false)
+    void cacheAssets({ ...emptyContent(), ...result.content }).catch(console.warn)
     return strokeIds({ ...emptyContent(), ...result.content })
   } catch (error) {
     if (!(error instanceof Unavailable) || !saved) throw error
@@ -220,15 +223,10 @@ export async function saveBoard(content: BoardContentWithExtras) {
   await writeDeviceBoard({ ...previous, draft: content })
   try {
     if (!remoteEnabled) throw new Unavailable()
-    for (const media of content.media) {
-      const db = await deviceDB
-      if (await db.get('meta', `upload:${assetKey(media.assetId)}`)) {
-        const blob = await db.get('assets', assetKey(media.assetId)) as Blob | undefined
-        if (!blob) throw new Error('Falta una imagen local pendiente de subir.')
-        await request(`/api/assets/${media.assetId}`, {method:'PUT', headers:{'Content-Type':blob.type}, body:blob})
-        await db.delete('meta', `upload:${assetKey(media.assetId)}`)
-      }
-    }
+    const uploads=[...new Set(content.media.map(media=>media.assetId))]
+    await Promise.all(Array.from({length:Math.min(4,uploads.length)},async()=>{
+      while(uploads.length)await uploadPendingAsset(uploads.shift()!)
+    }))
     let version = activeVersion
     let merged = content
     let base = strokeIds(previous.content)
@@ -260,19 +258,62 @@ export async function saveBoard(content: BoardContentWithExtras) {
     throw error
   }
 }
+const assetUploads=new Map<string,Promise<void>>()
+const assetDownloads=new Map<string,Promise<Blob|undefined>>()
+let runningUploads=0
+const uploadWaiters:(()=>void)[]=[]
+async function acquireUploadSlot() {
+  if(runningUploads<4){runningUploads++;return}
+  await new Promise<void>(resolve=>uploadWaiters.push(resolve))
+}
+function releaseUploadSlot() {
+  const next=uploadWaiters.shift()
+  if(next)next()
+  else runningUploads--
+}
+function uploadPendingAsset(id:string):Promise<void> {
+  const key=assetKey(id)
+  const pending=assetUploads.get(key)
+  if(pending)return pending
+  const upload=(async()=>{
+    const db=await deviceDB
+    if(!await db.get('meta',`upload:${key}`))return
+    const blob=await db.get('assets',key) as Blob|undefined
+    if(!blob)throw new Error('Falta una imagen local pendiente de subir.')
+    await acquireUploadSlot()
+    try {await request(`/api/assets/${id}`,{method:'PUT',headers:{'Content-Type':blob.type},body:blob},120000)}
+    finally {releaseUploadSlot()}
+    await db.delete('meta',`upload:${key}`)
+  })().finally(()=>assetUploads.delete(key))
+  assetUploads.set(key,upload)
+  return upload
+}
 export async function saveAsset(id: string, blob: Blob) {
   await (await deviceDB).put('assets', blob, assetKey(id))
-  if (!privateBoard()) await (await deviceDB).put('meta', true, `upload:${assetKey(id)}`)
+  if (!privateBoard()) {
+    await (await deviceDB).put('meta', true, `upload:${assetKey(id)}`)
+    // Transfer while the user positions the image or the next PDF page renders.
+    // saveBoard awaits this same promise; a failed transfer remains queued.
+    if(remoteEnabled)void uploadPendingAsset(id).catch(()=>{})
+  }
 }
 export async function loadAsset(id: string): Promise<Blob | undefined> {
+  const key=assetKey(id)
+  const pending=assetDownloads.get(key)
+  if(pending)return pending
+  const download=readAsset(id,key,privateBoard(),remoteEnabled).finally(()=>assetDownloads.delete(key))
+  assetDownloads.set(key,download)
+  return download
+}
+async function readAsset(id:string,key:string,local:boolean,remote:boolean):Promise<Blob|undefined> {
   const db = await deviceDB
-  const cached = await db.get('assets', assetKey(id)) as Blob | undefined
-  if (cached || privateBoard() || !remoteEnabled) return cached
+  const cached = await db.get('assets', key) as Blob | undefined
+  if (cached || local || !remote) return cached
   const response = await fetch(`${API}/api/assets/${id}`, {credentials: 'include', signal: AbortSignal.timeout(12000)})
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`Error de imagen ${response.status}`)
   const blob = await response.blob()
-  await db.put('assets', blob, assetKey(id))
+  await db.put('assets', blob, key)
   return blob
 }
 

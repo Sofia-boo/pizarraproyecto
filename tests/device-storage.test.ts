@@ -40,6 +40,57 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('applies committed live additions, edits and deletions without moving the local camera',async()=>{
+    const {applyScenePatch}=await import('../src/storage/livePatch')
+    const data=content()
+    const result=applyScenePatch(data,{texts:{upsert:[{...data.texts[0],text:'Editado'}],remove:[]},graphs:{upsert:[{id:'live-graph'}],remove:[]},videos:{upsert:[],remove:['video']}})!
+    expect(result.texts[0].text).toBe('Editado')
+    expect(result.graphs).toEqual([{id:'live-graph'}])
+    expect(result.videos).toEqual([])
+    expect(result.camera.x).toBe(data.camera.x)
+    expect(applyScenePatch(data,{graphs:{upsert:[null],remove:[]}})).toBeNull()
+    expect(applyScenePatch(data,{unknown:{upsert:[],remove:[]}})).toBeNull()
+  })
+  it('opens the scene before slow images finish and shares one download between render and replica',async()=>{
+    const data={...content(),media:[{id:'slow',assetId:'slow',x:0,y:0,width:10,height:10,name:'Slow',kind:'image' as const}]}
+    server(data)
+    const normal=fetched.getMockImplementation()!
+    let release!:()=>void
+    const gate=new Promise<void>(resolve=>{release=resolve})
+    fetched.mockImplementation(async(input:string,...args:unknown[])=>{
+      if(input.endsWith('/api/assets/slow')){await gate;return new Response(new Blob(['image'],{type:'image/png'}))}
+      return normal(input,...args)
+    })
+    expect(await library.loadBoard()).toEqual(data)
+    const one=library.loadAsset('slow'),two=library.loadAsset('slow')
+    await vi.waitFor(()=>expect(fetched.mock.calls.filter(([url])=>url.endsWith('/api/assets/slow'))).toHaveLength(1))
+    release()
+    expect(await one).toBeInstanceOf(Blob)
+    expect(await two).toBeInstanceOf(Blob)
+  })
+  it('uploads images concurrently while positioning them and waits for their permissions before publishing',async()=>{
+    server();await library.loadBoard()
+    const releases:Record<string,()=>void>={}
+    fetched.mockReset()
+    fetched.mockImplementation(async(input:string,init?:RequestInit)=>{
+      if(input.includes('/api/assets/')){
+        await new Promise<void>(resolve=>{releases[input.split('/').at(-1)!]=resolve})
+        return Response.json({ok:true})
+      }
+      expect(init?.method).toBe('PUT')
+      return Response.json({version:5})
+    })
+    await library.saveAsset('upload-a',new Blob(['a'],{type:'image/png'}))
+    await library.saveAsset('upload-b',new Blob(['b'],{type:'image/png'}))
+    await vi.waitFor(()=>expect(Object.keys(releases)).toHaveLength(2))
+    const data={...content(),media:['a','b'].map(id=>({id,assetId:`upload-${id}`,x:0,y:0,width:10,height:10,name:id,kind:'image' as const}))}
+    const save=library.saveBoard(data)
+    expect(fetched.mock.calls.filter(([url])=>url.includes('/api/boards/'))).toHaveLength(0)
+    releases['upload-a']();releases['upload-b']()
+    expect(await save).toEqual({pending:false})
+    expect(fetched.mock.calls.filter(([url])=>url.includes('/api/assets/'))).toHaveLength(2)
+    expect(fetched.mock.calls.filter(([url])=>url.includes('/api/boards/'))).toHaveLength(1)
+  })
   it('does not resurrect a remote deletion during a concurrent local edit',async()=>{
     const {mergeBoard}=await import('../src/storage/merge')
     const base=content()
@@ -114,6 +165,7 @@ describe('private boards and shared device replicas',()=>{
     const data={...content(),media:[{id:'m1',assetId:'asset-1',x:0,y:0,width:10,height:10,name:'Imagen',kind:'image' as const}]}
     server(data)
     expect(await library.loadBoard()).toEqual(data)
+    expect(await library.loadAsset('asset-1')).toBeInstanceOf(Blob)
     fetched.mockReset().mockRejectedValue(new TypeError('offline'))
     library.setStorageSession(owner,false)
     expect(await library.loadBoard()).toEqual(data)
@@ -176,6 +228,7 @@ describe('private boards and shared device replicas',()=>{
     const data={...content(),media:[{id:'m1',assetId:'other-asset',x:0,y:0,width:10,height:10,name:'Imagen',kind:'image' as const}]}
     server(data)
     await library.loadBoard()
+    await library.loadAsset('other-asset')
     fetched.mockReset().mockResolvedValue(Response.json({version:5}))
     expect(await library.saveBoard(data)).toEqual({pending:false})
     expect(fetched).toHaveBeenCalledTimes(1)

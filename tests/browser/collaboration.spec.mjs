@@ -60,6 +60,12 @@ test('two contributors edit shared content, navigate, follow cameras and retain 
   await Promise.all([draw(a,450,350),draw(b,650,450)])
   await expect.poll(()=>content.strokes.length).toBe(2)
   await expect.poll(()=>conflicts).toBeGreaterThan(0)
+  // The server accepts the merged save before its HTTP response reaches B.
+  // Wait for the committed scene in B, rather than erasing a live ink preview.
+  await expect.poll(()=>b.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    return new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').get('b:shared');r.onsuccess=()=>{db.close();resolve(r.result.content.strokes.length)}})
+  })).toBe(2)
   // B can erase the stroke committed by A, including after a simultaneous save.
   await b.keyboard.press('e')
   await b.mouse.click(500,375)

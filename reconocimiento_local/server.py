@@ -704,7 +704,7 @@ async def save_board(board_id: str, item: BoardSave):
     from reconocimiento_local.visual_objects import validate_visual_content
     validate_visual_content(item.content)
     with db_connection() as db:
-        row = db.execute('SELECT version FROM boards WHERE id=?', (board_id,)).fetchone()
+        row = db.execute('SELECT version,content FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')
         if row['version'] != item.version:
             raise HTTPException(409, 'Esta pizarra fue modificada en otra pestaña. Recargá antes de guardar.')
@@ -720,7 +720,7 @@ async def save_board(board_id: str, item: BoardSave):
                 db.execute('INSERT OR IGNORE INTO board_assets VALUES (?,?)',
                            (board_id, media['assetId']))
     from reconocimiento_local.live_sync_api import notify_board_saved
-    await notify_board_saved(board_id, new_version)
+    await notify_board_saved(board_id, new_version, json.loads(row['content']), item.content)
     return {'version': new_version}
 
 @app.put('/api/boards/{board_id}/info')

@@ -10,6 +10,16 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_live_patch_only_sends_changes_and_falls_back_for_order_or_large_payloads(self):
+        from reconocimiento_local.live_sync_api import scene_patch
+        before={'texts':[{'id':'a','text':'Original'}],'graphs':[]}
+        after={'texts':[{'id':'a','text':'Editado'}],'graphs':[{'id':'g','formulas':[]}]}
+        self.assertEqual(scene_patch(before,after),{'texts':{'upsert':after['texts'],'remove':[]},'graphs':{'upsert':after['graphs'],'remove':[]}})
+        self.assertEqual(scene_patch(after,{'texts':[],'graphs':[]})['graphs']['remove'],['g'])
+        self.assertIsNone(scene_patch({'texts':[{'id':'a'}]},{'texts':[{'id':'new'},{'id':'a'}]}))
+        self.assertIsNone(scene_patch({}, {'texts':[{'id':'large','text':'x'*512001}]}))
+        self.assertIsNone(scene_patch({}, {'strokes':[{'points':[]}]}))
+
     def test_datalab_transcribes_whole_document_keeps_private_jobs_and_reports_failed_pages(self):
         import httpx
         from unittest.mock import patch
@@ -55,7 +65,7 @@ class BackendTest(unittest.TestCase):
             token=a.post(f'/api/share/boards/{bid}',json={'role':'editor'}).json()['token']
             b.post('/api/share/join',json={'token':token})
             self.assertEqual(a.put('/api/assets/atomic-image',content=b'image',headers={'Content-Type':'image/png'}).status_code,200)
-            async def notified(board_id,version):
+            async def notified(board_id,version,*_):
                 with db_connection() as db:
                     self.assertTrue(asset_access(db,uid,'atomic-image'))
             with patch('reconocimiento_local.live_sync_api.notify_board_saved',side_effect=notified):
