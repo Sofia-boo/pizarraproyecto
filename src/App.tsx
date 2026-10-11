@@ -4021,13 +4021,19 @@ function App() {
     const ctx=canvas.getContext('2d')!
     ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.scale(scale,scale);ctx.translate(-left,-top)
     try {
-      for(const sel of selected){
+      const depth=(sel:Selection)=>sel.kind==='media'
+        ? (mediaRef.current.find(m=>m.id===sel.id) as {zIndex?:number}|undefined)?.zIndex??-300000
+        : (strokesRef.current[Number(sel.id)] as {zIndex?:number}|undefined)?.zIndex??-100000
+      for(const sel of [...selected].sort((a,b)=>depth(a)-depth(b))){
         if(sel.kind==='media'){
           const item=mediaRef.current.find(m=>m.id===sel.id)
           if(!item)continue
           const blob=await loadAsset(item.assetId)
           if(!blob)throw new Error('No se pudo descargar la imagen seleccionada.')
-          ctx.drawImage(await imageFromBlob(blob),item.x,item.y,item.width,item.height)
+          const image=await imageFromBlob(blob)
+          ctx.save();ctx.translate(item.x+item.width/2,item.y+item.height/2)
+          ctx.rotate(item.rotation??0)
+          ctx.drawImage(image,-item.width/2,-item.height/2,item.width,item.height);ctx.restore()
         }else{
           const stroke=strokesRef.current[Number(sel.id)]
           if(!stroke?.points.length)continue
@@ -5025,8 +5031,9 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
-            <button role="menuitem" onClick={()=>void openSelectionOCR()}>OCR Datalab · selección manuscrita o imagen</button>
-            <button role="menuitem" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null})}}>OCR Datalab · PDF completo o imagen…</button>
+            <strong>Escanear y transcribir</strong>
+            <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR()}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
+            <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
             <details><summary>Reconocimiento local (opcional)</summary>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter-train') }}>✎ Enseñar letra (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter') }}>A Reconocer letra (local)</button>

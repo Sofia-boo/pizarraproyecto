@@ -1,7 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "functions": {
+    "api/ocr-setup.js": {"includeFiles": "vercel.json", "maxDuration": 30}
+  },
   "rewrites": [
+    {
+      "source": "/integrations/ocr-link",
+      "destination": "/api/ocr-setup"
+    },
     {
       "source": "/api/:path*",
       "destination": "https://blank-partition-router-numerical.trycloudflare.com/api/:path*"

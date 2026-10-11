@@ -21,7 +21,9 @@ try {
 writeFileSync(new URL('../vercel.json', import.meta.url), JSON.stringify({
   $schema: 'https://openapi.vercel.sh/vercel.json',
   framework: 'vite',
+  functions: {'api/ocr-setup.js':{includeFiles:'vercel.json',maxDuration:30}},
   rewrites: [
+    {source:'/integrations/ocr-link',destination:'/api/ocr-setup'},
     {source:'/api/:path*',destination:`${destination.origin}/api/:path*`},
     {source:'/recognize/:path*',destination:`${destination.origin}/recognize/:path*`},
   ],

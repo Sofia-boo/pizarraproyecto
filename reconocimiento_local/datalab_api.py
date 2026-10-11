@@ -1,5 +1,6 @@
 """Private Datalab Convert proxy. Keys and provider URLs never reach the browser."""
 import json
+import hashlib
 import os
 import secrets
 import time
@@ -25,10 +26,50 @@ def attach_datalab(app, db_connection, data_dir):
             config = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
         except (ValueError, OSError):
             raise HTTPException(503, 'No se pudo leer la configuración privada de Datalab.')
-        value = os.environ.get('DATALAB_API_KEY') or config.get('api_key', '')
+        value = os.environ.get('DATALAB_API_KEY') or os.environ.get('ocrkey') or config.get('api_key', '')
         if not isinstance(value, str) or not value.strip():
             raise HTTPException(503, 'Falta conectar la cuenta de Datalab en el servidor. Creá tu cuenta y configurá la clave; no se enviaron archivos ni se consumieron créditos.')
         return value.strip()
+
+    @app.post('/api/ocr/setup-private')
+    async def setup_private(request: Request):
+        if len(request.headers.get('content-length', ''))>10:
+            raise HTTPException(413, 'Solicitud demasiado grande.')
+        try: length=int(request.headers.get('content-length', '0'))
+        except ValueError: raise HTTPException(400, 'Solicitud no válida.')
+        if length > 16000:
+            raise HTTPException(413, 'Solicitud demasiado grande.')
+        raw = await request.body()
+        if len(raw)>16000:
+            raise HTTPException(413, 'Solicitud demasiado grande.')
+        try:
+            body=json.loads(raw)
+            ticket=body.get('ticket')
+            pairing_path=Path(data_dir)/'ocr_pairing.json'
+            pairing=json.loads(pairing_path.read_text(encoding='utf-8'))
+            valid=(isinstance(ticket,str) and len(ticket)==64 and time.time()<pairing['expires']
+                   and secrets.compare_digest(hashlib.sha256(ticket.encode()).hexdigest(),pairing['digest']))
+        except (ValueError, OSError, KeyError, TypeError, AttributeError):
+            valid=False
+        if not valid:
+            raise HTTPException(403, 'Enlace privado vencido o no autorizado.')
+        value=body.get('api_key')
+        if not isinstance(value,str) or not value.strip() or len(value)>8000 or any(c in value for c in '\r\n'):
+            raise HTTPException(400, 'La clave OCR no es válida.')
+        target=Path(data_dir)/'datalab.json'
+        temporary=target.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'api_key':value.strip()}),encoding='utf-8')
+        try: os.chmod(temporary,0o600)
+        except OSError: pass
+        temporary.replace(target)
+        pairing_path.unlink()
+        return {'configured':True}
+
+    @app.get('/api/ocr/status')
+    async def status():
+        try: key()
+        except HTTPException: return {'configured':False}
+        return {'configured':True}
 
     async def upstream(method, url, **kwargs):
         try:

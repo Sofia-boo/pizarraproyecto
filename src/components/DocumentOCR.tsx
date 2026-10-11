@@ -14,8 +14,33 @@ export default function DocumentOCR({initialFile,onClose,onInsert}:{initialFile:
   const [job,setJob]=useState<string|null>(()=>localStorage.getItem(scope))
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[result,setResult]=useState<Result|null>(null)
   const [text,setText]=useState('')
+  const [preview,setPreview]=useState('')
+  const [configured,setConfigured]=useState<boolean|null>(null)
+  const cameraInput=useRef<HTMLInputElement>(null)
   const alive=useRef(true)
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
+  useEffect(()=>{
+    const controller=new AbortController()
+    void fetch(`${API}/api/ocr/status`,{credentials:'include',signal:controller.signal})
+      .then(async response=>{if(response.ok){const data=await response.json();if(!controller.signal.aborted)setConfigured(data.configured===true)}}).catch(()=>{})
+    return()=>controller.abort()
+  },[])
+  useEffect(()=>{
+    // oxlint-disable-next-line react/set-state-in-effect -- Synchronize the preview with a browser object URL; release it on file change.
+    if(!file?.type.startsWith('image/')){setPreview('');return}
+    // oxlint-disable-next-line react/set-state-in-effect -- The URL is an external resource managed by this effect's cleanup.
+    const url=URL.createObjectURL(file);setPreview(url)
+    return()=>URL.revokeObjectURL(url)
+  },[file])
+  const chooseFile=(next:File|null)=>{
+    if(!next)return
+    setError('');setResult(null)
+    if(!['application/pdf','image/png','image/jpeg','image/webp'].includes(next.type)){
+      setFile(null);setError('Elegí un PDF o una imagen PNG, JPEG o WebP.');return
+    }
+    if(!next.size||next.size>30_000_000){setFile(null);setError('El archivo debe tener contenido y ocupar hasta 30 MB.');return}
+    setFile(next)
+  }
   useEffect(()=>{
     if(!job)return
     let stopped=false,timer:ReturnType<typeof setTimeout>|undefined
@@ -45,11 +70,16 @@ export default function DocumentOCR({initialFile,onClose,onInsert}:{initialFile:
     const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'})),a=document.createElement('a')
     a.href=url;a.download='transcripcion.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
   }
-  return <div className="recognition-overlay"><div className="recognition-dialog" role="dialog" aria-label="Transcripción con Datalab" style={{maxHeight:'90dvh',overflowY:'auto'}}>
+  return <div className="recognition-overlay"><div className="recognition-dialog ocr-dialog" role="dialog" aria-modal="true" aria-label="Transcripción con Datalab">
     <h3>Transcripción OCR · Datalab</h3>
     <p>Transcribí el PDF completo o una imagen, incluidos manuscritos. El archivo se envía a Datalab y utiliza los créditos de la cuenta configurada en el servidor.</p>
-    <label>PDF o imagen<input type="file" aria-label="Documento para transcribir" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy||Boolean(job)} onChange={e=>setFile(e.target.files?.[0]??null)}/></label>
-    {file&&<p>{file.name}</p>}
+    {configured===false&&<p role="status">Falta conectar la clave OCR en el servidor. Podés preparar el archivo; todavía no se enviará a Datalab.</p>}
+    {configured===true&&<p>OCR conectado.</p>}
+    <label>PDF o imagen · hasta 30 MB<input type="file" aria-label="Documento para transcribir" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy||Boolean(job)} onChange={e=>chooseFile(e.target.files?.[0]??null)}/></label>
+    <input ref={cameraInput} className="ocr-camera-input" type="file" aria-label="Foto para transcribir" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy||Boolean(job)} onChange={e=>chooseFile(e.target.files?.[0]??null)}/>
+    <button disabled={busy||Boolean(job)} onClick={()=>cameraInput.current?.click()}>Tomar foto</button>
+    {file&&<p className="ocr-file-name">{file.name}</p>}
+    {preview&&<img className="ocr-preview" src={preview} alt="Vista previa del documento seleccionado"/>}
     {error&&<p role="alert" className="recognition-error">{error}</p>}
     {job&&<p role="status">Transcribiendo todas las páginas… Podés cerrar esta ventana y volver a abrirla para consultar el resultado.</p>}
     {result&&<>

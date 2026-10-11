@@ -557,6 +557,10 @@ def attach_anonymous_users(app, db_connection, data_dir):
             return await call_next(request)
         if method not in ('GET','HEAD','OPTIONS') and not origin_ok(request.headers.get('origin'), request.headers.get('host','')):
             return JSONResponse({'detail': 'Origen no autorizado'}, status_code=403)
+        if path == '/api/ocr/setup-private':
+            # This route authenticates a short-lived, single-use pairing ticket
+            # created on the computer. It cannot be issued through the API.
+            return await call_next(request)
         if path in ('/api/auth/me','/api/auth/guest','/api/auth/login','/api/auth/recover','/api/auth/logout','/api/auth/avatar','/api/auth/set-password'):
             return await call_next(request)
         with db_connection() as db:
@@ -738,7 +742,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                         return JSONResponse({'detail':'Calendario ajeno'},status_code=403)
             # Los otros endpoints /api y /recognize requieren sesión; por defecto no
             # exponer futuras rutas nuevas que puedan saltarse el control de permisos.
-            allowed = (path.startswith('/api/ocr/documents') or path == '/api/code/run' or path.startswith('/api/code/results/') or
+            allowed = (path.startswith('/api/ocr/documents') or path == '/api/ocr/status' or path == '/api/code/run' or path.startswith('/api/code/results/') or
                        path == '/health' or path.startswith('/recognize/') or path.startswith('/api/excel/') or
                        path.startswith('/api/calendar/parse-handwriting') or path.startswith('/api/boards/') or
                        path.startswith('/api/folders/') or path.startswith('/api/assets/') or

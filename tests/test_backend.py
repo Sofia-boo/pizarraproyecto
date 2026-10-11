@@ -62,7 +62,7 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,401)
             a.post('/api/auth/guest',json={'name':'OCR owner','password':'test-password'})
             b.post('/api/auth/guest',json={'name':'OCR outsider','password':'test-password'})
-            with patch.dict(os.environ,{'DATALAB_API_KEY':''}):
+            with patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':''}):
                 self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,503)
             with patch.dict(os.environ,{'DATALAB_API_KEY':'private-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=factory):
                 response=a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')})
@@ -77,6 +77,54 @@ class BackendTest(unittest.TestCase):
                 self.assertIn('2',result.json()['warning'])
                 self.assertEqual(a.get('/api/ocr/documents/'+job).json(),result.json())
                 self.assertEqual(len(calls),2)
+
+    def test_ocr_pairing_is_private_expires_and_cannot_be_reused(self):
+        import json,hashlib,time
+        from unittest.mock import patch
+        directory=Path(self.storage.name)
+        pairing=directory/'ocr_pairing.json'
+        target=directory/'datalab.json'
+        ticket='a'*64
+        def prepare(expires):
+            pairing.write_text(json.dumps({'digest':hashlib.sha256(ticket.encode()).hexdigest(),'expires':expires}),encoding='utf-8')
+        try:
+            with TestClient(self.app,base_url='https://testserver') as client, patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':''}):
+                payload={'ticket':ticket,'api_key':'private-pairing-test-key'}
+                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
+                prepare(time.time()+60)
+                self.assertEqual(client.post('/api/ocr/setup-private',json={**payload,'ticket':'b'*64}).status_code,403)
+                self.assertFalse(target.exists())
+                prepare(time.time()-1)
+                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
+                prepare(time.time()+60)
+                linked=client.post('/api/ocr/setup-private',json=payload)
+                self.assertEqual(linked.status_code,200,linked.text)
+                self.assertEqual(linked.json(),{'configured':True})
+                self.assertFalse(pairing.exists())
+                self.assertEqual(json.loads(target.read_text())['api_key'],payload['api_key'])
+                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
+                self.assertEqual(client.get('/api/ocr/status').status_code,401)
+                client.post('/api/auth/guest',json={'name':'Pairing status','password':'test-password'})
+                self.assertEqual(client.get('/api/ocr/status').json(),{'configured':True})
+                self.assertEqual(client.get('/api/ocr/setup-private').status_code,405)
+        finally:
+            pairing.unlink(missing_ok=True);target.unlink(missing_ok=True)
+
+    def test_ocr_accepts_vercel_key_name_and_image_without_exposing_secrets(self):
+        import httpx
+        from unittest.mock import patch
+        client_class=httpx.AsyncClient
+        def handler(request):
+            self.assertEqual(request.headers['X-API-Key'],'private-vercel-test-key')
+            self.assertIn(b'image/png',request.content)
+            self.assertIn(b'accurate',request.content)
+            return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/image-job'})
+        with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':'private-vercel-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
+            client.post('/api/auth/guest',json={'name':'Image OCR','password':'test-password'})
+            result=client.post('/api/ocr/documents',files={'file':('manuscrito.png',b'\x89PNG-test','image/png')})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertNotIn('private-vercel-test-key',result.text)
+            self.assertNotIn('datalab.to',result.text)
 
     def test_media_permissions_are_committed_before_live_notification(self):
         from unittest.mock import patch
