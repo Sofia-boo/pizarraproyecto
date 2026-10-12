@@ -113,6 +113,7 @@ def attach_datalab(app, db_connection, data_dir):
                                       'paginate':'true' if mime=='application/pdf' else 'false',
                                       'disable_image_extraction':'true',
                                       'disable_image_captions':'true',
+                                      'exact_transcription':'true',
                                       'additional_config':json.dumps({'keep_pageheader_in_output':True,'keep_pagefooter_in_output':True})})
         url = result.get('request_check_url', '')
         parsed = urlsplit(url)

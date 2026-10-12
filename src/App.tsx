@@ -499,13 +499,14 @@ function createId(): string {
 }
 /** Editor de hoja de cálculo: selección, referencias y fórmulas al estilo Excel. */
 function InlineTableEditor({ table, camera, anchorRef, onChange, onCellChange, onPasteCells,
-  onAddRow, onAddColumn, onCopyRange, onExport, onMoveStart, onMove, onMoveEnd, notice }:{
+  onAddRow, onAddColumn, onCopyRange, onExport, onMoveStart, onMove, onMoveEnd, onContextMenu, notice }:{
   key?:string; table:SheetItem; camera:Camera; anchorRef:Ref<HTMLDivElement>;
   onChange:(update:(current:SheetItem)=>SheetItem)=>void;
   onCellChange:(row:number,col:number,value:string)=>void;
   onPasteCells:(row:number,col:number,value:string)=>void;
   onAddRow:()=>void;onAddColumn:()=>void;onCopyRange:(range:SheetRange)=>void;onExport:()=>void;
   onMoveStart:()=>void;onMove:(x:number,y:number)=>void;onMoveEnd:()=>void;notice:string;
+  onContextMenu?:(event:ReactMouseEvent<HTMLElement>)=>void;
 }) {
   const [active,setActive] = useState({r:0,c:0})
   const [range,setRange] = useState<SheetRange>({r0:0,c0:0,r1:0,c1:0})
@@ -684,6 +685,7 @@ function InlineTableEditor({ table, camera, anchorRef, onChange, onCellChange, o
   // La barra de herramientas mantiene tamaño legible incluso con zoom bajo.
   const toolbarScale=Math.min(Math.max(1/Math.max(camera.zoom,.1),chrome.factor),1.3/Math.max(camera.zoom,.1))
   return <div className="sheet-inline-anchor" ref={anchorRef}
+    onContextMenu={onContextMenu}
     style={{left:table.x*camera.zoom+camera.x,top:table.y*camera.zoom+camera.y,
       transform:`translate(${rotationOffset(gridWidth,gridHeight,table.rotation||0).x*camera.zoom}px,${rotationOffset(gridWidth,gridHeight,table.rotation||0).y*camera.zoom}px) rotate(${table.rotation||0}rad) scale(${camera.zoom})`,width:gridWidth,height:gridHeight,
       '--sheet-toolbar-scale': toolbarScale} as CSSProperties}
@@ -774,7 +776,7 @@ function StaticTable({table}:{table:SheetItem}) {
   const size=tableSize(table)
   const chrome=tableChrome(table)
   const evaluate=createFormulaEvaluator(table.cells)
-  return <div className="sheet-static-table" data-table-id={table.id} style={{left:table.x,top:table.y,width:size.width,height:size.height,transform:`rotate(${table.rotation||0}rad)`,transformOrigin:'center center'}}>
+  return <div className="sheet-static-table" data-table-id={table.id} style={{left:table.x,top:table.y,width:size.width,height:size.height,zIndex:((table as {zIndex?:number}).zIndex??100000)*2,transform:`rotate(${table.rotation||0}rad)`,transformOrigin:'center center'}}>
     <div className="sheet-inline-title" style={{height:chrome.title,fontSize:Math.max(14,chrome.chromeFont*1.15)}}>{table.name||'Tabla'}</div>
     <div className="sheet-inline-cells" style={{
       gridTemplateColumns:`${chrome.rowHeader}px repeat(${cols},${table.cellWidth}px)`,
@@ -800,6 +802,10 @@ function StaticTable({table}:{table:SheetItem}) {
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const sceneRef = useRef<HTMLDivElement>(null)
+  const contentCanvasesRef = useRef(new Map<number,HTMLCanvasElement>())
+  const navigationPointerRef = useRef<number|null>(null)
+  const routedPointerRef = useRef<number|null>(null)
   // Capa transparente para objetos ubicados por encima de gráficos y tablas DOM.
   const foregroundCanvasRef = useRef<HTMLCanvasElement>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
@@ -1033,6 +1039,7 @@ function App() {
   const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
   const [documentOCR,setDocumentOCR]=useState<{file:File|null;boardId:string;position?:Point}|null>(null)
   const [ocrPicking,setOCRPicking]=useState(false)
+  const [controlNavigation,setControlNavigation]=useState(false)
   const [recognitionError, setRecognitionError] = useState('')
   const [recognitionSuggestion, setRecognitionSuggestion] = useState<string | null>(null)
   const [recognitionEngine, setRecognitionEngine] = useState('')
@@ -1311,6 +1318,9 @@ function App() {
   }, [editing?.id])
 
   // Los trazos conservan su color y ancho ORIGINAL en los datos.
+  function isBoardCanvas(ctx:CanvasRenderingContext2D) {
+    return ctx.canvas===canvasRef.current||ctx.canvas===foregroundCanvasRef.current||ctx.canvas.classList.contains('board-content-canvas')
+  }
   // En el canvas oscuro aclaramos únicamente la tinta difícil de distinguir.
   function colorVisibleEnOscuro(original: string): string {
     if (themeRef.current !== 'dark') return original
@@ -1338,7 +1348,7 @@ function App() {
   function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke,onPaper=false) {
     const pts = stroke.points
     if (!pts.length) return
-    const enPizarra = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current)
+    const enPizarra = isBoardCanvas(ctx)
     const displayColor = enPizarra&&!onPaper ? colorVisibleEnOscuro(stroke.color) : stroke.color
     // IMPORTANTE: al alejar mucho la vista, anchoOriginal * zoom puede
     // ser menor que 1 píxel y el antialiasing hace casi invisible la tinta.
@@ -1370,7 +1380,7 @@ function App() {
   }
 
   function paintOnPaper(ctx:CanvasRenderingContext2D,paint:()=>void) {
-    if(themeRef.current!=='dark'||(ctx.canvas!==canvasRef.current&&ctx.canvas!==foregroundCanvasRef.current))return
+    if(themeRef.current!=='dark'||!isBoardCanvas(ctx))return
     const pages=shapesRef.current.filter(item=>item.visualType==='page')
     if(!pages.length)return
     ctx.save();ctx.beginPath()
@@ -1392,13 +1402,13 @@ function App() {
       const center = {x:item.x + width/2, y:item.y + height/2}
       ctx.translate(center.x, center.y); ctx.rotate(rotation); ctx.translate(-center.x, -center.y)
     }
-    const inkColor = !onPaper && (ctx.canvas===canvasRef.current||ctx.canvas===foregroundCanvasRef.current) && themeRef.current === 'dark' && /^#(?:000(?:000)?|111(?:111)?|202020|222(?:222)?|333(?:333)?)$/i.test(item.color) ? '#e8edf7' : item.color
+    const inkColor = !onPaper && isBoardCanvas(ctx) && themeRef.current === 'dark' && /^#(?:000(?:000)?|111(?:111)?|202020|222(?:222)?|333(?:333)?)$/i.test(item.color) ? '#e8edf7' : item.color
     ctx.font = `${item.fontSize}px system-ui, sans-serif`
     ctx.textBaseline = 'top'
     // Resaltado por subcadena DENTRO del texto, no sobre toda su caja.
     // Se dibuja antes de la tinta y bajo la misma transformación de rotación.
     // Solo se aplica a la vista de la pizarra, nunca a exportaciones.
-    const query = boardSearchOpenRef.current && (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current)
+    const query = boardSearchOpenRef.current && isBoardCanvas(ctx)
       ? boardSearchQueryRef.current.trim().toLocaleLowerCase('es') : ''
     item.text.split('\n').forEach((line, i) => {
       const y = item.y + i * item.fontSize * 1.2
@@ -1422,15 +1432,15 @@ function App() {
 
   function drawShape(ctx: CanvasRenderingContext2D, shape: ShapeItem,resolve=resolveObject) {
     const {x, y, width: w, height: h, kind} = shape
-    const color = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current) ? colorVisibleEnOscuro(shape.color) : shape.color
+    const color = isBoardCanvas(ctx) ? colorVisibleEnOscuro(shape.color) : shape.color
     ctx.save()
     if (shape.rotation) {
       const center = {x:x+w/2,y:y+h/2}
       ctx.translate(center.x,center.y);ctx.rotate(shape.rotation);ctx.translate(-center.x,-center.y)
     }
-    if(paintVisual(ctx,shape,resolve,color,(ctx.canvas===canvasRef.current||ctx.canvas===foregroundCanvasRef.current)&&themeRef.current==='dark')){ctx.restore();return}
+    if(paintVisual(ctx,shape,resolve,color,isBoardCanvas(ctx)&&themeRef.current==='dark')){ctx.restore();return}
     ctx.strokeStyle = color
-    ctx.lineWidth = (ctx.canvas === canvasRef.current || ctx.canvas === foregroundCanvasRef.current) ? Math.max(shape.strokeWidth, 1.35 / Math.max(cameraRef.current.zoom, .01)) : shape.strokeWidth
+    ctx.lineWidth = isBoardCanvas(ctx) ? Math.max(shape.strokeWidth, 1.35 / Math.max(cameraRef.current.zoom, .01)) : shape.strokeWidth
     ctx.lineJoin = 'round'; ctx.lineCap = 'round'
     ctx.beginPath()
     if (kind === 'line' || kind === 'arrow' || kind === 'double-arrow') {
@@ -1551,6 +1561,10 @@ function App() {
 
   function redraw() {
     sendCamera()
+    if(sceneRef.current){
+      const cam=cameraRef.current
+      sceneRef.current.style.transform=`translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`
+    }
     const staticLayer=staticTableLayerRef.current
     if(staticLayer){
       const cam=cameraRef.current
@@ -1644,21 +1658,13 @@ function App() {
     enqueueVisibleMedia(visibleMedia)
     updateVisibleLayers()
 
-    // Los objetos HTML (video, tabla y gráfico) usan una capa DOM. Para
-    // componer correctamente la tinta, comparar sólo los objetos que se
-    // superponen con cada dibujo; un gráfico lejano no debe tapar textos sobre
-    // un video en otra parte de la pizarra.
-    const domMaxZAt=(area?:Bounds):number=>{
-      if(!area)return Infinity
-      let max=-Infinity
-      for(const table of tablesRef.current)if(rectsIntersect(area,rotatedRect(tableSize(table),table.rotation)))
-        max=Math.max(max,(table as GroupedItem).zIndex??100000)
-      for(const graph of graphsRef.current)if(rectsIntersect(area,rotatedRect(graph,graph.rotation)))
-        max=Math.max(max,(graph as GroupedItem).zIndex??200000)
-      for(const video of videosRef.current)if(rectsIntersect(area,video))
-        max=Math.max(max,video.zIndex??-150000)
-      return max
-    }
+    // Intercalar superficies de dibujo y objetos HTML en un único orden global.
+    // Una imagen puede quedar entre una tabla y un gráfico, incluso si se superponen.
+    const domZ=[...new Set([
+      ...tablesRef.current.map(t=>(t as GroupedItem).zIndex??100000),
+      ...graphsRef.current.map(g=>(g as GroupedItem).zIndex??200000),
+      ...videosRef.current.map(v=>v.zIndex??-150000),
+    ])].sort((a,b)=>a-b)
     const hasDomObjects=!!(tablesRef.current.length||graphsRef.current.length||videosRef.current.length)
     const renderables:{z:number;index:number;bounds?:Bounds;paint:(surface:CanvasRenderingContext2D)=>void}[]= []
     let renderIndex=0
@@ -1678,7 +1684,7 @@ function App() {
     for(const item of shapesRef.current){
       const bounds=rotatedRect(visualBounds(item,resolveObject),item.rotation)
       if(rectsIntersect(view,bounds))
-        renderables.push({z:(item as GroupedItem).zIndex??-200000,index:renderIndex++,bounds,paint:surface=>drawShape(surface,item)})
+        renderables.push({z:(item as GroupedItem).zIndex??(item.visualType==='page'?-400000:-200000),index:renderIndex++,bounds,paint:surface=>drawShape(surface,item)})
     }
     for(const index of strokeTilesRef.current.query(strokesRef.current,view)){
       const item=strokesRef.current[index]
@@ -1695,9 +1701,32 @@ function App() {
         renderables.push({z:(item as GroupedItem).zIndex??0,index:renderIndex++,bounds:rotatedRect(textBox,item.rotation),paint:surface=>drawText(surface,item)})
     }
     renderables.sort((a,b)=>a.z-b.z||a.index-b.index)
+    const surfaces=new Map<number,CanvasRenderingContext2D>()
     for(const item of renderables) {
-      const surface = foregroundCtx && item.z > domMaxZAt(item.bounds) ? foregroundCtx : ctx
+      if(!domZ.length||!sceneRef.current){item.paint(ctx);continue}
+      const band=domZ.findLast(z=>z<=item.z)??domZ[0]-1
+      let surface=surfaces.get(band)
+      if(!surface){
+        let layer=contentCanvasesRef.current.get(band)
+        if(!layer){
+          layer=document.createElement('canvas');layer.className='board-content-canvas'
+          layer.setAttribute('aria-hidden','true');sceneRef.current.append(layer)
+          contentCanvasesRef.current.set(band,layer)
+        }
+        if(layer.width!==canvas.width)layer.width=canvas.width
+        if(layer.height!==canvas.height)layer.height=canvas.height
+        layer.style.width=`${viewWidth}px`;layer.style.height=`${viewHeight}px`
+        layer.style.zIndex=String(band*2+1)
+        layer.style.transform=`matrix(${1/cam.zoom},0,0,${1/cam.zoom},${-cam.x/cam.zoom},${-cam.y/cam.zoom})`
+        surface=layer.getContext('2d')!
+        surface.setTransform(1,0,0,1,0,0);surface.clearRect(0,0,layer.width,layer.height)
+        surface.setTransform(dpr,0,0,dpr,0,0);surface.translate(cam.x,cam.y);surface.scale(cam.zoom,cam.zoom)
+        surfaces.set(band,surface)
+      }
       item.paint(surface)
+    }
+    for(const [band,layer] of contentCanvasesRef.current)if(!surfaces.has(band)){
+      layer.remove();contentCanvasesRef.current.delete(band)
     }
     // Los avances del lápiz y los marcadores de selección no son contenido
     // persistido y deben estar visibles sobre los objetos interactivos.
@@ -2648,6 +2677,50 @@ function App() {
       overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(item,item.rotation)))
   }
 
+  function hitSelectionAt(point:Point):Selection|undefined {
+    return everySelection().map((sel,index)=>({sel,index,z:selectionZ(sel)})).sort((a,b)=>b.z-a.z||b.index-a.index).find(({sel})=>{
+      if(sel.kind==='shape'){
+        const shape=shapesRef.current.find(s=>s.id===sel.id)!
+        if(shape.visualType==='page')return shapeTouchesEraser(shape,point,12/cameraRef.current.zoom)
+        if(isConnector(shape))return hitsConnector(shape,point,resolveObject,8/cameraRef.current.zoom)
+      }
+      if(sel.kind==='stroke'){
+        const stroke=strokesRef.current[Number(sel.id)],tolerance=stroke.width/2+6/cameraRef.current.zoom
+        return stroke.points.some((p,i)=>i?distanceToSegment(point,stroke.points[i-1],p)<=tolerance:Math.hypot(point.x-p.x,point.y-p.y)<=tolerance)
+      }
+      const area=selectionBounds(sel)
+      return !!area&&overlaps({x:point.x,y:point.y,width:0,height:0},area)
+    })?.sel
+  }
+
+  function captureScenePointerDown(e:ReactPointerEvent<HTMLDivElement>) {
+    const target=e.target as HTMLElement
+    const scene=target.closest('.board-scene')
+    if(!scene&&!target.closest('.sheet-inline-anchor'))return
+    const navigation=e.pointerType==='mouse'&&(e.button===1||(e.button===0&&(e.ctrlKey||e.metaKey)))
+    if(!scene&&!navigation)return
+    const control=target.closest('button,input,textarea,select,[contenteditable]')
+    const hit=hitSelectionAt(toWorld(e.clientX,e.clientY))
+    const visibleControl=control&&((hit?.kind==='graph'&&target.closest<HTMLElement>('[data-graph-id]')?.dataset.graphId===hit.id)||
+      (hit?.kind==='video'&&target.closest<HTMLElement>('[data-video-id]')?.dataset.videoId===hit.id))
+    if(!navigation&&(tool!=='select'||(visibleControl&&!ocrPicking)))return
+    if(e.button!==0&&!navigation)return
+    e.stopPropagation();routedPointerRef.current=e.pointerId
+    tabletPointerDown(e as unknown as ReactPointerEvent<HTMLCanvasElement>)
+  }
+  function captureScenePointerMove(e:ReactPointerEvent<HTMLDivElement>) {
+    if(routedPointerRef.current!==e.pointerId)return
+    e.stopPropagation();tabletPointerMove(e as unknown as ReactPointerEvent<HTMLCanvasElement>)
+  }
+  function captureScenePointerUp(e:ReactPointerEvent<HTMLDivElement>) {
+    if(routedPointerRef.current!==e.pointerId)return
+    e.stopPropagation();tabletPointerUp(e as unknown as ReactPointerEvent<HTMLCanvasElement>);routedPointerRef.current=null
+  }
+  function captureScenePointerCancel(e:ReactPointerEvent<HTMLDivElement>) {
+    if(routedPointerRef.current!==e.pointerId)return
+    e.stopPropagation();tabletPointerCancel(e as unknown as ReactPointerEvent<HTMLCanvasElement>);routedPointerRef.current=null
+  }
+
   function selectionBounds(selected: Selection, ctx?: CanvasRenderingContext2D | null) {
     if (selected.kind === 'video') {
       const item=videosRef.current.find(v=>v.id===selected.id)
@@ -2733,7 +2806,7 @@ function App() {
     const hold={event:saved,fired:false,timer:setTimeout(()=>{
       if(penHoldRef.current!==hold)return
       hold.fired=true
-      openBoardContextMenu(saved.clientX,saved.clientY,saved.target as HTMLElement)
+      openBoardContextMenu(saved.clientX,saved.clientY)
     },3000)}
     penHoldRef.current=hold
   }
@@ -2785,7 +2858,13 @@ function App() {
     // Evitar que el lápiz/mouse cree dibujos si ya hay dedos navegando.
     if (touchPointersRef.current.size > 0) return
     if (!loadedRef.current || pointerRef.current !== null) return
-    if (e.pointerType === 'mouse' && e.button !== 0) return
+    const navigation=e.pointerType==='mouse'&&(e.button===1||(e.button===0&&(e.ctrlKey||e.metaKey)))
+    if (e.pointerType === 'mouse' && e.button !== 0 && !navigation) return
+    if(navigation){
+      e.preventDefault();finishPendingPen();stopFollowing()
+      navigationPointerRef.current=e.pointerId;pointerRef.current=e.pointerId
+      lastPointerRef.current={x:e.clientX,y:e.clientY};e.currentTarget.setPointerCapture(e.pointerId);return
+    }
     const point = toWorld(e.clientX, e.clientY)
     if(penBreakRef.current) {
       if(e.pointerType==='pen' && tool==='pen' && activeStroke.current && canResumePen(penBreakRef.current,performance.now(),point,cameraRef.current,
@@ -2831,6 +2910,7 @@ function App() {
         e.preventDefault();selectElement(null);marqueeRef.current={start:point,end:point}
         pointerRef.current=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId);redraw();return
       }
+      const hit=hitSelectionAt(point)
       const bounds = groupBounds()
       if (bounds) {
         const margin = 14 / cameraRef.current.zoom
@@ -2840,7 +2920,12 @@ function App() {
         const rotateX=bounds.x+bounds.width/2, rotateY=bounds.y-34/cameraRef.current.zoom
         const onRotate=Math.hypot(point.x-rotateX,point.y-rotateY)<=13/cameraRef.current.zoom
         const inside = point.x >= bounds.x && point.x <= hx && point.y >= bounds.y && point.y <= hy
-        if (onRotate || onHandle || inside) {
+        const onlyPage=groupRef.current.length===1&&groupRef.current[0].kind==='shape'&&
+          shapesRef.current.some(s=>s.id===groupRef.current[0].id&&s.visualType==='page')
+        const pageBorder=onlyPage&&groupRef.current[0].kind==='shape'&&
+          shapeTouchesEraser(shapesRef.current.find(s=>s.id===groupRef.current[0].id)!,point,12/cameraRef.current.zoom)
+        const hitsSelection=!hit||groupRef.current.some(s=>s.kind===hit.kind&&s.id===hit.id)
+        if (onRotate || onHandle || (inside&&hitsSelection&&(!onlyPage||pageBorder))) {
           rememberChange()
           // Si la tabla está en edición, salir del editor antes de girar.
           if(onRotate)setTableEditorId(null)
@@ -2851,12 +2936,15 @@ function App() {
           return
         }
       }
-      // Clic directo sobre una forma o tabla: selección individual.
-      const hitVideo=[...videosRef.current].reverse().find(v=>overlaps({x:point.x,y:point.y,width:0,height:0},v))
-      if(hitVideo){selectElement({kind:'video',id:hitVideo.id});setTableEditorId(null);return}
-      const hitTable=[...tablesRef.current].reverse().find(v=>overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(tableSize(v),v.rotation)))
-      const hitShape=hitShapeAt(point)
-      if(hitTable||hitShape){ selectElement(hitTable?{kind:'table',id:hitTable.id}:{kind:'shape',id:hitShape!.id});setTableEditorId(hitTable&&!groupIdFor({kind:'table',id:hitTable.id})?hitTable.id:null);return }
+      if(hit){
+        selectElement(hit);setTableEditorId(hit.kind==='table'&&!groupIdFor(hit)?String(hit.id):null)
+        const selectedBounds=groupBounds()
+        if(selectedBounds){
+          rememberChange();transformRef.current={mode:'move',start:point,bounds:selectedBounds,initial:snapshot(),group:[...groupRef.current]}
+          pointerRef.current=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId)
+        }
+        return
+      }
       setTableEditorId(null)
       // Un clic sobre un miembro de un grupo persistente selecciona el grupo completo.
       const groupedHit=[...everySelection()].reverse().find(sel=>{
@@ -2932,7 +3020,7 @@ function App() {
       setHoveredTableId(current => current === null ? current : null)
     }
     if (e.pointerId !== pointerRef.current) return
-    if (tool === 'pan') {
+    if (tool === 'pan' || navigationPointerRef.current===e.pointerId) {
       const prev = lastPointerRef.current
       if (!prev) return
       cameraRef.current.x += e.clientX - prev.x
@@ -2997,6 +3085,11 @@ function App() {
   function pointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
+    if(navigationPointerRef.current===e.pointerId){
+      navigationPointerRef.current=null;pointerRef.current=null;lastPointerRef.current=null
+      if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)
+      scheduleSave();return
+    }
     if(e.pointerType==='pen' && activeStroke.current) {
       pausePen(e);return
     }
@@ -3047,6 +3140,7 @@ function App() {
   function pointerCancel(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
+    if(navigationPointerRef.current===e.pointerId)navigationPointerRef.current=null
     if(e.pointerType==='pen' && activeStroke.current) {
       pausePen(e);return
     }
@@ -3120,7 +3214,7 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
     function onWheel(e: WheelEvent) {
-      if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer')) return
+      if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer,.sheet-inline-anchor')) return
       if(e.target.closest('input,textarea,select,[contenteditable="true"]')) return
       e.preventDefault()
       finishPendingPen()
@@ -3136,6 +3230,8 @@ function App() {
       }
     }
     const onMove = (e:PointerEvent) => sendCursorPosition(e.clientX,e.clientY)
+    const onControl=(e:KeyboardEvent)=>setControlNavigation(e.ctrlKey||e.metaKey)
+    const clearControl=()=>setControlNavigation(false)
     const onAction = (e:Event) => {
       if(e.target instanceof Element && e.target.closest('.live-presence')) return
       stopFollowing()
@@ -3152,6 +3248,8 @@ function App() {
     // Clicking inside a cross-origin player focuses its iframe.
     const onBlur = () => { if(document.activeElement instanceof HTMLIFrameElement) stopFollowing() }
     window.addEventListener('blur',onBlur)
+    document.addEventListener('keydown',onControl,true);document.addEventListener('keyup',onControl,true)
+    window.addEventListener('blur',clearControl)
     return () => {
       clearInterval(heartbeat)
       document.removeEventListener('wheel',onWheel,true)
@@ -3159,6 +3257,8 @@ function App() {
       document.removeEventListener('pointerdown',onAction,true)
       document.removeEventListener('keydown',onAction,true)
       window.removeEventListener('blur',onBlur)
+      document.removeEventListener('keydown',onControl,true);document.removeEventListener('keyup',onControl,true)
+      window.removeEventListener('blur',clearControl)
     }
   }, [])
 
@@ -3252,7 +3352,7 @@ function App() {
         renderers.push({z:(item as GroupedItem).zIndex??-300000,paint:ctx=>{ctx.save();transform(ctx,item,item.rotation);ctx.drawImage(bitmap,item.x,item.y,item.width,item.height);ctx.restore()}})
       }
       for(const item of data.shapes.filter(item=>item.visualType!=='page'&&intersects(rotatedRect(visualBounds(item,ref=>resolveObject(ref,data)),item.rotation))))
-        renderers.push({z:item.zIndex??-200000,paint:ctx=>drawShape(ctx,item,ref=>resolveObject(ref,data))})
+        renderers.push({z:item.zIndex??(item.visualType==='page'?-400000:-200000),paint:ctx=>drawShape(ctx,item,ref=>resolveObject(ref,data))})
       for(const item of data.strokes)renderers.push({z:(item as GroupedItem).zIndex??-100000,paint:ctx=>drawStroke(ctx,item)})
       for(const item of data.texts)renderers.push({z:(item as GroupedItem).zIndex??0,paint:ctx=>drawText(ctx,item)})
       for(const item of data.tables.filter(item=>intersects(rotatedRect(tableSize(item),item.rotation)))) {
@@ -4505,6 +4605,14 @@ function App() {
       return item?[item]:[]
     })
   }
+  function selectionZ(sel:Selection) {
+    const item=sel.kind==='stroke'?strokesRef.current[Number(sel.id)]:
+      sel.kind==='text'?textsRef.current.find(v=>v.id===sel.id):sel.kind==='media'?mediaRef.current.find(v=>v.id===sel.id):
+      sel.kind==='shape'?shapesRef.current.find(v=>v.id===sel.id):sel.kind==='table'?tablesRef.current.find(v=>v.id===sel.id):
+      sel.kind==='graph'?graphsRef.current.find(v=>v.id===sel.id):videosRef.current.find(v=>v.id===sel.id)
+    const defaults={media:-300000,shape:(item as ShapeItem)?.visualType==='page'?-400000:-200000,stroke:-100000,text:0,table:100000,graph:200000,video:-150000}
+    return (item as GroupedItem|undefined)?.zIndex??defaults[sel.kind]
+  }
   function groupSelected() {
     if(groupRef.current.length<2)return
     rememberChange()
@@ -4518,23 +4626,13 @@ function App() {
     selectedItems().forEach(item=>{delete (item as GroupedItem).groupId})
     redraw();scheduleSave();setContextMenu(null)
   }
-  // Ordenación global de los objetos dibujados en canvas; tablas y gráficos
-  // conservan su propia capa interactiva DOM y se ordenan dentro de ella.
+  // El mismo orden se usa para dibujar, seleccionar y componer objetos HTML.
   function reorderSelected(front:boolean) {
     const items=selectedItems()
     if(!items.length)return
     rememberChange()
-    const current=everySelection().map(sel=>{
-      const target=sel.kind==='stroke'?strokesRef.current[Number(sel.id)]:
-        sel.kind==='text'?textsRef.current.find(v=>v.id===sel.id):
-        sel.kind==='media'?mediaRef.current.find(v=>v.id===sel.id):
-        sel.kind==='shape'?shapesRef.current.find(v=>v.id===sel.id):
-        sel.kind==='table'?tablesRef.current.find(v=>v.id===sel.id):
-        sel.kind==='graph'?graphsRef.current.find(v=>v.id===sel.id):
-        videosRef.current.find(v=>v.id===sel.id)
-      const defaultZ=sel.kind==='media'?-300000:sel.kind==='shape'?-200000:sel.kind==='stroke'?-100000:sel.kind==='text'?0:sel.kind==='table'?100000:sel.kind==='graph'?200000:-150000
-      return target?((target as GroupedItem).zIndex??defaultZ):defaultZ
-    })
+    setTableEditorId(null)
+    const current=everySelection().map(selectionZ)
     let position=(front?Math.max(...current):Math.min(...current))+(front?1:-items.length)
     items.forEach(item=>{(item as GroupedItem).zIndex=position++})
     // Los gráficos y las tablas mantienen su orden HTML en el mismo tipo.
@@ -4550,19 +4648,14 @@ function App() {
     if(target.closest('input,textarea,select,[contenteditable],button,.toolbar,.sheet-inline-editor'))return
     event.preventDefault()
     if(penHoldRef.current)return
-    openBoardContextMenu(event.clientX,event.clientY,target)
+    openBoardContextMenu(event.clientX,event.clientY)
   }
-  function openBoardContextMenu(clientX:number,clientY:number,target:HTMLElement) {
-    const clickedVideo=target.closest<HTMLElement>('[data-video-id]')?.dataset.videoId
-    if(clickedVideo){selectElement({kind:'video',id:clickedVideo});setContextMenu({x:Math.max(8,Math.min(clientX,window.innerWidth-215)),y:Math.max(8,Math.min(clientY,window.innerHeight-340))});return}
+  function openBoardContextMenu(clientX:number,clientY:number) {
     const bounds=groupBounds()
     const world=toWorld(clientX,clientY)
     const inside=bounds&&world.x>=bounds.x&&world.x<=bounds.x+bounds.width&&world.y>=bounds.y&&world.y<=bounds.y+bounds.height
-    if(!inside){
-      const found=[...everySelection()].reverse().find(sel=>{
-        const b=selectionBounds(sel)
-        return b&&world.x>=b.x-2&&world.x<=b.x+b.width+2&&world.y>=b.y-2&&world.y<=b.y+b.height+2
-      })
+    const found=hitSelectionAt(world)
+    if(!inside||(found&&!groupRef.current.some(s=>s.kind===found.kind&&s.id===found.id))){
       selectElement(found??null)
     }
     setContextMenu({x:Math.max(8,Math.min(clientX,window.innerWidth-215)),y:Math.max(8,Math.min(clientY,window.innerHeight-265))})
@@ -4657,7 +4750,11 @@ function App() {
     : []
   const selectedDayLabel = selectedCalendarDate ? (() => { const [y,m,d] = selectedCalendarDate.split('-').map(Number); return `${d} de ${new Intl.DateTimeFormat('es-AR', { month: 'long' }).format(new Date(y,m-1,d))}` })() : ''
   return (
-    <div className="app" data-theme={theme} data-tool={tool}
+    <div className="app" data-theme={theme} data-tool={tool} data-control-navigation={controlNavigation}
+      onPointerDownCapture={captureScenePointerDown} onPointerMoveCapture={captureScenePointerMove}
+      onPointerUpCapture={captureScenePointerUp} onPointerCancelCapture={captureScenePointerCancel}
+      onLostPointerCapture={captureScenePointerCancel}
+      onAuxClick={e=>{if(e.button===1&&(e.target as HTMLElement).closest('canvas,.board-scene'))e.preventDefault()}}
       onDragEnter={onFileDragEnter} onDragOver={onFileDragOver}
       onDragLeave={onFileDragLeave} onDrop={onFileDrop}>
       {liveBoardId && !privateBoard(liveBoardId) && <aside className="live-presence" aria-label="Usuarios activos en esta pizarra">
@@ -4698,6 +4795,7 @@ function App() {
           <hr/>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{deleteSelected();setContextMenu(null)}}>Eliminar selección <small>Supr</small></button>
         </div></>}
+      <div className="board-scene" ref={sceneRef} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>
@@ -4722,7 +4820,7 @@ function App() {
         {videos.filter(item=>/^[A-Za-z0-9_-]{11}$/.test(item.videoId)).map(item=><div
           className={`board-video-card ${groupRef.current.some(sel=>sel.kind==='video'&&sel.id===item.id)?'board-video-selected':''}`}
           data-video-id={item.id} key={item.id} onContextMenu={onBoardContextMenu}
-          style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:item.zIndex??-150000}}>
+          style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??-150000)*2}}>
           <div className="board-video-header" title="Arrastrá para mover el video"
             onPointerDown={e=>videoPointerDown(e,item,'move')}
             onPointerMove={e=>{sendCursorPosition(e.clientX,e.clientY);videoPointerMove(e)}} onPointerUp={videoPointerEnd}
@@ -4751,6 +4849,7 @@ function App() {
             onPointerMove={videoPointerMove} onPointerUp={videoPointerEnd}
             onPointerCancel={videoPointerEnd}>↘</div>
         </div>)}
+      </div>
       </div>
       <canvas ref={foregroundCanvasRef} className="board-foreground-canvas" aria-hidden="true" />
       <canvas ref={cursorCanvasRef} className="board-cursor-canvas" aria-hidden="true" />
@@ -5128,6 +5227,7 @@ function App() {
         const table=tablesRef.current.find(t=>t.id===tableEditorId)
         if(!table)return null
         return <InlineTableEditor key={table.id} table={table} camera={cameraRef.current} anchorRef={inlineTableRef}
+          onContextMenu={onBoardContextMenu}
           onChange={fn=>updateTable(table.id,fn)}
           onCellChange={(r,c,value)=>updateCell(table.id,r,c,value)}
           onPasteCells={(r,c,value)=>pasteIntoTable(table.id,r,c,value)}

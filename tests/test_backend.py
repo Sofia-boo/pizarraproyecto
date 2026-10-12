@@ -54,6 +54,7 @@ class BackendTest(unittest.TestCase):
             if request.method=='POST':
                 self.assertNotIn(b'max_pages',request.content)
                 self.assertIn(b'accurate',request.content)
+                self.assertIn(b'name="exact_transcription"\r\n\r\ntrue',request.content)
                 return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/test-job'})
             return httpx.Response(200,json={'status':'complete','success':True,'markdown':'# Página 1\nTexto completo\n\n# Página 3\nFinal','page_count':3,'metadata':{'failed_pages':[1]}})
         client_class=httpx.AsyncClient
@@ -121,6 +122,7 @@ class BackendTest(unittest.TestCase):
             self.assertNotIn(b'accurate',request.content)
             self.assertIn(b'name="paginate"\r\n\r\nfalse',request.content)
             self.assertIn(b'disable_image_captions',request.content)
+            self.assertIn(b'name="exact_transcription"\r\n\r\ntrue',request.content)
             return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/image-job'})
         with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':'private-vercel-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
             client.post('/api/auth/guest',json={'name':'Image OCR','password':'test-password'})

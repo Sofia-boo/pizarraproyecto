@@ -51,7 +51,8 @@ export default function BoardGraphWidget({item,getZoom,activeTool,selected,onSel
     onChange(item.id,{formulas:[...item.formulas,{id:`formula-${Date.now()}-${Math.random()}`,expr:'{x<0:-x; x>=0:x}',color:palette[item.formulas.length%palette.length],enabled:true}]})}
   
   return <div className={`board-live-graph${selected?' board-live-graph-selected':''}${activeTool==='eraser'?' board-live-graph-eraser':''}`}
-    style={{left:item.x,top:item.y,width:item.width,height:item.height,transform:`rotate(${item.rotation||0}rad)`,transformOrigin:'center center'}}
+    data-graph-id={item.id}
+    style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:((item as {zIndex?:number}).zIndex??200000)*2,transform:`rotate(${item.rotation||0}rad)`,transformOrigin:'center center'}}
     onPointerDownCapture={e=>{
       if(e.button!==0)return
       if(activeTool==='eraser'){
