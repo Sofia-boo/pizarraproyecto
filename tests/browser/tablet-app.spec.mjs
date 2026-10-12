@@ -23,8 +23,8 @@ test('install button offers tablet instructions and invokes native installation 
   await page.goto('/')
   const button=page.getByRole('button',{name:'Descargar app para tablet'})
   await button.click()
-  await expect(page.getByRole('status')).toContainText('Android:')
-  await expect(page.getByRole('status')).toContainText('iPad:')
+  await expect(page.locator('.tablet-install-help')).toContainText('Android:')
+  await expect(page.locator('.tablet-install-help')).toContainText('iPad:')
   await page.evaluate(()=>{
     const event=new Event('beforeinstallprompt',{cancelable:true})
     event.prompt=async()=>{window.installCalled=true}

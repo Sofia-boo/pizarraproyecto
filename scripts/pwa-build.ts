@@ -25,13 +25,9 @@ self.addEventListener('fetch',event=>{
   const request=event.request,url=new URL(request.url);
   if(request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/recognize/'))return;
   if(request.mode==='navigate'){
-    event.respondWith((async()=>{
-      try{
-        const response=await fetch(request,{signal:AbortSignal.timeout(4000)});
-        if(response.ok)return response;
-      }catch{}
-      return (await caches.match('/index.html'))||Response.error();
-    })());
+    // Keep the shell and its assets from the same installed version. A new
+    // deployment must finish downloading before it replaces this worker.
+    event.respondWith(caches.open(CACHE).then(async cache=>(await cache.match('/index.html'))||fetch(request)));
   }else if(FILES.includes(url.pathname)){
     event.respondWith(caches.open(CACHE).then(async cache=>(await cache.match(url.pathname))||fetch(request)));
   }

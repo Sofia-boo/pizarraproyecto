@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { personalStorageScope } from '../biblioteca'
+import { useOnline } from '../connectivity'
 
 const API=import.meta.env.DEV?`${location.protocol}//${location.hostname}:8765`:location.origin
 type Result={id:string;status:string;text?:string;warning?:string;page_count?:number}
@@ -9,6 +10,7 @@ async function responseJSON(response:Response):Promise<Result> {
   return data
 }
 export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSelectHandwriting}:{initialFile:File|null;boardId:string;onClose:()=>void;onInsert:(text:string)=>void;onSelectHandwriting:()=>void}) {
+  const online=useOnline()
   const legacyScope=`pizarra-ocr-job:${personalStorageScope()}`
   const scope=`${legacyScope}:${boardId}`
   const [file,setFile]=useState<File|null>(initialFile)
@@ -27,11 +29,12 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSele
   useEffect(()=>{completion.current={onInsert,onClose,autoInsert}},[onInsert,onClose,autoInsert])
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
   useEffect(()=>{
+    if(!online)return
     const controller=new AbortController()
     void fetch(`${API}/api/ocr/status`,{credentials:'include',signal:controller.signal})
       .then(async response=>{if(response.ok){const data=await response.json();if(!controller.signal.aborted)setConfigured(data.configured===true)}}).catch(()=>{})
     return()=>controller.abort()
-  },[])
+  },[online])
   useEffect(()=>{
     // oxlint-disable-next-line react/set-state-in-effect -- Synchronize the preview with a browser object URL; release it on file change.
     if(!file?.type.startsWith('image/')){setPreview('');return}
@@ -50,7 +53,7 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSele
     setMode(next.type==='application/pdf'?'accurate':'fast')
   }
   useEffect(()=>{
-    if(!job)return
+    if(!job||!online)return
     let stopped=false,timer:ReturnType<typeof setTimeout>|undefined
     const startedAt=Date.now()
     const poll=async()=>{
@@ -69,13 +72,13 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSele
           }
         }
         else timer=setTimeout(()=>void poll(),Date.now()-startedAt<15000?1000:2500)
-      }catch(e){if(!stopped){setError(e instanceof Error?e.message:'No se pudo consultar la transcripción.');setJob(null)}}
+      }catch(e){if(!stopped&&navigator.onLine!==false){setError(e instanceof Error?e.message:'No se pudo consultar la transcripción.');setJob(null)}}
     }
     void poll()
     return()=>{stopped=true;if(timer)clearTimeout(timer)}
-  },[job,scope,legacyScope])
+  },[job,scope,legacyScope,online])
   const submit=useCallback(async()=>{
-    if(!file)return
+    if(!file||navigator.onLine===false)return
     setBusy(true);setError('');setResult(null)
     try {
       const form=new FormData();form.append('file',file);form.append('mode',mode)
@@ -86,16 +89,17 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSele
     finally{if(alive.current)setBusy(false)}
   },[file,mode,scope])
   useEffect(()=>{
-    if(!initialFile||job||started.current)return
+    if(!online||!initialFile||job||started.current)return
     started.current=true
     void submit()
-  },[initialFile,job,submit])
+  },[initialFile,job,submit,online])
   const download=()=>{
     const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'})),a=document.createElement('a')
     a.href=url;a.download='transcripcion.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
   }
   return <div className="recognition-overlay"><div className="recognition-dialog ocr-dialog" role="dialog" aria-modal="true" aria-label="Transcripción con Datalab">
     <h3>Transcripción OCR · Datalab</h3>
+    {!online&&<p role="status">Sin conexión: podés elegir el archivo o seleccionar un manuscrito. La transcripción necesita internet; los trabajos pendientes se reconsultan al reconectar.</p>}
     <p>Transcribí el PDF completo o una imagen, incluidos manuscritos. El archivo se envía a Datalab y utiliza los créditos de la cuenta configurada en el servidor.</p>
     {configured===false&&<p role="status">Falta conectar la clave OCR en el servidor. Podés preparar el archivo; todavía no se enviará a Datalab.</p>}
     {configured===true&&<p>OCR conectado.</p>}
@@ -118,7 +122,7 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSele
       <label>Transcripción<textarea aria-label="Transcripción completa" rows={12} value={text} onChange={e=>setText(e.target.value)}/></label>
       <div className="recognition-actions"><button onClick={download}>Descargar transcripción</button><button disabled={!text.trim()} onClick={()=>{onInsert(text);onClose()}}>Insertar texto en pizarra</button></div>
     </>}
-    <div className="recognition-actions"><button disabled={!file||busy||Boolean(job)} onClick={()=>void submit()}>{busy?'Enviando…':'Transcribir con Datalab'}</button>
+    <div className="recognition-actions"><button disabled={!online||!file||busy||Boolean(job)} onClick={()=>void submit()}>{busy?'Enviando…':'Transcribir con Datalab'}</button>
       {!job&&localStorage.getItem(scope)&&<button onClick={()=>{setError('');setJob(localStorage.getItem(scope))}}>Reconsultar transcripción</button>}
       <button onClick={onClose}>Cerrar</button></div>
   </div></div>

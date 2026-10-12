@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { CodeData, ShapeItem } from '../canvas/visualObjects'
 import { CODE_COLORS, cppTokens } from '../canvas/cppHighlight'
 import './codeWorkspace.css'
+import { useOnline } from '../connectivity'
 
 type RunResult={stdout:string;stderr:string;compile_output:string;message:string;status:{id:number;description:string};time:string|null;memory:number|null;exit_code:number|null}
 export default function CodeWorkspace({item,onApply,onClose}:{item:ShapeItem;onApply:(base:ShapeItem,next:ShapeItem)=>void;onClose:()=>void}) {
+  const online=useOnline()
   const [base]=useState(()=>structuredClone(item)),[code,setCode]=useState<CodeData>(()=>structuredClone(item.code!))
   const [busy,setBusy]=useState(false),[error,setError]=useState('')
   const highlight=useRef<HTMLPreElement>(null),abort=useRef<AbortController|null>(null)
@@ -18,6 +20,7 @@ export default function CodeWorkspace({item,onApply,onClose}:{item:ShapeItem;onA
     return result
   }
   async function run() {
+    if(!navigator.onLine){setError('Necesitás internet para compilar. Podés editar y guardar el código en este dispositivo.');return}
     if(busy||!code.source.trim())return
     const controller=new AbortController();abort.current=controller;setBusy(true);setError('')
     const timer=setTimeout(()=>controller.abort(),60000)
@@ -51,7 +54,8 @@ export default function CodeWorkspace({item,onApply,onClose}:{item:ShapeItem;onA
         onChange={e=>patch({source:e.target.value})} onKeyDown={e=>{if(e.key==='Tab'){e.preventDefault();const el=e.currentTarget,start=el.selectionStart,end=el.selectionEnd;patch({source:code.source.slice(0,start)+'    '+code.source.slice(end)});requestAnimationFrame(()=>{el.selectionStart=el.selectionEnd=start+4})}}}/>
     </div>
     <label>Entrada (stdin)<textarea aria-label="Entrada del programa" className="cpp-input" maxLength={20000} rows={3} value={code.stdin} disabled={busy} onChange={e=>patch({stdin:e.target.value})}/></label>
-    <div className="cpp-actions"><button type="button" disabled={busy||!code.source.trim()} onClick={()=>void run()}>{busy?'Ejecutando…':'Compilar y ejecutar'}</button>{busy&&<button type="button" onClick={()=>abort.current?.abort()}>Cancelar ejecución</button>}</div>
+    {!online&&<p role="status">Sin conexión: podés editar y guardar el código. Para compilar con Judge0 necesitás internet.</p>}
+    <div className="cpp-actions"><button type="button" disabled={!online||busy||!code.source.trim()} onClick={()=>void run()}>{busy?'Ejecutando…':'Compilar y ejecutar'}</button>{busy&&<button type="button" onClick={()=>abort.current?.abort()}>Cancelar ejecución</button>}</div>
     <label>Consola <span role="status">{busy?'En proceso…':code.status}</span></label>
     <pre className="cpp-console" aria-label="Consola C++" aria-live="polite">{code.output||'La salida aparecerá aquí.'}</pre>
     {error&&<p className="cpp-error" role="alert">{error}</p>}

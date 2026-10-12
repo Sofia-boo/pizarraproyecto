@@ -26,7 +26,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   loadBoard, saveBoard, saveAsset, loadAsset, getLibrary, fetchBoardForLiveSync, acceptBoardLiveVersion, getActiveBoardVersion, getCommittedBoardContent, addFolder, addBoard, renameBoard, removeBoard, removeFolder, selectBoard, getActiveBoardId,
   privateBoard, storageNotice, hasPendingShared, duplicateAsPrivate, publishPrivateCopy, exportBoardBackup, importBoardBackup, canUseServer,
-  liveSocketUrl,
+  liveSocketUrl, prepareBoardOffline,
   usingOfflineCopy,
 } from './biblioteca'
 import type { Point, Stroke, TextItem, MediaItem, Folder, BoardInfo } from './biblioteca'
@@ -1012,6 +1012,7 @@ function App() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('loading')
   const [deviceNotice,setDeviceNotice] = useState(storageNotice())
   const [newBoardStorage,setNewBoardStorage] = useState<'private'|'shared'>('private')
+  const [preparingOffline,setPreparingOffline]=useState(false)
   const backupInputRef = useRef<HTMLInputElement>(null)
   useEffect(()=>{
     const update = () => setDeviceNotice(storageNotice())
@@ -2114,6 +2115,19 @@ function App() {
     }, privateBoard() ? 400 : 80)
   }
 
+  useEffect(()=>{
+    const flush=()=>{
+      if(!loadedRef.current)return
+      if(editingRef.current)commitText()
+      if(saveTimerRef.current){clearTimeout(saveTimerRef.current);saveTimerRef.current=null}
+      void persistBoard()
+    }
+    const onVisibility=()=>{if(document.hidden)flush()}
+    window.addEventListener('pagehide',flush)
+    document.addEventListener('visibilitychange',onVisibility)
+    return()=>{window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',onVisibility)}
+  },[])
+
   async function imageFromBlob(blob: Blob): Promise<HTMLImageElement> {
     const url = URL.createObjectURL(blob)
     try {
@@ -2283,7 +2297,7 @@ function App() {
     }
 
     async function checkMissedEvents() {
-      if (stopped || !loadedRef.current) return
+      if (stopped || !loadedRef.current || navigator.onLine===false) return
       try {
         if (await hasPendingShared()) {
           if (!localIsBusy()) { dirtyRef.current=true;await persistBoard() }
@@ -2423,10 +2437,12 @@ function App() {
       if (removed) redraw()
     }, 3000)
     window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onFocus)
     document.addEventListener('visibilitychange', onFocus)
     return () => {
       stopped = true
       window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onFocus)
       document.removeEventListener('visibilitychange', onFocus)
       if (polling !== null) clearInterval(polling)
       if (reconnectTimer !== null) clearTimeout(reconnectTimer)
@@ -4164,6 +4180,7 @@ function App() {
   }
 
   async function recognizeSelection(mode: 'letter' | 'letter-train' | 'word-train' | 'text-local' | 'math-train' | 'math-symbol' | 'math-local' | 'event') {
+    if(navigator.onLine===false){setRecognitionError('El reconocimiento necesita conexión con el servidor. Tus trazos siguen guardados en este dispositivo.');return}
     setRecognitionSuggestion(null)
     setRecognitionEngine('')
     setRecognitionWarning('')
@@ -4917,6 +4934,10 @@ function App() {
             <button title="Cerrar" onClick={() => setLibraryOpen(false)}>✕</button></header>
           <div className="device-storage-panel" role="status">
             <p>{deviceNotice || 'Las privadas se guardan en este dispositivo; las compartidas también conservan una copia local.'}</p>
+            <button disabled={preparingOffline} onClick={()=>void libraryAction(async()=>{
+              setPreparingOffline(true)
+              try{await flushBoardForHistory();await prepareBoardOffline()}finally{setPreparingOffline(false)}
+            })}>{preparingOffline?'Descargando copia…':'Preparar esta pizarra sin conexión'}</button>
             <button onClick={()=>void libraryAction(async()=>{await flushBoardForHistory();await exportBoardBackup()})}>Descargar respaldo</button>
             <button onClick={()=>backupInputRef.current?.click()}>Importar respaldo</button>
             <input ref={backupInputRef} type="file" accept="application/json,.json" hidden onChange={e=>{

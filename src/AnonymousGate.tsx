@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import App from './App'
 import InstallTablet from './components/InstallTablet'
+import OfflineStatus from './components/OfflineStatus'
 import { getActiveBoardId, getLibrary, privateBoard, setStorageSession, requestPersistentStorage } from './biblioteca'
 import './anonymous_users.css'
 
@@ -66,13 +67,28 @@ export default function AnonymousGate(){
       return
     }
     let alive=true
-    if(!navigator.onLine){setProfile(null);setLoading(false);return}
+    function restoreDeviceSession(){
+      let saved:Profile|null=null
+      try{saved=JSON.parse(localStorage.getItem('pizarra-perfil-copia')||'null') as Profile|null}catch{/* La biblioteca privada sigue disponible. */}
+      if(saved?.id){
+        // This identifies the local replica; the server still validates the
+        // cookie and permissions on every request after reconnection.
+        setStorageSession(saved.id)
+        setProfile(saved)
+        setInviteProcessed(true)
+      }else setLocalMode(true)
+      setLoading(false)
+    }
+    if(navigator.onLine===false){restoreDeviceSession();return}
     void api<Profile>('/api/auth/me').then(u=>{if(alive){
       setStorageSession(u.id)
       localStorage.setItem('pizarra-perfil-copia',JSON.stringify(u))
       setProfile(u)
     }})
-      .catch(()=>{if(alive)setProfile(null)})
+      .catch(error=>{if(alive){
+        if(String(error).includes('servidor')&&localStorage.getItem('pizarra-perfil-copia'))restoreDeviceSession()
+        else setProfile(null)
+      }})
       .finally(()=>{if(alive)setLoading(false)})
     return ()=>{alive=false}
   },[localMode])
@@ -242,6 +258,7 @@ export default function AnonymousGate(){
   </div>
   return <>
     <App/>
+    <OfflineStatus/>
     {inviteMessage&&<div className="anon-toast" role="status">{inviteMessage} <button onClick={()=>setInviteMessage('')}>Cerrar</button></div>}
     <div className={`anon-profile ${menuOpen ? 'anon-profile-open' : ''}`}>
       <button className="anon-profile-button" title={`Perfil: ${profile.display_name}. Abrir opciones`} aria-label={`Abrir perfil de ${profile.display_name}`} aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}>

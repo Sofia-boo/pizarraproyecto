@@ -22,7 +22,7 @@ export function setStorageSession(id: string | null, remote = true) { if(account
 export function personalStorageScope() { return account??'device' }
 export function privateBoard(id = activeId) { return isPrivate(id) }
 export function canUseServer() { return remoteEnabled }
-export function usingOfflineCopy() { return !privateBoard() && (!remoteEnabled || disconnected) }
+export function usingOfflineCopy() { return !privateBoard() && (!remoteEnabled || disconnected || navigator.onLine===false) }
 export async function liveSocketUrl(boardId:string) {
   return (await request<{url:string}>(`/api/boards/${encodeURIComponent(boardId)}/live-ticket`)).url
 }
@@ -46,6 +46,7 @@ class HttpError extends Error {
 async function request<T>(path: string, init?: RequestInit, timeout=12000): Promise<T> {
   let response: Response
   try {
+    if(navigator.onLine===false)throw new Error('offline')
     response = await fetch(`${API}${path}`, {...init, credentials: 'include', signal: AbortSignal.timeout(timeout)})
   } catch {
     disconnected = true
@@ -93,7 +94,7 @@ export async function getLibrary() {
       }
     } else remote = await db.get('meta', `library:${account}`) ?? remote
     // Keep downloaded copies discoverable when opening without the server.
-    if (!remoteEnabled) {
+    if (!remoteEnabled || navigator.onLine===false || disconnected) {
       const copies: DeviceBoard[] = await db.getAll('boards')
       remote = { ...remote, boards: remote.boards.filter(b => copies.some(c => c.key === cacheKey(b.id))) }
     }
@@ -154,6 +155,21 @@ async function cacheAssets(content: BoardContentWithExtras) {
     }
   }))
   if (missing.length) announce(`Copia local incompleta: faltan ${missing.length} imágenes. Volvé a abrirla con el servidor conectado.`)
+}
+export async function prepareBoardOffline(){
+  const key=cacheKey(activeId),local=privateBoard(),scope=account
+  const saved=await readDeviceBoard(key)
+  if(!saved)throw new Error('Primero abrí la pizarra para guardar su copia en este dispositivo.')
+  const content=saved.draft??saved.content
+  announce('Preparando copia: descargando imágenes y páginas de PDF…')
+  await cacheAssets(content)
+  if(key!==cacheKey(activeId))throw new Error('Cambiaste de pizarra. Prepará la copia de la pizarra actual.')
+  const db=await deviceDB,ids=[...new Set(content.media.map(item=>item.assetId))]
+  const present=await Promise.all(ids.map(id=>db.get('assets',`${local?'device':scope}:${id}`)))
+  const missing=present.filter(blob=>!blob).length
+  if(missing)throw new Error(`Faltan ${missing} imágenes o páginas de PDF. Conectate a internet y volvé a preparar la copia.`)
+  announce(`Copia de esta pizarra completa en este dispositivo (${ids.length} ${ids.length===1?'archivo':'archivos'}). Los videos de YouTube necesitan internet.`)
+  void requestPersistentStorage()
 }
 async function cacheRemote(result: { id: string; name?: string; version: number; content: BoardContentWithExtras }, cacheMedia = true) {
   const key = cacheKey(result.id)
@@ -314,7 +330,7 @@ export async function saveAsset(id: string, blob: Blob) {
     await (await deviceDB).put('meta', true, `upload:${assetKey(id)}`)
     // Transfer while the user positions the image or the next PDF page renders.
     // saveBoard awaits this same promise; a failed transfer remains queued.
-    if(remoteEnabled)void uploadPendingAsset(id).catch(()=>{})
+    if(remoteEnabled&&navigator.onLine!==false)void uploadPendingAsset(id).catch(()=>{})
   }
 }
 export async function loadAsset(id: string): Promise<Blob | undefined> {
@@ -328,7 +344,7 @@ export async function loadAsset(id: string): Promise<Blob | undefined> {
 async function readAsset(id:string,key:string,local:boolean,remote:boolean):Promise<Blob|undefined> {
   const db = await deviceDB
   const cached = await db.get('assets', key) as Blob | undefined
-  if (cached || local || !remote) return cached
+  if (cached || local || !remote || navigator.onLine===false) return cached
   const response = await fetch(`${API}/api/assets/${id}`, {credentials: 'include', signal: AbortSignal.timeout(12000)})
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`Error de imagen ${response.status}`)

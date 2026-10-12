@@ -62,7 +62,7 @@ test('shared board and image remain on this device after the server goes offline
   })).toBe(true)
   offline=true
   await page.reload()
-  await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
   await expect(page.locator('canvas').first()).toBeVisible()
+  await expect(page.getByRole('button',{name:'Abrir perfil de Prueba'})).toBeVisible()
   await page.screenshot({path:'test-results/compartida-copia-local.png'})
 })

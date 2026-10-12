@@ -40,6 +40,32 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('opens and edits downloaded shared media offline without requests, then uploads the draft after reconnection',async()=>{
+    const data={...content(),media:[{id:'photo',assetId:'photo',x:0,y:0,width:10,height:10,name:'Foto',kind:'image' as const}]}
+    server(data)
+    await library.loadBoard()
+    await library.loadAsset('photo')
+    fetched.mockClear()
+    const previousNavigator=navigator
+    vi.stubGlobal('navigator',{onLine:false,storage:previousNavigator.storage})
+    try{
+      expect(await library.loadBoard()).toEqual(data)
+      expect(await library.loadAsset('photo')).toBeInstanceOf(Blob)
+      await library.prepareBoardOffline()
+      expect(library.storageNotice()).toContain('Copia de esta pizarra completa')
+      await (await device.deviceDB).delete('assets',`${owner}:photo`)
+      await expect(library.prepareBoardOffline()).rejects.toThrow('Faltan 1')
+      await (await device.deviceDB).put('assets',new Blob(['image'],{type:'image/png'}),`${owner}:photo`)
+      const edited={...data,texts:[{...data.texts[0],text:'Apuntes sin internet'}]}
+      expect((await library.saveBoard(edited)).pending).toBe(true)
+      expect((await library.loadBoard())?.texts[0].text).toBe('Apuntes sin internet')
+      expect(fetched).not.toHaveBeenCalled()
+      vi.stubGlobal('navigator',previousNavigator)
+      fetched.mockResolvedValue(Response.json({version:5,content:edited}))
+      expect((await library.saveBoard(edited)).pending).toBe(false)
+      expect(await library.hasPendingShared()).toBe(false)
+    }finally{vi.stubGlobal('navigator',previousNavigator)}
+  })
   it('sends explicit object actions and accepts additional objects returned by the server',async()=>{
     server();const original=(await library.loadBoard())!
     const changed={...original,texts:[{...original.texts[0],text:'My edit'}]}
