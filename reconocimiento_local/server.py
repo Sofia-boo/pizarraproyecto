@@ -1693,6 +1693,83 @@ def _word_stroke_groups(strokes):
     return groups, height
 
 
+WORD_DATA = DATA_DIR / 'word_samples.json'
+
+
+def _read_words():
+    if not WORD_DATA.exists():
+        return []
+    try:
+        data=json.loads(WORD_DATA.read_text(encoding='utf-8'))
+        if not isinstance(data,list): raise ValueError()
+        return data
+    except (ValueError,OSError):
+        raise HTTPException(500,'No se pudieron leer los ejemplos de palabras; no se modificaron.')
+
+
+@app.post('/recognize/words/train')
+def train_word(payload: LetterRequest):
+    label='\n'.join(' '.join(line.split()) for line in payload.label.strip().splitlines())
+    if not label or len(label)>240 or not any(c.isalpha() for c in label) or any(ord(c)<32 and c!='\n' for c in label):
+        raise HTTPException(400,'Ingresá una palabra o frase de hasta 240 caracteres.')
+    strokes=_valid_strokes(payload.strokes)
+    if not strokes:
+        raise HTTPException(400,'Seleccioná los trazos de la palabra o frase que querés enseñar.')
+    paths=_normalized_stroke_paths(strokes)
+    if _paths_geometry_mask(paths) is None:
+        raise HTTPException(400,'No se detectó una palabra con trazos reconocibles.')
+    with letter_lock:
+        samples=_read_words()
+        if len(samples)>=5000: raise HTTPException(400,'Se alcanzó el máximo de ejemplos de palabras.')
+        samples.append({'label':label,'stroke_paths':paths})
+        temporary=WORD_DATA.with_suffix('.tmp')
+        temporary.write_text(json.dumps(samples,ensure_ascii=False),encoding='utf-8')
+        temporary.replace(WORD_DATA)
+    return {'ok':True,'label':label,'count':sum(s.get('label')==label for s in samples),'total':len(samples)}
+
+
+def _taught_word(strokes,samples):
+    import numpy as np
+    if not samples: return None
+    query_mask=_paths_geometry_mask(_normalized_stroke_paths(strokes))
+    if query_mask is None: return None
+    query=_geometry_distance_map(np.packbits(query_mask).tobytes())
+    scores={}
+    left,top,right,bottom=_stroke_bounds(strokes)
+    aspect=(right-left)/max(bottom-top,.001)
+    # Una corrección posterior de los mismos trazos prevalece, sin borrar ejemplos anteriores.
+    seen=set()
+    for sample in reversed(samples):
+        label=sample.get('label')
+        paths=sample.get('stroke_paths')
+        if not isinstance(label,str) or not isinstance(paths,list) or not paths: continue
+        fingerprint=json.dumps(paths,separators=(',',':'))
+        if fingerprint in seen: continue
+        seen.add(fingerprint)
+        points=[p for path in paths for p in path]
+        if not points: continue
+        ratio=(max(p[0] for p in points)-min(p[0] for p in points))/max(max(p[1] for p in points)-min(p[1] for p in points),.001)
+        if abs(_letter_math.log(max(aspect,.001)/max(ratio,.001)))>.25: continue
+        mask=_paths_geometry_mask(paths)
+        if mask is None: continue
+        candidate=_geometry_distance_map(np.packbits(mask).tobytes())
+        distance=_distance_geometry(query,candidate)
+        scores[label]=min(scores.get(label,float('inf')),distance)
+    ranked=sorted((score,label) for label,score in scores.items())
+    # Sólo usar una palabra aprendida cuando su forma coincide claramente.
+    if ranked and ranked[0][0]<=1.0 and (len(ranked)==1 or ranked[1][0]-ranked[0][0]>.4):
+        return ranked[0][1]
+    return None
+
+
+def _word_space_threshold(bounds,height):
+    gaps=sorted(max(0,bounds[i][0]-bounds[i-1][1]) for i in range(1,len(bounds)))
+    if len(gaps)<2: return height*.28
+    small=gaps[:max(1,(len(gaps)+1)//2)]
+    baseline=small[len(small)//2]
+    return max(height*.18,baseline*1.8)
+
+
 @app.post('/recognize/text-local')
 @app.post('/recognize/calendar-handwriting')
 @app.post('/recognize/words')
@@ -1700,6 +1777,11 @@ def recognize_word(payload: StrokeRequest):
     strokes = _valid_strokes(payload.strokes)
     with letter_lock:
         samples = _read_letters()
+        words = _read_words()
+    taught=_taught_word(strokes,words) if strokes else None
+    if taught:
+        return {'text':taught,'engine':'palabras-personalizado','segments':len(taught.replace(' ','')),
+                'samples':len(words),'unresolved_positions':[],'warning':'Palabra o frase aprendida localmente. Revisá el resultado.'}
     if not samples:
         raise HTTPException(status_code=400, detail='Primero enseñá letras desde IA → Enseñar letra.')
 
@@ -1743,13 +1825,16 @@ def recognize_word(payload: StrokeRequest):
 
     if not chars or all(ch == '?' for ch in chars):
         raise HTTPException(status_code=400, detail='No se reconocieron letras. Probá separar un poco los caracteres.')
-    gaps = [bounds[i][0] - bounds[i-1][1] for i in range(1, len(bounds))]
-    median_gap = sorted(gaps)[len(gaps)//2] if gaps else 0
-    word_gap = max(height * .65, median_gap * 2.8)
-    result = chars[0]
+    word_gap = _word_space_threshold(bounds,height)
+    spans=[]
+    beginning=0
     for i in range(1, len(chars)):
         gap = bounds[i][0] - bounds[i-1][1]
-        result += (' ' if gap > word_gap else '') + chars[i]
+        if gap>word_gap:
+            spans.append((beginning,i));beginning=i
+    spans.append((beginning,len(chars)))
+    result=' '.join((_taught_word([stroke for group in groups[a:b] for stroke in group['strokes']],words) if strokes else None)
+                    or ''.join(chars[a:b]) for a,b in spans)
     warning = ('No se pudieron reconocer algunos caracteres (marcados con ?). '
                'Corregí el resultado antes de reemplazar los trazos.' if unresolved else
                'Reconocimiento experimental: comprobá la separación de letras y corregí si hace falta.')

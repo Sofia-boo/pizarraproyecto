@@ -8,7 +8,7 @@ async function responseJSON(response:Response):Promise<Result> {
   if(!response.ok)throw new Error(response.status===401?'Ingresá a tu cuenta para usar Datalab. Las pizarras privadas siguen guardadas en este dispositivo.':data.detail||`Error de transcripción (${response.status}).`)
   return data
 }
-export default function DocumentOCR({initialFile,boardId,onClose,onInsert}:{initialFile:File|null;boardId:string;onClose:()=>void;onInsert:(text:string)=>void}) {
+export default function DocumentOCR({initialFile,boardId,onClose,onInsert,onSelectHandwriting}:{initialFile:File|null;boardId:string;onClose:()=>void;onInsert:(text:string)=>void;onSelectHandwriting:()=>void}) {
   const legacyScope=`pizarra-ocr-job:${personalStorageScope()}`
   const scope=`${legacyScope}:${boardId}`
   const [file,setFile]=useState<File|null>(initialFile)
@@ -99,6 +99,7 @@ export default function DocumentOCR({initialFile,boardId,onClose,onInsert}:{init
     <p>Transcribí el PDF completo o una imagen, incluidos manuscritos. El archivo se envía a Datalab y utiliza los créditos de la cuenta configurada en el servidor.</p>
     {configured===false&&<p role="status">Falta conectar la clave OCR en el servidor. Podés preparar el archivo; todavía no se enviará a Datalab.</p>}
     {configured===true&&<p>OCR conectado.</p>}
+    <button disabled={busy||Boolean(job)} onClick={onSelectHandwriting}>Seleccionar manuscrito en la pizarra</button>
     <label>PDF o imagen · hasta 30 MB<input type="file" aria-label="Documento para transcribir" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy||Boolean(job)} onChange={e=>chooseFile(e.target.files?.[0]??null)}/></label>
     <input ref={cameraInput} className="ocr-camera-input" type="file" aria-label="Foto para transcribir" accept="image/png,image/jpeg,image/webp" capture="environment" disabled={busy||Boolean(job)} onChange={e=>chooseFile(e.target.files?.[0]??null)}/>
     <button disabled={busy||Boolean(job)} onClick={()=>cameraInput.current?.click()}>Tomar foto</button>

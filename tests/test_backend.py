@@ -339,8 +339,70 @@ class BackendTest(unittest.TestCase):
                 result = client.post('/recognize/'+route, json=ink(sample))
                 self.assertEqual(result.status_code, 200, result.text)
                 self.assertTrue(result.json()['text'])
-            self.assertEqual(client.post('/recognize/math-symbols/train', json={**ink(sample), 'label': '3'}).status_code, 403)
+            self.assertEqual(client.post('/recognize/math-symbols/train', json={**ink(sample), 'label': ''}).status_code, 422)
             self.assertEqual(math_file.read_bytes(), before)
+
+    def test_local_spaces_survive_scale_and_short_phrases(self):
+        from unittest.mock import patch
+        from reconocimiento_local import server
+        def stroke(x,scale):
+            return {'width':3,'points':[{'x':x*scale,'y':0},{'x':(x+40)*scale,'y':100*scale}]}
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Local spaces','password':'test-password'})
+            for scale in (.2,1,5):
+                # Character gaps are 8; the space between words is 35 (less than 65% of letter height).
+                body={'strokes':[stroke(x,scale) for x in (0,48,123,171)]}
+                with patch.object(server,'_predict_letter',side_effect=list('hola')):
+                    result=client.post('/recognize/text-local',json=body)
+                self.assertEqual(result.status_code,200,result.text)
+                self.assertEqual(result.json()['text'],'ho la')
+            with patch.object(server,'_predict_letter',side_effect=list('ab')):
+                result=client.post('/recognize/text-local',json={'strokes':[stroke(0,1),stroke(75,1)]})
+            self.assertEqual(result.json()['text'],'a b')
+            with patch.object(server,'_predict_letter',side_effect=list('hola')):
+                result=client.post('/recognize/text-local',json={'strokes':[stroke(x,1) for x in (0,48,96,144)]})
+            self.assertEqual(result.json()['text'],'hola')
+            # Espaciado amplio pero uniforme dentro de una palabra no agrega espacios falsos.
+            with patch.object(server,'_predict_letter',side_effect=list('hola')):
+                result=client.post('/recognize/text-local',json={'strokes':[stroke(x,1) for x in (0,75,150,225)]})
+            self.assertEqual(result.json()['text'],'hola')
+
+    def test_all_accounts_can_teach_words_letters_and_symbols_without_losing_previous_samples(self):
+        import json
+        from reconocimiento_local import server
+        letters_before=server.LETTER_DATA.read_bytes()
+        math_file=Path(self.storage.name)/'math_samples.json'
+        math_before=math_file.read_bytes()
+        word_path=server.WORD_DATA
+        words_before=word_path.read_bytes() if word_path.exists() else None
+        strokes=[{'width':3,'points':[{'x':0,'y':80},{'x':30,'y':0},{'x':60,'y':80}]},
+                 {'width':3,'points':[{'x':90,'y':80},{'x':120,'y':15},{'x':150,'y':80}]}]
+        try:
+            with TestClient(self.app,base_url='https://testserver') as a,TestClient(self.app,base_url='https://testserver') as b:
+                self.assertEqual(a.post('/recognize/words/train',json={'label':'hay una','strokes':strokes}).status_code,401)
+                for i,client in enumerate((a,b)):
+                    user=client.post('/api/auth/guest',json={'name':'Local teacher '+str(i),'password':'test-password'}).json()
+                    self.assertEqual(user['is_admin'],0)
+                    taught=client.post('/recognize/words/train',json={'label':'hay una','strokes':strokes})
+                    self.assertEqual(taught.status_code,200,taught.text)
+                moved=[{**s,'points':[{'x':p['x']*3+500,'y':p['y']*3-400} for p in s['points']]} for s in strokes]
+                result=b.post('/recognize/text-local',json={'strokes':moved})
+                self.assertEqual(result.json()['text'],'hay una')
+                self.assertEqual(server.LETTER_DATA.read_bytes(),letters_before)
+                self.assertEqual(math_file.read_bytes(),math_before)
+                letter=a.post('/recognize/letters/train',json={'label':'Ñ','strokes':strokes[:1]})
+                self.assertEqual(letter.status_code,200,letter.text)
+                self.assertEqual(json.loads(server.LETTER_DATA.read_text())[:-1],json.loads(letters_before))
+                symbol=b.post('/recognize/math-symbols/train',json={'label':'3','strokes':strokes[:1]})
+                self.assertEqual(symbol.status_code,200,symbol.text)
+                self.assertEqual(json.loads(math_file.read_text())[:-1],json.loads(math_before))
+                saved=word_path.read_bytes()
+                self.assertEqual(b.post('/recognize/words/train',json={'label':'','strokes':strokes}).status_code,400)
+                self.assertEqual(word_path.read_bytes(),saved)
+        finally:
+            server.LETTER_DATA.write_bytes(letters_before);math_file.write_bytes(math_before)
+            if words_before is None:word_path.unlink(missing_ok=True)
+            else:word_path.write_bytes(words_before)
 
     def test_deck_notes_and_large_fractional_fonts_save_without_an_upper_font_limit(self):
         import copy

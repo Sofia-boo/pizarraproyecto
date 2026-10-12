@@ -569,9 +569,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                 return JSONResponse({'detail': 'Iniciá sesión como invitado'}, status_code=401)
             uid = user['id']
             request.state.user_id = uid
-            # Entrenamiento compartido: solo el administrador puede modificarlo.
-            if path.startswith('/recognize/') and path.endswith('/train') and not user['is_admin']:
-                return JSONResponse({'detail': 'Solo el administrador puede entrenar el reconocedor compartido'}, status_code=403)
+            # Todas las cuentas pueden aportar ejemplos al reconocedor compartido.
             if path.startswith('/api/share/') or path == '/api/admin/users' or path.startswith('/api/admin/users/'):
                 # Las rutas admin hacen su propia comprobación de is_admin en el servidor.
                 return await call_next(request)

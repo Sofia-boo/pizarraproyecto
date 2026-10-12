@@ -159,3 +159,38 @@ test('a pending scan resumes on its own board and inserts without submitting aga
   expect(submissions).toBe(0)
   expect(await page.evaluate(()=>localStorage.getItem('pizarra-ocr-job:device:another-board'))).toBe('different-job')
 })
+
+for(const pointerType of ['mouse','pen','touch'])test(`OCR can pick handwriting from its dialog with ${pointerType}`,async({page,context})=>{
+  await openLocal(page)
+  await page.keyboard.press('p')
+  await page.mouse.move(200,350);await page.mouse.down();await page.mouse.move(300,400,{steps:10});await page.mouse.up()
+  await expect.poll(async()=>(await content(page))?.strokes?.length).toBe(1)
+  await page.route('**/api/ocr/documents',route=>route.fulfill({json:{id:'picked-'+pointerType,status:'processing'}}))
+  await page.route('**/api/ocr/documents/picked-*',route=>route.fulfill({json:{id:'picked-'+pointerType,status:'complete',text:'Seleccionado con '+pointerType,page_count:1}}))
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  await page.getByRole('menuitem',{name:'OCR Datalab · PDF completo o imagen…',exact:true}).click()
+  await page.getByRole('button',{name:'Seleccionar manuscrito en la pizarra',exact:true}).click()
+  await expect(page.getByRole('dialog',{name:'Transcripción con Datalab'})).toHaveCount(0)
+  await expect(page.getByRole('status')).toContainText('Arrastrá un recuadro')
+  const cdp=await context.newCDPSession(page)
+  if(pointerType==='touch'){
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:170,y:320}]})
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:330,y:440}]})
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
+  }else{
+    await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:170,y:320,pointerType,button:'left',buttons:1,clickCount:1})
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:330,y:440,pointerType,button:'none',buttons:1})
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:330,y:440,pointerType,button:'left',buttons:0,clickCount:1})
+  }
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Seleccionado con '+pointerType)
+  expect((await content(page)).strokes).toHaveLength(1)
+})
+
+test('OCR menu without a selection arms a cancellable handwriting picker',async({page})=>{
+  await openLocal(page)
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  await page.getByRole('menuitem',{name:'OCR Datalab · selección manuscrita o imagen',exact:true}).click()
+  await expect(page.getByRole('status')).toContainText('Arrastrá un recuadro')
+  await page.getByRole('button',{name:'Cancelar selección OCR',exact:true}).click()
+  await expect(page.locator('.ocr-selection-instruction')).toHaveCount(0)
+})

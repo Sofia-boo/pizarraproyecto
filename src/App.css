@@ -113,6 +113,10 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .ocr-auto-insert { display: flex; align-items: center; gap: 8px; }
 .ocr-auto-insert input { width: 20px; height: 20px; flex-shrink: 0; }
 .ocr-dialog .recognition-actions { flex-wrap: wrap; }
+.ocr-selection-instruction { position: absolute; z-index: 70; left: 50%; top: 145px; transform: translateX(-50%); width: min(500px,calc(100vw - 32px)); box-sizing: border-box; padding: 12px; border-radius: 12px; background: #fff; color: #202020; box-shadow: 0 4px 20px #0002; }
+.ocr-selection-instruction button { display: block; margin-top: 8px; padding: 8px 12px; cursor: pointer; }
+.recognition-dialog:not(.ocr-dialog) { max-height: 90dvh; overflow-y: auto; box-sizing: border-box; }
+.recognition-actions { flex-wrap: wrap; }
 .ocr-file-name { overflow-wrap: anywhere; }
 .ocr-preview { display: block; max-width: 100%; max-height: 230px; object-fit: contain; margin: 12px auto; border-radius: 8px; }
 .ocr-dialog input.ocr-camera-input { display: none; }
