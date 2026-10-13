@@ -9,7 +9,7 @@ export default function OfflineStatus(){
     <div role="status">
       <p>Podés dibujar, escribir, estudiar tarjetas, usar la calculadora y editar hojas, tablas y gráficos.</p>
       <p>Las imágenes y páginas de PDF guardadas también están disponibles. Abrí las pizarras compartidas con internet antes de salir para descargar su copia.</p>
-      <p>OCR, compilación C++, YouTube y colaboración en vivo necesitan internet. Los cambios de las compartidas quedan pendientes y se sincronizan al reconectar con tu sesión.</p>
+      <p>El asistente de estudio funciona si descargaste su modelo en este dispositivo. OCR del servidor, compilación C++, YouTube y colaboración en vivo necesitan internet. Los cambios de las compartidas quedan pendientes y se sincronizan al reconectar con tu sesión.</p>
     </div>
   </details>
 }

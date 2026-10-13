@@ -7,6 +7,8 @@
 
 Sin internet podés abrir las pizarras privadas y las compartidas descargadas, dibujar, borrar, escribir, importar imágenes y PDFs del dispositivo, editar tablas y hojas A4, usar calculadora, matrices, gráficos, EDO y tarjetas de estudio. El código C++ se puede editar y guardar.
 
+El **Asistente de estudio local**, disponible en IA, también puede usarse sin conexión después de descargar sus modelos por separado en cada dispositivo. Incluye preguntas y lectura aproximada de imágenes. Consultá [su preparación y limitaciones](ASISTENTE_LOCAL.md).
+
 El reconocimiento OCR (Datalab y el modelo del servidor), la ejecución de C++, los videos de YouTube, los nuevos enlaces multimedia y la colaboración en vivo necesitan conexión. No se descargan videos de YouTube. Una pizarra que nunca abriste en esa tablet necesita internet para obtener su primera copia.
 
 Las modificaciones de una compartida se guardan en la tablet como cambios pendientes. Al recuperar conexión, con la sesión válida y el servidor disponible, se sincronizan automáticamente. Si venció la sesión, volvé a ingresar con la misma cuenta; la copia pendiente permanece guardada. Las privadas siguen siendo privadas y no se publican automáticamente.

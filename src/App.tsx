@@ -12,6 +12,7 @@ import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import DocumentOCR from './components/DocumentOCR'
+import StudyAssistant from './components/StudyAssistant'
 import A4PrintPreview from './components/A4PrintPreview'
 import type { PrintPreview } from './components/A4PrintPreview'
 import BinaryTreePanel from './components/BinaryTreePanel'
@@ -1040,6 +1041,8 @@ function App() {
   const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
   const [documentOCR,setDocumentOCR]=useState<{file:File|null;boardId:string;position?:Point}|null>(null)
   const [ocrPicking,setOCRPicking]=useState(false)
+  const [studyAssistant,setStudyAssistant]=useState<{boardId:string;file?:File}|null>(null)
+  const selectionDestinationRef=useRef<'ocr'|'assistant'>('ocr')
   const [controlNavigation,setControlNavigation]=useState(false)
   const [recognitionError, setRecognitionError] = useState('')
   const [recognitionSuggestion, setRecognitionSuggestion] = useState<string | null>(null)
@@ -4135,16 +4138,17 @@ function App() {
     return [...texts, result.text ?? ''].filter(Boolean).join('\n')
   }
 
-  function startOCRSelection() {
-    setDocumentOCR(null);setOpenMenu(null);selectTool('select');selectElement(null);setOCRPicking(true)
+  function startOCRSelection(destination:'ocr'|'assistant'='ocr') {
+    selectionDestinationRef.current=destination
+    setDocumentOCR(null);setStudyAssistant(null);setOpenMenu(null);selectTool('select');selectElement(null);setOCRPicking(true)
   }
 
-  async function openSelectionOCR() {
+  async function openSelectionOCR(destination:'ocr'|'assistant'=selectionDestinationRef.current) {
     setOpenMenu(null)
     const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
-    if(!boxes.length){startOCRSelection();return}
+    if(!boxes.length){startOCRSelection(destination);return}
     const left=Math.min(...boxes.map(b=>b.x))-16,top=Math.min(...boxes.map(b=>b.y))-16
     const width=Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=Math.max(...boxes.map(b=>b.y+b.height))-top+16
     const scale=Math.min(2,2400/Math.max(width,height),Math.sqrt(4000000/(width*height)))
@@ -4175,7 +4179,9 @@ function App() {
       }
       const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
       if(boardId!==getActiveBoardId())return
-      setDocumentOCR({file:new File([blob],'manuscrito-seleccionado.png',{type:'image/png'}),boardId,position:{x:left+16,y:top+height+8}})
+      const file=new File([blob],'manuscrito-seleccionado.png',{type:'image/png'})
+      if(destination==='assistant')setStudyAssistant({boardId,file})
+      else setDocumentOCR({file,boardId,position:{x:left+16,y:top+height+8}})
     }catch(e){setRecognitionError(e instanceof Error?e.message:'No se pudo preparar el OCR.')}
   }
 
@@ -4703,7 +4709,7 @@ function App() {
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
       if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setOCRPicking(false)}
-      if (editingRef.current || documentOCR || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
+      if (editingRef.current || documentOCR || studyAssistant || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
@@ -4731,7 +4737,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [documentOCR, libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
+  }, [documentOCR, studyAssistant, libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
 
   const cam = cameraRef.current
   const editorX = editing ? editing.x * cam.zoom + cam.x : 0
@@ -5189,8 +5195,9 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
+            <button role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Asistente de estudio local</span><small>Matemática, bases de datos y programación · también sin internet.</small></button>
             <strong>Escanear y transcribir</strong>
-            <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR()}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
+            <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR('ocr')}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
             <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null,boardId:getActiveBoardId()})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
             <details><summary>Reconocimiento local (opcional)</summary>
             <button role="menuitem" onClick={()=>{setOpenMenu(null);void recognizeSelection('word-train')}}>Enseñar palabra o frase (local)</button>
@@ -5302,7 +5309,14 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
-      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} boardId={documentOCR.boardId} onSelectHandwriting={startOCRSelection} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
+      {studyAssistant&&<StudyAssistant key={studyAssistant.boardId} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsert={text=>{
+        if(studyAssistant.boardId!==getActiveBoardId())return
+        rememberChange()
+        const center=toWorld(window.innerWidth/2,window.innerHeight/2)
+        const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
+        textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave()
+      }}/>}
+      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} boardId={documentOCR.boardId} onSelectHandwriting={()=>startOCRSelection()} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
         if(documentOCR.boardId!==getActiveBoardId())return
         rememberChange()
         const center=documentOCR.position??toWorld(window.innerWidth/2,window.innerHeight/2)
