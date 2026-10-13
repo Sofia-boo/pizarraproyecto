@@ -24,7 +24,7 @@ export function plainMath(text:string){
     .replace(/\\(?:,|;|!|quad\b|qquad\b)/g,' ').replace(/\\pi\b/g,'π').replace(/\\(?:ldots|cdots)\b/g,'…')
     .replace(/\^\{([^{}]*)\}/g,'^($1)').replace(/_\{([^{}]*)\}/g,'_($1)')
 }
-export function plainAssistantText(text:string){return messageParts(text).map(part=>part.kind==='math'?plainMath(part.text):part.text).join('')}
+export function plainAssistantText(text:string){return messageParts(text).map(part=>part.kind==='math'?plainMath(part.text):part.kind==='code'?part.text:plainMath(part.text).replace(/^#{1,6}\s+/gm,'').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/^\s*[-*]\s+/gm,'• ')).join('')}
 export function mathMarkup(expression:string,display=false){
   if(expression.length>4000)return null
   try{return katex.renderToString(expression,{displayMode:display,throwOnError:true,trust:false,strict:'ignore',maxExpand:100,maxSize:10,output:'htmlAndMathml'})}catch{return null}

@@ -12,7 +12,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@huggingface/transformers": "4.3.1",
     "html-to-image": "^1.11.13",
     "idb": "^8.0.4",
     "katex": "^0.19.0",

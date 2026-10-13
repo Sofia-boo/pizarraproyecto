@@ -1,0 +1,14 @@
+﻿[
+    {
+        "target":  {
+                       "sha256_cert_fingerprints":  [
+                                                        "5D:6B:E9:67:59:6F:3D:03:AF:4A:E1:8A:24:A4:F6:EB:C4:F8:CE:85:17:8F:D2:CD:DB:9C:A5:F9:98:91:AF:12"
+                                                    ],
+                       "namespace":  "android_app",
+                       "package_name":  "com.sofic.pizarra"
+                   },
+        "relation":  [
+                         "delegate_permission/common.handle_all_urls"
+                     ]
+    }
+]

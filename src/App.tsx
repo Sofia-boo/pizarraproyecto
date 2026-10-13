@@ -12,7 +12,7 @@ import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import DocumentOCR from './components/DocumentOCR'
-import StudyAssistant from './components/StudyAssistant'
+import ChatGPTConsultation from './components/ChatGPTConsultation'
 import StudyCheckIn from './components/StudyCheckIn'
 import {fitFollowCamera,followCycle} from './collaborationCamera'
 import type {CameraView} from './collaborationCamera'
@@ -5227,7 +5227,7 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
-            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>✦ Asistente de estudio local</span><small>Preguntá sobre matemática, bases de datos o programación. Consultá PDF e imágenes, también sin internet.</small></button>
+            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con ChatGPT ↗</span><small>Abrí la interfaz oficial con tu cuenta y pegá la respuesta en la pizarra.</small></button>
             <div className="ai-menu-options">
             <strong>Escanear y transcribir</strong>
             <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR('ocr')}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
@@ -5348,15 +5348,15 @@ function App() {
         </div>
       </div>}
       {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||documentOCR||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
-      {studyAssistant&&<StudyAssistant key={studyAssistant.boardId} boardId={studyAssistant.boardId} materials={mediaRef.current} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question}
-        onGraph={expr=>{if(studyAssistant.boardId===getActiveBoardId())insertBoardGraph([{id:createId(),expr,color:'#4f46e5',enabled:true}])}}
-        onInsertImage={async file=>{if(studyAssistant.boardId===getActiveBoardId())await importFiles([file])}}
-        onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsert={text=>{
-        if(studyAssistant.boardId!==getActiveBoardId())return
+      {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question}
+        beforeOpen={flushBoardForHistory}
+        onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
+        onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async text=>{
+        if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
         rememberChange()
         const center=toWorld(window.innerWidth/2,window.innerHeight/2)
         const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
-        textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave()
+        textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave();await flushBoardForHistory()
       }}/>}
       {documentOCR&&<DocumentOCR initialFile={documentOCR.file} boardId={documentOCR.boardId} onSelectHandwriting={()=>startOCRSelection()} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
         if(documentOCR.boardId!==getActiveBoardId())return

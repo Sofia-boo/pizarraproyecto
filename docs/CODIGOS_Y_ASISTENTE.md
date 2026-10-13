@@ -8,7 +8,11 @@ El código requiere una sesión y tiene un límite de intentos. Solo el propieta
 
 El seguimiento transmite centro, zoom y tamaño de pantalla para encuadrar la vista completa del otro usuario en la tablet. Moverse, dibujar o usar el teclado termina el seguimiento. Las pestañas de una misma cuenta conservan la cámara que cambió más recientemente; los latidos de otra pestaña no deben reemplazarla. Se evitan ciclos de seguimiento. Las flechas de los cursores remotos son un 40 % más pequeñas.
 
-## Asistente sin conexión
+## Asistente de estudio
+
+El asistente generativo local fue reemplazado por **Consultar con ChatGPT**. El flujo vigente, la instalación Android y el pegado de respuestas con formato están en [Consultar con ChatGPT](ASISTENTE_LOCAL.md). ChatGPT requiere conexión y usa su interfaz oficial; no se ejecuta el modelo local descrito en versiones anteriores.
+
+### Comportamiento histórico del asistente local
 
 - El panel contiene el chat, la entrada de texto, el botón para descargar o cargar la IA y **Adjuntar**. Ese menú permite elegir un PDF, imagen o archivo de texto/código, o marcar una selección de la pizarra. Las acciones para insertar una respuesta o imagen están en **⋯** dentro de cada mensaje.
 - Los PDF importados a partir de esta versión conservan hasta 16.000 caracteres de texto por página. Al preguntar se buscan fragmentos relevantes en todas las páginas, con un contexto acotado para la tablet. Los PDF anteriores o escaneados se consultan seleccionando una página como imagen. No se procesan todos los archivos simultáneamente.

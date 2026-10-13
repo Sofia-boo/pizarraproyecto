@@ -1,37 +1,35 @@
-# Asistente de estudio en la PC y la tablet
+# Consultar con ChatGPT
 
-La pizarra incorpora **IA → Asistente de estudio local**, enfocado en matemática, bases de datos y programación. Se ejecuta dentro del navegador, en un worker separado del dibujo, y puede recibir texto, imágenes del dispositivo y selecciones de manuscritos o imágenes de la pizarra. Las respuestas se pueden insertar como texto editable.
+El asistente generativo local fue reemplazado por **IA → Consultar con ChatGPT**. El reconocimiento local de escritura sigue siendo una herramienta independiente y conserva sus datos. Las conversaciones y modelos antiguos no se borran automáticamente, pero el generador local ya no se carga ni se descarga.
 
-## Preparación
+## Uso
 
-1. Abrí la app con conexión y esperá a que termine de prepararse para funcionar sin internet.
-2. Entrá a **IA → Asistente de estudio local → Descargar IA para este dispositivo**.
-3. La descarga inicial es de aproximadamente **890 MB**. Conservá al menos 1,2 GB de espacio disponible y esperá la confirmación de modelo descargado.
-4. Repetí la descarga en cada dispositivo. Se almacena por navegador y dominio; descargarlo en la PC no lo instala en la tablet.
-5. Al volver a abrir el asistente, elegí **Cargar IA guardada**. Esto también funciona sin conexión. Cerrar el asistente libera la memoria del modelo.
+1. Abrí **IA → Consultar con ChatGPT** y pulsá el botón del mismo nombre.
+2. Iniciá sesión con tu cuenta personal en `https://chatgpt.com/`. Las fotos, las preguntas y las respuestas se manejan en la interfaz oficial.
+3. Cerrá la ventana con su botón de cierre o con Atrás para regresar al ejercicio guardado.
+4. Copiá la respuesta desde ChatGPT y pegala en **Respuesta de ChatGPT**. El botón **Pegar respuesta** usa el portapapeles únicamente cuando lo pulsás; también podés mantener pulsado el cuadro y elegir Pegar.
+5. **Insertar en pizarra con formato** coloca una imagen con los títulos y las fórmulas renderizadas. **Insertar como texto** coloca texto editable y convierte la notación matemática básica a texto legible.
 
-En Android conviene usar Chrome actualizado y cerrar otras aplicaciones para liberar memoria. Se usa CPU para permitir funcionar sin WebGPU, incluida la Lenovo Tab M11. La compatibilidad y velocidad en esa tablet requieren una prueba en el equipo real; las pruebas de escritorio no garantizan el rendimiento móvil.
+Para llevar una parte de un PDF, una imagen o un manuscrito, elegí **Llevar un recorte del ejercicio → Seleccionar área de la pizarra → Descargar recorte**. Adjuntá ese archivo manualmente en ChatGPT. La selección no envía automáticamente el documento completo.
 
-## Alcance y limitaciones
+El borrador pegado y el recorte se guardan en este dispositivo, por cuenta y pizarra. No se leen automáticamente las conversaciones de ChatGPT. No hay API de OpenAI, claves, formulario de acceso, iframe de ChatGPT ni acceso a sus cookies desde la aplicación.
 
-- La materia se deduce de la pregunta. Antes de responder, una clasificación local comprueba si la consulta corresponde a matemática, bases de datos o programación; cuando no la reconoce como académica, devuelve un aviso de alcance. Las instrucciones también enfocan la respuesta en esas materias. Es una configuración sobre modelos generales, no un entrenamiento exclusivo ni una garantía absoluta de clasificación correcta.
-- Se usan modelos pequeños para limitar memoria y descarga. Pueden cometer errores de cálculo, transcripción, interpretación de gráficos y programación; no sustituyen la verificación de resultados.
-- La lectura de imágenes y manuscritos es aproximada. Es mejor adjuntar un ejercicio por imagen, legible y recortado. No usa la API de Datalab.
-- El contexto y la longitud de las respuestas son limitados para controlar el consumo de memoria. Se conserva la imagen más reciente del contexto, de modo que se pueden hacer preguntas posteriores sobre ella.
-- Las imágenes se reducen antes de procesarlas. El chat y sus imágenes quedan en IndexedDB, separados por cuenta y pizarra. No se comparten automáticamente con otros participantes.
-- No se ejecutan código ni consultas SQL generados por el asistente. La herramienta existente de compilación C++ sigue usando Judge0 y requiere conexión.
-- El cálculo del modelo puede ser lento, especialmente en CPU móvil. Se puede detener la respuesta o cancelar la preparación. No se inicia una descarga de modelos automáticamente al abrir la pizarra.
+## Tablet Android
 
-## Implementación
+Descargá e instalá **Pizarra + ChatGPT** desde el enlace **Descargar app Android con ventana de ChatGPT** de la pantalla de inicio o desde el panel. Android puede pedir habilitar la instalación desde Chrome. Después abrí esa aplicación.
 
-Se usa Transformers.js 4.3.1 con ONNX Runtime WASM de un solo hilo. El runtime y el worker se incluyen en la caché versionada de la app; los pesos se guardan en una caché independiente, que las actualizaciones de la pizarra conservan.
+El APK abre la pizarra mediante una Trusted Web Activity de Chrome y abre ChatGPT mediante Chrome Custom Tabs. Usa el almacenamiento del mismo dominio en Chrome; no crea un WebView con otra copia de tus pizarras. Si antes usabas otro navegador o perfil, exportá e importá tus pizarras para trasladarlas.
 
-- Texto: [Qwen3-0.6B ONNX](https://huggingface.co/onnx-community/Qwen3-0.6B-ONNX), revisión `58ca03a5e7b354b480b1a82b34bde8dc7b854cc0`, cuantización de 8 bits para CPU.
-- Lectura visual: [SmolVLM-256M-Instruct](https://huggingface.co/HuggingFaceTB/SmolVLM-256M-Instruct), revisión `7e3e67edbbed1bf9888184d9df282b700a323964`, cuantización de 8 bits. Se pasa su descripción al modelo de texto, indicando que puede contener errores.
-- Motor: [Transformers.js](https://huggingface.co/docs/transformers.js/).
+En pantallas compatibles se solicita una ventana lateral de hasta 520 dp; en pantallas pequeñas se solicita una ventana parcial inferior. Chrome decide el tamaño final y puede usar pantalla completa. No es un ChatGPT embebido en el panel HTML. En la PWA y en la PC se abre una ventana o pestaña del navegador.
 
-La red se utiliza para descargar los archivos públicos del modelo durante la preparación. Las preguntas y las imágenes se procesan localmente. La carga offline exige que estén presentes todos los archivos requeridos de ambos modelos; una descarga incompleta no se presenta como lista.
+La autenticación la gestiona el navegador. El APK no recibe ni almacena credenciales, contraseñas, cookies o respuestas de ChatGPT. ChatGPT requiere conexión; las pizarras preparadas sin conexión y las respuestas ya pegadas siguen disponibles localmente.
 
-Las pruebas unitarias se ejecutan con `npm test`. `tests/browser/local-assistant.spec.mjs` verifica la interfaz con un motor simulado. Para probar inferencia real, primero compilá y ejecutá el preview de producción en el puerto 4173, y luego ejecutá `node scripts/verify-local-assistant.mjs`. Esta prueba usa un perfil separado en `logs/ia-prueba-browser`, descarga los modelos en su primera ejecución y comprueba texto, imagen, SQL, programación, rechazo de una receta y recarga con la red completamente desactivada.
+## Compilación y validación
 
-La interfaz se limita al chat, la pregunta, la descarga/carga y el menú **Adjuntar**. Los modelos descargados y las conversaciones se conservan al actualizar. La selección de la pizarra recorta exactamente el área marcada; las respuestas muestran las fórmulas como matemática legible. Ver [flujo actualizado](CODIGOS_Y_ASISTENTE.md).
+El proyecto Android está en `android/`. `scripts/build-android.ps1` compila, ejecuta Android Lint, verifica la firma y genera `public/downloads/pizarra-chatgpt.apk` y `public/.well-known/assetlinks.json`.
+
+La compilación local utiliza JDK 17, Gradle 8.11.1 y Android SDK 36 en `.android-build/`. Conservar **fuera de Git** `.android-build/pizarra-release.jks` y `.android-build/signing.properties`: hacen falta para firmar futuras actualizaciones del mismo APK. El certificado público de `assetlinks.json` debe corresponder al APK publicado. El APK no se precarga en la caché sin conexión de la página.
+
+Las pruebas de navegador comprueban apertura de la URL oficial, regreso a la pizarra guardada, recorte de PDF rotado, pegado de Markdown y fórmulas, inserción y borrador tras recargar. Se verificaron compilación, Android Lint y firma; la apertura real del Custom Tab requiere probar el APK en la tablet física.
+
+Referencias: [Custom Tabs parciales](https://developer.chrome.com/docs/android/custom-tabs/guide-partial-custom-tabs), [Trusted Web Activity](https://developer.chrome.com/docs/android/trusted-web-activity/quick-start), [interfaz web de ChatGPT](https://learn.chatgpt.com/docs/web).
