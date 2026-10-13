@@ -12,14 +12,31 @@ export function offlineApp():Plugin {
     this.emitFile({type:'asset',fileName:'sw.js',source:`
 const CACHE='pizarra-app-${revision}';
 const FILES=${JSON.stringify(files)};
+const versions=new Map();
+async function pruneOldShells(){
+  const windows=await self.clients.matchAll({type:'window'});
+  // Old tabs must retain their lazy-loaded scripts until they are reloaded.
+  if(windows.some(client=>!versions.get(client.id)))return;
+  await Promise.all((await caches.keys()).filter(key=>key.startsWith('pizarra-app-')&&key!==CACHE).map(key=>caches.delete(key)));
+}
+function versionMessage(){return {type:'PIZARRA_VERSION',scripts:FILES.filter(path=>path.startsWith('/assets/index-')&&path.endsWith('.js'))};}
 self.addEventListener('install',event=>{
-  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));
+  // Replace the controller only after every resource is available offline.
+  // This also upgrades older clients that have no update button.
+  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)).then(()=>self.skipWaiting()));
 });
 self.addEventListener('activate',event=>{
-  event.waitUntil(Promise.all([
-    caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('pizarra-app-')&&key!==CACHE).map(key=>caches.delete(key)))),
-    self.clients.claim()
-  ]));
+  event.waitUntil((async()=>{
+    await self.clients.claim();
+    for(const client of await self.clients.matchAll({type:'window'}))client.postMessage(versionMessage());
+    await pruneOldShells();
+  })());
+});
+self.addEventListener('message',event=>{
+  if(event.data?.type!=='PIZARRA_CLIENT_VERSION'||!event.source?.id)return;
+  versions.set(event.source.id,FILES.includes(event.data.script));
+  event.source.postMessage(versionMessage());
+  event.waitUntil(pruneOldShells());
 });
 self.addEventListener('fetch',event=>{
   const request=event.request,url=new URL(request.url);
@@ -30,6 +47,8 @@ self.addEventListener('fetch',event=>{
     event.respondWith(caches.open(CACHE).then(async cache=>(await cache.match('/index.html'))||fetch(request)));
   }else if(FILES.includes(url.pathname)){
     event.respondWith(caches.open(CACHE).then(async cache=>(await cache.match(url.pathname))||fetch(request)));
+  }else if(url.pathname.startsWith('/assets/')){
+    event.respondWith(caches.match(request).then(cached=>cached||fetch(request)));
   }
 });
 `})

@@ -13,6 +13,7 @@ import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import DocumentOCR from './components/DocumentOCR'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
+import {beforeAppUpdate} from './pwa'
 import StudyCheckIn from './components/StudyCheckIn'
 import {fitFollowCamera,followCycle} from './collaborationCamera'
 import type {CameraView} from './collaborationCamera'
@@ -2141,6 +2142,8 @@ function App() {
       void persistBoard()
     }, privateBoard() ? 400 : 80)
   }
+
+  useEffect(()=>beforeAppUpdate(flushBoardForHistory))
 
   useEffect(()=>{
     const flush=()=>{

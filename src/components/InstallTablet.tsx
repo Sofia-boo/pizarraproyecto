@@ -10,7 +10,7 @@ export default function InstallTablet(){
   return <div className="tablet-install">
     {!nativeAndroid()&&<a className="anon-secondary" href={ANDROID_APK} download>Descargar app Android con ventana de ChatGPT</a>}
     <p className="offline-readiness" role="status">{offline==='ready'?'✓ App lista para usar sin internet.':offline==='preparing'?'Descargando herramientas para usar sin internet… Esperá esta confirmación antes de desconectarte.':offline==='error'?'No se pudo preparar la app sin conexión. Liberá espacio y volvé a abrirla con internet.':'El modo sin conexión requiere abrir la app publicada en un navegador compatible.'}</p>
-    {update&&<p className="offline-readiness">Actualización descargada. Cerrá todas las ventanas de la app y volvé a abrirla para aplicarla.</p>}
+    {update&&<p className="offline-readiness">Actualización descargada. Tocá «Actualizar app» para guardar y cargar la nueva versión.</p>}
     {state==='installed'?<p>App instalada en este dispositivo.</p>:<button type="button" className="anon-secondary" onClick={()=>{if(state==='available')void installTablet().then(ok=>{if(!ok)setHelp(true)});else setHelp(value=>!value)}} aria-expanded={help}>Descargar app para tablet</button>}
     {help&&<div className="tablet-install-help" role="status">
       <p><strong>Android:</strong> abrí esta página en Chrome, tocá ⋮ y elegí «Instalar aplicación» o «Agregar a pantalla principal».</p>
