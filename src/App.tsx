@@ -1,7 +1,7 @@
 import { mergeBoard } from './storage/merge'
 import { applyScenePatch } from './storage/livePatch'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { LuHand, LuStickyNote, LuWorkflow, LuBookOpen } from 'react-icons/lu'
+import { LuHand, LuStickyNote, LuWorkflow, LuBookOpen, LuCalendarDays } from 'react-icons/lu'
 import { createNote, defaultConnector, findAnchor, hitsConnector, isConnector, materializeConnector, mergeVisual,
   pointsBounds, refKey, remapConnector, detachTargets, transformVisual, visualBounds } from './canvas/visualObjects'
 import type { ShapeItem, ShapeKind, Bounds, ObjectRef, TargetGeometry } from './canvas/visualObjects'
@@ -64,15 +64,6 @@ function ToolbarSelectorIcon() {
   return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M5 3v16l4.4-4.4 3.2 6.4 3-1.5-3.2-6.4L19 12 5 3Z" />
   </svg>
-}
-
-function ToolbarTableIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="1.6" />
-      <path d="M3 9.5h18M8.5 4v16M15.5 4v16" />
-    </svg>
-  )
 }
 
 function ToolbarShapesIcon() {
@@ -1065,7 +1056,7 @@ function App() {
   const correctionSavingRef = useRef(false)
   const [correctionSaving, setCorrectionSaving] = useState(false)
   const [correctionNotice, setCorrectionNotice] = useState('')
-  const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | 'calendar' | null>(null)
   const [visualEditor,setVisualEditor] = useState<string|null>(null)
   const [printPreview,setPrintPreview]=useState<PrintPreview|null>(null)
   const printRequestRef=useRef(0)
@@ -1256,6 +1247,15 @@ function App() {
     setBoardSearchOpen(false)
     try { await refreshLibrary(); setLibraryError(''); setLibraryOpen(true) }
     catch (e) { alert('No se pudo conectar con el servidor: ' + String(e)) }
+  }
+  async function openCalendar(newEvent=false){
+    setOpenMenu(null)
+    await openLibrary()
+    if(newEvent){
+      setSelectedCalendarDate(dateKey(new Date()));setCalendarMonth(new Date());setCalendarView('month')
+      setCalendarEventEditing('new');setEventTitle('');setEventTime('');setEventNotes('');setEventColor('#22c55e');setEventRecurrence('none')
+    }
+    requestAnimationFrame(()=>document.querySelector('.library-calendar')?.scrollIntoView({block:'nearest'}))
   }
   async function libraryAction(action: () => Promise<unknown>) {
     try { setLibraryError(''); await action(); await refreshLibrary() }
@@ -4836,6 +4836,7 @@ function App() {
           <hr/>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>reorderSelected(true)}>Traer al frente</button>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>reorderSelected(false)}>Llevar al fondo</button>
+          <button role="menuitem" disabled={recognizing||!groupRef.current.some(sel=>sel.kind==='stroke'||sel.kind==='text')} onClick={()=>{setContextMenu(null);setHandwrittenError('');void recognizeSelection('event')}}>Agregar al calendario</button>
           <hr/>
           <button role="menuitem" disabled={groupRef.current.length<2} onClick={groupSelected}>Agrupar selección</button>
           <button role="menuitem" disabled={!groupRef.current.some(sel=>groupIdFor(sel))} onClick={ungroupSelected}>Desagrupar</button>
@@ -5219,11 +5220,12 @@ function App() {
           <button className={tool === 'select' ? 'active' : ''} title="Seleccionar área (V)" aria-label="Seleccionar área" onClick={() => { selectTool('select'); setOpenMenu(null) }}><ToolbarSelectorIcon /></button>
         </div>
         <div className="toolbar-popover-anchor">
-          <button className={openMenu === 'ai' ? 'active' : ''} title="Reconocimiento con IA" aria-label="IA: opciones de reconocimiento" aria-expanded={openMenu === 'ai'} aria-haspopup="menu" disabled={recognizing} onClick={() => { if (openMenu !== 'ai') selectTool('select'); setOpenMenu(openMenu === 'ai' ? null : 'ai') }}>
+          <button className={openMenu === 'ai' ? 'active' : ''} title="IA: asistente de estudio y reconocimiento" aria-label="IA: opciones de reconocimiento" aria-expanded={openMenu === 'ai'} aria-haspopup="menu" disabled={recognizing} onClick={() => { if (openMenu !== 'ai') selectTool('select'); setOpenMenu(openMenu === 'ai' ? null : 'ai') }}>
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
-            <button role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Asistente de estudio local</span><small>Matemática, bases de datos y programación · también sin internet.</small></button>
+            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>✦ Asistente de estudio local</span><small>Preguntá sobre matemática, bases de datos o programación. Consultá PDF e imágenes, también sin internet.</small></button>
+            <div className="ai-menu-options">
             <strong>Escanear y transcribir</strong>
             <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR('ocr')}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
             <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null,boardId:getActiveBoardId()})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
@@ -5235,8 +5237,8 @@ function App() {
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-train') }}>✎ Enseñar número o símbolo (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-symbol') }}>123 Reconocer número o símbolo (local)</button>
             <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-local') }}>∑ Reconocer números y fórmulas (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); setHandwrittenError(''); void recognizeSelection('event') }}>▦ Agregar al calendario</button>
             </details>
+            </div>
           </div>}
         </div>
         <span className="separator" />
@@ -5251,7 +5253,12 @@ function App() {
           </div>}
         </div>
         <div className="toolbar-popover-anchor">
-          <button type="button" title="Insertar tabla 2×2 editable" aria-label="Insertar tabla 2×2 editable" onClick={()=>{setOpenMenu(null);createTable()}}><ToolbarTableIcon /></button>
+          <button type="button" title="Calendario: eventos y selección" aria-label="Calendario" aria-expanded={openMenu==='calendar'} aria-haspopup="menu" className={openMenu==='calendar'?'active':''} onClick={()=>setOpenMenu(openMenu==='calendar'?null:'calendar')}><LuCalendarDays/></button>
+          {openMenu==='calendar'&&<div className="toolbar-popover calendar-popover" role="menu" aria-label="Opciones de calendario">
+            <button role="menuitem" onClick={()=>void openCalendar()}>Ver calendario</button>
+            <button role="menuitem" onClick={()=>void openCalendar(true)}>Agregar evento</button>
+            <button role="menuitem" disabled={recognizing} onClick={()=>{setOpenMenu(null);setHandwrittenError('');void recognizeSelection('event')}}>Agregar selección al calendario</button>
+          </div>}
         </div>
         <button type="button" title="Agregar nota adhesiva (N)" aria-label="Agregar nota adhesiva" onClick={insertNote}><LuStickyNote/></button>
         <button type="button" title="Conectar objetos: arrastrá de uno a otro (C)" aria-label="Conectar objetos" aria-pressed={tool==='connector'}
@@ -5259,7 +5266,7 @@ function App() {
         <div className="toolbar-popover-anchor">
           <button type="button" title="Elementos académicos" aria-label="Elementos académicos" aria-expanded={openMenu==='academic'}
             onClick={()=>{setVisualEditor(null);setTreePanel(null);setOpenMenu(openMenu==='academic'?null:'academic')}}><LuBookOpen/></button>
-          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic} onBinaryExpression={()=>openTreePanel()} hasPages={shapesRef.current.some(s=>s.visualType==='page')} onPrint={()=>void printA4(false)}/>}
+          {openMenu==='academic'&&<AcademicLibrary onInsert={insertAcademic} onInsertTable={()=>{setOpenMenu(null);createTable()}} onBinaryExpression={()=>openTreePanel()} hasPages={shapesRef.current.some(s=>s.visualType==='page')} onPrint={()=>void printA4(false)}/>}
         </div>
         <div className="toolbar-popover-anchor">
           <button className={openMenu === 'add' ? 'active' : ''} title="Agregar imagen o PDF" aria-label="Agregar imagen o PDF" aria-expanded={openMenu === 'add'} onClick={() => setOpenMenu(openMenu === 'add' ? null : 'add')}>＋</button>

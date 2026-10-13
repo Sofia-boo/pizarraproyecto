@@ -17,6 +17,32 @@ async function matrixMode(page,name) {
   await page.locator('.study-menu').getByRole('button',{name:new RegExp(`^${name} `)}).click()
 }
 
+test('assistant stays visible while scrolling, calendar replaces tables and tables are in academics',async({page})=>{
+  await page.setViewportSize({width:800,height:650})
+  await openLocal(page)
+  await expect(page.getByRole('toolbar').getByRole('button',{name:'Insertar tabla 2×2 editable',exact:true})).toHaveCount(0)
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
+  await page.getByText('Reconocimiento local (opcional)',{exact:true}).click()
+  await page.locator('.ai-menu-options').evaluate(el=>{el.scrollTop=el.scrollHeight})
+  const assistant=page.getByRole('menuitem',{name:/Asistente de estudio local/})
+  await expect(assistant).toBeInViewport()
+  expect(await assistant.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})).toBe(true)
+  await page.screenshot({path:'test-results/menu-ia-destacado-tablet.png'})
+  await assistant.click()
+  await expect(page.getByRole('dialog',{name:'Asistente de estudio local'})).toBeVisible()
+  await page.getByRole('button',{name:'Cerrar asistente',exact:true}).click()
+  await expect(page.getByRole('dialog',{name:'Asistente de estudio local'})).toHaveCount(0)
+  await page.getByRole('button',{name:'Calendario',exact:true}).click()
+  await expect(page.getByRole('menuitem',{name:'Agregar selección al calendario',exact:true})).toBeVisible()
+  await page.getByRole('menuitem',{name:'Agregar evento',exact:true}).click()
+  await expect(page.locator('.calendar-event-editor')).toBeVisible()
+  await page.locator('.library-panel').getByTitle('Cerrar',{exact:true}).click()
+  await page.getByRole('button',{name:'Elementos académicos',exact:true}).click()
+  await page.getByRole('searchbox',{name:'Buscar elemento académico'}).fill('tabla')
+  await page.getByRole('button',{name:'Insertar tabla 2×2 editable',exact:true}).click()
+  await expect(page.locator('.sheet-inline-drag-handle')).toBeVisible()
+})
+
 test('one sticky note cycles a deck, repeats questions and edits colors with fonts above 80',async({page})=>{
   test.setTimeout(60000)
   await page.setViewportSize({width:390,height:844})
@@ -67,6 +93,7 @@ test('one sticky note cycles a deck, repeats questions and edits colors with fon
 
 test('an editable spreadsheet overlapping the toolbar stays below its buttons and menus',async({page})=>{
   await openLocal(page)
+  await page.getByRole('button',{name:'Elementos académicos',exact:true}).click()
   await page.getByRole('button',{name:'Insertar tabla 2×2 editable',exact:true}).click()
   const title=await page.locator('.sheet-inline-drag-handle').boundingBox()
   const trigger=page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true})
