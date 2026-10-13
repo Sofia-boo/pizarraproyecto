@@ -14,6 +14,7 @@ export type MediaItem = {
   kind: 'image' | 'pdf-page'
   documentId?: string
   pageNumber?: number
+  pageText?: string
 }
 export type BoardData = {
   strokes: Stroke[]

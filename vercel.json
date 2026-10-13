@@ -11,11 +11,11 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "https://blank-partition-router-numerical.trycloudflare.com/api/:path*"
+      "destination": "https://occurs-gen-improvements-laura.trycloudflare.com/api/:path*"
     },
     {
       "source": "/recognize/:path*",
-      "destination": "https://blank-partition-router-numerical.trycloudflare.com/recognize/:path*"
+      "destination": "https://occurs-gen-improvements-laura.trycloudflare.com/recognize/:path*"
     }
   ],
   "headers": [

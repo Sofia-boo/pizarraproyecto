@@ -10,6 +10,47 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def setUp(self):
+        # Each test is an independent session in the isolated temporary server.
+        from reconocimiento_local.anonymous_users import _rate
+        _rate.clear()
+
+    def test_four_digit_codes_preserve_personal_folders_and_rejoin_without_duplicates(self):
+        import time
+        from reconocimiento_local.server import db_connection
+        with TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as editor:
+            owner.post('/api/auth/guest',json={'name':'Four digits owner','password':'code-password'})
+            folder=owner.post('/api/folders',json={'name':'Materia del creador'}).json()['id']
+            board=owner.post('/api/boards',json={'name':'Con código','folder_id':folder}).json()['id']
+            code=owner.post(f'/api/share/boards/{board}/code',json={})
+            self.assertEqual(code.status_code,200,code.text)
+            self.assertRegex(code.json()['code'],r'^\d{4}$')
+            self.assertEqual(owner.post(f'/api/share/boards/{board}/code',json={}).json()['code'],code.json()['code'])
+            owner.post('/api/share/join-code',json={'code':code.json()['code']})
+            self.assertEqual(owner.get('/api/library').json()['boards'][0]['folder_id'],folder)
+            self.assertEqual(len(owner.get('/api/library').json()['folders']),1)
+            editor.post('/api/auth/guest',json={'name':'Code editor','password':'code-password'})
+            self.assertEqual(editor.post('/api/share/join-code',json={'code':'x234'}).status_code,422)
+            joined=editor.post('/api/share/join-code',json={'code':code.json()['code']})
+            self.assertEqual(joined.status_code,200,joined.text)
+            self.assertEqual(joined.json()['board_id'],board)
+            library=editor.get('/api/library').json()
+            self.assertEqual(library['folders'][0]['name'],'Pizarra compartida')
+            self.assertEqual(library['boards'][0]['folder_id'],library['folders'][0]['id'])
+            personal=editor.post('/api/folders',json={'name':'Mis apuntes'}).json()['id']
+            self.assertEqual(editor.put(f'/api/boards/{board}/info',json={'name':'Personal','folder_id':personal}).status_code,200)
+            self.assertEqual(editor.post('/api/share/join-code',json={'code':code.json()['code']}).status_code,200)
+            library=editor.get('/api/library').json()
+            self.assertEqual(len(library['boards']),1)
+            self.assertEqual(library['boards'][0]['folder_id'],personal)
+            self.assertEqual(owner.get('/api/library').json()['boards'][0]['folder_id'],folder)
+            self.assertEqual(owner.get('/api/library').json()['boards'][0]['name'],'Con código')
+            self.assertEqual(editor.post(f'/api/share/boards/{board}/code',json={}).status_code,403)
+            with db_connection() as db:db.execute('UPDATE share_codes SET expires_at=? WHERE code=?',(int(time.time())-1,code.json()['code']))
+            self.assertEqual(editor.post('/api/share/join-code',json={'code':code.json()['code']}).status_code,404)
+            for _ in range(9):editor.post('/api/share/join-code',json={'code':code.json()['code']})
+            self.assertEqual(editor.post('/api/share/join-code',json={'code':code.json()['code']}).status_code,429)
+
     def test_explicit_changes_preserve_unseen_objects_and_acknowledge_the_complete_scene(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             client.post('/api/auth/guest', json={'name':'Delta contributor','password':'delta-password'})
@@ -516,11 +557,13 @@ class BackendTest(unittest.TestCase):
                     self.assertEqual(owner_view, {'center': {'x': 400, 'y': 500}, 'zoom': 2})
                     a.receive_json()  # New participant.
                     b.send_json({'type': 'camera_move', 'center': {'x': 50, 'y': 60}, 'zoom': 100})
-                    b.send_json({'type': 'camera_move', 'center': {'x': 50, 'y': 60}, 'zoom': 1.5})
+                    b.send_json({'type': 'camera_move', 'center': {'x': 50, 'y': 60}, 'zoom': 1.5,'viewport':{'width':800,'height':1100},'following':owner['id']})
                     event = a.receive_json()
                     self.assertEqual(event['type'], 'camera_move')
                     self.assertEqual(event['zoom'], 1.5)
                     self.assertEqual(event['user_id'], other['id'])
+                    self.assertEqual(event['viewport'],{'width':800,'height':1100})
+                    self.assertEqual(event['following'],owner['id'])
                     # An editor may erase content originally committed by the owner.
                     content['strokes'] = []
                     result = client.put(f'/api/boards/{board}', json={'version': 1, 'content': content})

@@ -182,7 +182,13 @@ def migrate(db_connection, data_dir: Path):
           asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
           PRIMARY KEY (board_id,asset_id)
         );
+        CREATE TABLE IF NOT EXISTS share_codes (
+          code TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+          expires_at INTEGER NOT NULL
+        );
         ''')
+        if 'folder_id' not in {r['name'] for r in db.execute('PRAGMA table_info(board_members)')}:
+            db.execute('ALTER TABLE board_members ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL')
         for table in ('boards', 'folders', 'assets', 'calendars', 'calendar_events'):
             columns = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}
             if 'owner_user_id' not in columns:
@@ -321,6 +327,9 @@ class AdminDeleteInput(BaseModel):
 class JoinInput(BaseModel):
     token: str = Field(min_length=15, max_length=200)
 
+class JoinCodeInput(BaseModel):
+    code: str = Field(pattern=r'^\d{4}$')
+
 
 def attach_anonymous_users(app, db_connection, data_dir):
     migrate(db_connection, Path(data_dir))
@@ -449,20 +458,61 @@ def attach_anonymous_users(app, db_connection, data_dir):
                                        int(time.time()) + body.days * 86400))
             return {'token': token, 'role': body.role, 'days': body.days}
 
+    def accept_board(db, uid, board_id, role='editor'):
+        # Membership and placement are personal. Rejoining never moves a board.
+        existing = board_role(db, uid, board_id)
+        if not existing:
+            folder = db.execute('SELECT id FROM folders WHERE owner_user_id=? AND name=? ORDER BY created_at LIMIT 1',
+                                (uid, 'Pizarra compartida')).fetchone()
+            fid = folder['id'] if folder else uuid.uuid4().hex
+            if not folder:
+                db.execute('INSERT INTO folders(id,name,created_at,owner_user_id) VALUES(?,?,?,?)',
+                           (fid, 'Pizarra compartida', utc_now(), uid))
+            db.execute('INSERT INTO board_members(board_id,user_id,role,folder_id) VALUES(?,?,?,?)',
+                       (board_id, uid, role, fid))
+        return {'ok': True, 'board_id': board_id, 'role': existing or role}
+
+    @router.post('/api/share/boards/{board_id}/code')
+    def new_code(board_id: str, request: Request):
+        with db_connection() as db:
+            if not can_board(db, request.state.user_id, board_id, 'owner'):
+                raise HTTPException(403, 'Solo el propietario puede compartir')
+            db.execute('BEGIN IMMEDIATE')
+            now = int(time.time())
+            db.execute('DELETE FROM share_codes WHERE expires_at<=?', (now,))
+            previous = db.execute('SELECT code,expires_at FROM share_codes WHERE board_id=?', (board_id,)).fetchone()
+            if previous:
+                return dict(previous)
+            for _ in range(100):
+                code = str(1000 + secrets.randbelow(9000))
+                if not db.execute('SELECT 1 FROM share_codes WHERE code=?', (code,)).fetchone():
+                    expires = now + 86400
+                    db.execute('INSERT INTO share_codes VALUES(?,?,?)', (code, board_id, expires))
+                    return {'code': code, 'expires_at': expires}
+            raise HTTPException(503, 'No hay códigos disponibles. Probá nuevamente.')
+
+    @router.post('/api/share/join-code')
+    def join_code(body: JoinCodeInput, request: Request):
+        rate_limit(request, 'share-code:' + request.state.user_id)
+        with db_connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT board_id FROM share_codes WHERE code=? AND expires_at>?',
+                             (body.code, int(time.time()))).fetchone()
+            if not row:
+                raise HTTPException(404, 'Código inexistente o vencido')
+            db.execute("UPDATE board_members SET role='editor' WHERE board_id=? AND user_id=? AND role='viewer'", (row['board_id'],request.state.user_id))
+            return accept_board(db, request.state.user_id, row['board_id'])
+
     @router.post('/api/share/join')
     def join_share(body: JoinInput, request: Request):
         with db_connection() as db:
+            db.execute('BEGIN IMMEDIATE')
             row = db.execute('''SELECT board_id,role FROM share_links
                 WHERE token_hash=? AND revoked=0 AND expires_at>?''',
                 (digest(body.token), int(time.time()))).fetchone()
             if not row:
                 raise HTTPException(404, 'Invitación inválida o vencida')
-            uid = request.state.user_id
-            if not can_board(db, uid, row['board_id'], 'owner'):
-                db.execute('''INSERT INTO board_members(board_id,user_id,role) VALUES (?,?,?)
-                    ON CONFLICT(board_id,user_id) DO UPDATE SET role=excluded.role''',
-                    (row['board_id'], uid, row['role']))
-            return {'ok': True, 'board_id': row['board_id'], 'role': board_role(db, uid, row['board_id'])}
+            return accept_board(db, request.state.user_id, row['board_id'], row['role'])
 
     @router.get('/api/share/boards/{board_id}')
     def share_members(board_id: str, request: Request):
@@ -577,7 +627,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                 folders = [dict(r) for r in db.execute('''SELECT id,name FROM folders
                     WHERE owner_user_id=? ORDER BY name''', (uid,))]
                 boards = [dict(r) for r in db.execute('''SELECT b.id,b.name,
-                    CASE WHEN b.owner_user_id=? THEN b.folder_id ELSE NULL END AS folder_id,
+                    CASE WHEN b.owner_user_id=? THEN b.folder_id ELSE m.folder_id END AS folder_id,
                     b.version,b.updated_at,
                     CASE WHEN b.owner_user_id=? THEN 'owner' ELSE m.role END AS role
                     FROM boards b LEFT JOIN board_members m ON m.board_id=b.id AND m.user_id=?
@@ -626,8 +676,10 @@ def attach_anonymous_users(app, db_connection, data_dir):
                 required = 'viewer'
                 if method in ('PUT','POST','PATCH','DELETE'):
                     required = 'editor'
-                if method == 'DELETE' or subpath == 'info' or '/restore' in subpath:
+                if method == 'DELETE' or '/restore' in subpath:
                     required = 'owner'
+                if subpath == 'info':
+                    required = 'viewer'
                 if subpath.startswith('history') and method == 'DELETE':
                     required = 'owner'
                 if not can_board(db,uid,bid,required):
@@ -640,6 +692,10 @@ def attach_anonymous_users(app, db_connection, data_dir):
                         return JSONResponse({'detail':'Datos inválidos'},status_code=422)
                     if folder_id and not folder_owned(db,uid,folder_id):
                         return JSONResponse({'detail':'Carpeta ajena'},status_code=403)
+                    if not can_board(db,uid,bid,'owner'):
+                        db.execute('UPDATE board_members SET folder_id=? WHERE board_id=? AND user_id=?', (folder_id,bid,uid))
+                        db.commit()
+                        return JSONResponse({'ok':True})
                 if not subpath and method == 'PUT':
                     try:
                         if len(await request.body()) > 16*1024*1024:

@@ -29,7 +29,7 @@ export async function hasLocalModel(){
 export type Subject='matematica'|'bases'|'programacion'
 export const SUBJECT_NAMES:Record<Subject,string>={matematica:'Matemática',bases:'Bases de datos',programacion:'Programación'}
 export type ChatMessage={id:string;role:'user'|'assistant';text:string;image?:string}
-export type AssistantRequest={type:'load';download:boolean}|{type:'ask';subject:Subject;messages:ChatMessage[]}|{type:'stop'}
+export type AssistantRequest={type:'load';download:boolean}|{type:'ask';subject:Subject;messages:ChatMessage[];context?:string}|{type:'stop'}
 export type AssistantResponse={type:'progress';loaded:number}|{type:'ready'}|{type:'stage';message:string}|{type:'text';text:string}|{type:'done';text:string}|{type:'error';message:string}
 export const OUTSIDE_SCOPE='Puedo ayudarte con matemática, bases de datos y programación. Reformulá la consulta sobre una de esas materias.'
 export function topicDecision(text:string):'academic'|'outside'|'check'{

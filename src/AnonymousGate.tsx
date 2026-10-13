@@ -45,6 +45,10 @@ export default function AnonymousGate(){
   const [busy,setBusy]=useState(false)
   const [menuOpen,setMenuOpen]=useState(false)
   const [sharing,setSharing]=useState(false)
+  const [shareCode,setShareCode]=useState('')
+  const [joinDialog,setJoinDialog]=useState(false)
+  const [joinCode,setJoinCode]=useState('')
+  const [joinError,setJoinError]=useState('')
   const [shareRole,setShareRole]=useState<'viewer'|'editor'>('editor')
   const [shareUrl,setShareUrl]=useState('')
   const [shareBoard,setShareBoard]=useState<BoardRecord|null>(null)
@@ -171,15 +175,41 @@ export default function AnonymousGate(){
     window.location.reload()
   }
   async function openSharing(){
-    setShareError('');setShareUrl('');setMenuOpen(false)
+    setShareError('');setShareUrl('');setShareCode('');setShareBoard(null);setMenuOpen(false)
     try{
-      if(privateBoard())throw new Error('Esta pizarra es privada en tu dispositivo. En Mis pizarras podés publicar una copia compartida.')
+      if(privateBoard()){
+        await boardCommand({publish:true})
+        return
+      }
       const library=await getLibrary()
       const selected=library.boards.find(b=>b.id===getActiveBoardId()) as BoardRecord|undefined
       setShareBoard(selected??null)
       setSharing(true)
+      if(selected?.role==='owner'){
+        const data=await post<{code:string}>(`/api/share/boards/${encodeURIComponent(selected.id)}/code`,{})
+        setShareCode(data.code)
+      }
       setShareMembers(selected?.role==='owner' ? (await api<{members:Member[]}>(`/api/share/boards/${encodeURIComponent(selected.id)}`)).members : [])
     }catch(e){setShareError(String(e));setSharing(true)}
+  }
+  function boardCommand(command:{boardId?:string;publish?:boolean}):Promise<void>{
+    return new Promise((resolve,reject)=>window.dispatchEvent(new CustomEvent('pizarra-shared-command',{detail:{...command,resolve,reject}})))
+  }
+  useEffect(()=>{
+    if(!profile||loading||localMode||!new URLSearchParams(location.search).has('share'))return
+    history.replaceState(null,'',location.pathname)
+    void openSharing()
+    // The query is consumed once after publishing a private copy.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[profile,loading,localMode])
+  async function enterCode(){
+    if(busy||!/^\d{4}$/.test(joinCode))return
+    setBusy(true);setJoinError('')
+    try{
+      const result=await post<{board_id:string}>('/api/share/join-code',{code:joinCode})
+      await boardCommand({boardId:result.board_id})
+      setJoinDialog(false)
+    }catch(cause){setJoinError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function kickMember(userId:string){
     if(!shareBoard)return
@@ -273,6 +303,7 @@ export default function AnonymousGate(){
         {!localMode&&<button onClick={()=>setChangeEmoji(v=>!v)}>Cambiar emoji</button>}
         {changeEmoji&&<div className="anon-emoji-grid anon-emoji-menu" role="group" aria-label="Emoji de perfil">{EMOJIS.map(item=><button type="button" key={item} disabled={busy} title={item} onClick={()=>void updateEmoji(item)}>{item}</button>)}</div>}
         {!localMode&&<button onClick={()=>void openSharing()}>Compartir pizarra actual</button>}
+        {!localMode&&<button onClick={()=>{setJoinCode('');setJoinError('');setJoinDialog(true);setMenuOpen(false)}}>Ingresar a la pizarra</button>}
         {!localMode&&Boolean(profile.is_admin)&&<button onClick={()=>void openUserAdministration()}>Administrar usuarios</button>}
         {!localMode&&<>
         <label htmlFor="anon-new-password">Elegir o cambiar contraseña</label>
@@ -306,11 +337,19 @@ export default function AnonymousGate(){
         <button type="button" className="anon-secondary" disabled={busy} onClick={()=>setManagingUsers(false)}>Cerrar</button>
       </section>
     </div>}
+    {joinDialog&&<div className="anon-modal-backdrop"><form className="anon-modal" role="dialog" aria-modal="true" aria-label="Ingresar a la pizarra" onSubmit={e=>{e.preventDefault();void enterCode()}}>
+      <h2>Ingresar a la pizarra</h2><label htmlFor="shared-code">Código de 4 dígitos</label>
+      <input id="shared-code" autoFocus inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={joinCode} onChange={e=>setJoinCode(e.target.value.replace(/\D/g,''))}/>
+      <p>Se guardan tus cambios antes de abrirla. Si ya la tenés, conserva su carpeta.</p>
+      {joinError&&<p className="anon-error" role="alert">{joinError}</p>}
+      <button className="anon-primary" disabled={busy||joinCode.length!==4}>Ingresar</button><button type="button" className="anon-secondary" disabled={busy} onClick={()=>setJoinDialog(false)}>Cancelar</button>
+    </form></div>}
     {sharing&&<div className="anon-modal-backdrop" onClick={e=>{if(e.target===e.currentTarget)setSharing(false)}}>
       <section className="anon-modal" aria-label="Compartir pizarra">
         <h2>Compartir pizarra</h2>
         <p>{shareBoard?.name??'Pizarra no encontrada'}</p>
         {shareBoard?.role==='owner'?<>
+          {shareCode&&<><output className="anon-share-code" aria-label="Código para compartir">{shareCode}</output><p>Otro usuario puede ingresar este código desde su perfil. Permite editar y vence en 24 horas; la pizarra sigue guardada.</p><button className="anon-secondary" onClick={()=>void navigator.clipboard.writeText(shareCode)}>Copiar código</button></>}
           <label htmlFor="anon-role">Permiso del enlace</label>
           <select id="anon-role" value={shareRole} onChange={e=>setShareRole(e.target.value as 'viewer'|'editor')}>
             <option value="editor">Puede editar</option>

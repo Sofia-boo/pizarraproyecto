@@ -40,6 +40,15 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('keeps shared board placement in a local folder without changing other members folders',async()=>{
+    server()
+    const folder=await library.addFolder('Facultad')
+    await library.renameBoard(remoteId,'Compartida',folder.id)
+    expect((await library.getLibrary()).boards.find(b=>b.id===remoteId)?.folder_id).toBe(folder.id)
+    expect(fetched.mock.calls.some(call=>String(call[0]).endsWith('/info'))).toBe(false)
+    await library.removeFolder(folder.id)
+    expect((await library.getLibrary()).boards.find(b=>b.id===remoteId)?.folder_id).toBe(null)
+  })
   it('opens and edits downloaded shared media offline without requests, then uploads the draft after reconnection',async()=>{
     const data={...content(),media:[{id:'photo',assetId:'photo',x:0,y:0,width:10,height:10,name:'Foto',kind:'image' as const}]}
     server(data)

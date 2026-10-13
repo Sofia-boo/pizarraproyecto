@@ -182,3 +182,4 @@ body:has(.math-panel, .library-overlay, .version-history-backdrop, .recognition-
 /* La calculadora y el editor de gráficos tienen prioridad visual. */
 .anon-profile,.anon-profile.anon-profile-open{z-index:20}
 body:has(.math-panel) .anon-profile {display:none !important}
+.anon-share-code {display:block;font-size:2.8rem;letter-spacing:.4em;text-align:center;font-weight:700;padding:16px;color:#6366f1}

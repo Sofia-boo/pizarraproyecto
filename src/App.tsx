@@ -13,6 +13,9 @@ import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import DocumentOCR from './components/DocumentOCR'
 import StudyAssistant from './components/StudyAssistant'
+import StudyCheckIn from './components/StudyCheckIn'
+import {fitFollowCamera,followCycle} from './collaborationCamera'
+import type {CameraView} from './collaborationCamera'
 import A4PrintPreview from './components/A4PrintPreview'
 import type { PrintPreview } from './components/A4PrintPreview'
 import BinaryTreePanel from './components/BinaryTreePanel'
@@ -154,7 +157,7 @@ function occursOn(event: CalendarEvent, date: string): boolean {
 
 type ThemeMode = 'light' | 'dark' | 'rest'
 type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape' | 'connector'
-type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:{center:Point;zoom:number};client_ids?:string[]}
+type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:CameraView;client_ids?:string[]}
 type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number}
 // PERFILES_Y_CURSORES_V1
 type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
@@ -870,7 +873,7 @@ function App() {
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null)
   const followRef = useRef<string | null>(null)
   const [following, setFollowing] = useState<string | null>(null)
-  const viewsRef = useRef(new Map<string, {center:Point;zoom:number}>())
+  const viewsRef = useRef(new Map<string, CameraView>())
   const lastViewSentRef = useRef(0)
   const lastViewValueRef = useRef('')
   const cursorScreenRef = useRef<Point | null>(null)
@@ -891,6 +894,7 @@ function App() {
   const [liveBoardId, setLiveBoardId] = useState<string | null>(null)
   const [liveUsers, setLiveUsers] = useState<LiveUser[]>([])
   const [liveSelf, setLiveSelf] = useState<string | null>(null)
+  const liveSelfRef=useRef<string|null>(null)
   const [liveConnected, setLiveConnected] = useState(false)
   const liveSocketRef = useRef<WebSocket | null>(null)
   const remoteStrokesRef = useRef<Map<string, RemoteLiveStroke>>(new Map())
@@ -922,8 +926,10 @@ function App() {
     const view = viewsRef.current.get(userId)
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!view || !rect) return
-    cameraRef.current = {zoom:view.zoom,x:rect.width/2-view.center.x*view.zoom,y:rect.height/2-view.center.y*view.zoom}
-    setZoomLabel(Math.round(view.zoom*100))
+    if(followCycle(userId,liveSelfRef.current,viewsRef.current)){stopFollowing();return}
+    cameraRef.current = fitFollowCamera(view,rect.width,rect.height)
+    const zoom=cameraRef.current.zoom
+    setZoomLabel(Math.round(zoom*100))
     redraw()
   }
 
@@ -933,11 +939,11 @@ function App() {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const cam = cameraRef.current
-    const value = `${cam.x}:${cam.y}:${cam.zoom}:${rect.width}:${rect.height}`
+    const value = `${cam.x}:${cam.y}:${cam.zoom}:${rect.width}:${rect.height}:${followRef.current}`
     if (!force && value===lastViewValueRef.current) return
     lastViewSentRef.current = now
     lastViewValueRef.current = value
-    sendLive({type:'camera_move',center:{x:(rect.width/2-cam.x)/cam.zoom,y:(rect.height/2-cam.y)/cam.zoom},zoom:cam.zoom})
+    sendLive({type:'camera_move',center:{x:(rect.width/2-cam.x)/cam.zoom,y:(rect.height/2-cam.y)/cam.zoom},zoom:cam.zoom,viewport:{width:rect.width,height:rect.height},following:followRef.current})
   }
 
   function broadcastVideo(videoId:string,action:string,position:number) {
@@ -1041,7 +1047,7 @@ function App() {
   const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
   const [documentOCR,setDocumentOCR]=useState<{file:File|null;boardId:string;position?:Point}|null>(null)
   const [ocrPicking,setOCRPicking]=useState(false)
-  const [studyAssistant,setStudyAssistant]=useState<{boardId:string;file?:File}|null>(null)
+  const [studyAssistant,setStudyAssistant]=useState<{boardId:string;file?:File;question?:string}|null>(null)
   const selectionDestinationRef=useRef<'ocr'|'assistant'>('ocr')
   const [controlNavigation,setControlNavigation]=useState(false)
   const [recognitionError, setRecognitionError] = useState('')
@@ -1299,6 +1305,23 @@ function App() {
     selectBoard(id)
     window.location.reload()
   }
+
+  useEffect(()=>{
+    const command=(event:Event)=>{
+      const detail=(event as CustomEvent<{boardId?:string;publish?:boolean;resolve:()=>void;reject:(error:unknown)=>void}>).detail
+      void (async()=>{
+        await flushBoardForHistory()
+        const id=detail.publish?await publishPrivateCopy():detail.boardId
+        if(!id)throw new Error('Pizarra inexistente.')
+        if(id===getActiveBoardId()){detail.resolve();return}
+        selectBoard(id)
+        detail.resolve()
+        window.location.assign(detail.publish?'/?share=1':location.pathname)
+      })().catch(detail.reject)
+    }
+    window.addEventListener('pizarra-shared-command',command)
+    return()=>window.removeEventListener('pizarra-shared-command',command)
+  })
 
 
   function selectElement(value: Selection | null) {
@@ -1796,15 +1819,16 @@ function App() {
       const color=/^#[0-9a-fA-F]{6}$/.test(cursor.color)?cursor.color:'#6366f1'
       cursorCtx.save()
       cursorCtx.translate(px,py)
+      cursorCtx.save();cursorCtx.scale(.6,.6)
       cursorCtx.shadowColor='#0004';cursorCtx.shadowBlur=3
       cursorCtx.fillStyle='#fff';cursorCtx.strokeStyle=color;cursorCtx.lineWidth=2
       cursorCtx.beginPath();cursorCtx.moveTo(0,0);cursorCtx.lineTo(0,23);cursorCtx.lineTo(6,17);cursorCtx.lineTo(12,25);cursorCtx.lineTo(16,23);cursorCtx.lineTo(10,15);cursorCtx.lineTo(17,15);cursorCtx.closePath();cursorCtx.fill();cursorCtx.stroke()
-      cursorCtx.shadowBlur=0
+      cursorCtx.restore();cursorCtx.shadowBlur=0
       const label=`${cursor.emoji} ${cursor.name}`
-      cursorCtx.font='600 12px system-ui,sans-serif'
-      const w=Math.min(170,cursorCtx.measureText(label).width+18)
-      cursorCtx.fillStyle=color;cursorCtx.beginPath();cursorCtx.roundRect(16,24,w,25,7);cursorCtx.fill()
-      cursorCtx.fillStyle='#fff';cursorCtx.fillText(label,23,41,Math.max(6,w-14))
+      cursorCtx.font='600 10px system-ui,sans-serif'
+      const w=Math.min(140,cursorCtx.measureText(label).width+14)
+      cursorCtx.fillStyle=color;cursorCtx.beginPath();cursorCtx.roundRect(9,15,w,19,6);cursorCtx.fill()
+      cursorCtx.fillStyle='#fff';cursorCtx.fillText(label,15,28,Math.max(6,w-12))
       cursorCtx.restore()
     }
   }
@@ -2325,7 +2349,7 @@ function App() {
         socket.onmessage = event => {
           try {
             const msg = JSON.parse(event.data) as {
-              type?:string;board_id?:string;version?:number;base_version?:number;patch?:unknown;you?:string;center?:Point;zoom?:number;
+              type?:string;board_id?:string;version?:number;base_version?:number;patch?:unknown;you?:string;center?:Point;zoom?:number;viewport?:{width:number;height:number};following?:string;
               users?:LiveUser[];client_id?:string;stroke_id?:string;user_id?:string;
               name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
@@ -2351,6 +2375,7 @@ function App() {
             } else if (msg.type === 'presence' && Array.isArray(msg.users)) {
               setLiveUsers(msg.users)
               setLiveSelf(msg.you ?? null)
+              liveSelfRef.current=msg.you??null
               const present = new Set(msg.users.map(user=>user.id))
               for(const [key,cursor] of remoteCursorsRef.current) {
                 const user=msg.users.find(user=>user.id===cursor.userId)
@@ -2358,9 +2383,10 @@ function App() {
               }
               for(const user of msg.users) if(user.view) viewsRef.current.set(user.id,user.view)
               if(followRef.current && !present.has(followRef.current)) stopFollowing()
+              if(followRef.current)followView(followRef.current)
               redraw()
             } else if (msg.type === 'camera_move' && msg.user_id && msg.center && typeof msg.zoom==='number') {
-              viewsRef.current.set(msg.user_id,{center:msg.center,zoom:msg.zoom})
+              viewsRef.current.set(msg.user_id,{center:msg.center,zoom:msg.zoom,viewport:msg.viewport,following:msg.following})
               if(followRef.current===msg.user_id) followView(msg.user_id)
             } else if (msg.type === 'video_state' && typeof msg.video_id==='string' &&
                        typeof msg.position==='number' && typeof msg.playing==='boolean' &&
@@ -3893,6 +3919,8 @@ function App() {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       setImportStatus(`Importando PDF: página ${pageNumber} de ${pdf.numPages}`)
       const page = await pdf.getPage(pageNumber)
+      const textContent=await page.getTextContent().catch(()=>null)
+      const pageText=textContent?.items.map(item=>'str' in item?item.str+('hasEOL' in item&&item.hasEOL?'\n':' '):'').join('').slice(0,16000)
       const baseViewport = page.getViewport({ scale: 1 })
       const scale = Math.min(1.5, 1800 / Math.max(baseViewport.width, baseViewport.height))
       const viewport = page.getViewport({ scale })
@@ -3915,7 +3943,7 @@ function App() {
         id: createId(), assetId,
         x: dropPoint ? origin.x : origin.x - w / 2,
         y: top, width: w, height: h,
-        name: file.name || 'Documento pegado.pdf', kind: 'pdf-page', documentId, pageNumber,
+        name: file.name || 'Documento pegado.pdf', kind: 'pdf-page', documentId, pageNumber, pageText,
       }
       mediaRef.current.push(item)
       firstPage ??= item.id
@@ -5309,7 +5337,12 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
-      {studyAssistant&&<StudyAssistant key={studyAssistant.boardId} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsert={text=>{
+      {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||documentOCR||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
+      {studyAssistant&&<StudyAssistant key={studyAssistant.boardId} boardId={studyAssistant.boardId} materials={mediaRef.current} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question}
+        onGraph={expr=>{if(studyAssistant.boardId===getActiveBoardId())insertBoardGraph([{id:createId(),expr,color:'#4f46e5',enabled:true}])}}
+        onReadMaterial={async material=>{const blob=await loadAsset(material.assetId);if(!blob)throw new Error('El archivo todavía no está descargado en este dispositivo.');return new File([blob],material.name,{type:blob.type})}}
+        onInsertImage={async material=>{if(studyAssistant.boardId!==getActiveBoardId())return;const blob=await loadAsset(material.assetId);if(!blob)throw new Error('Archivo no disponible.');await importFiles([new File([blob],material.name+'.png',{type:blob.type})])}}
+        onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsert={text=>{
         if(studyAssistant.boardId!==getActiveBoardId())return
         rememberChange()
         const center=toWorld(window.innerWidth/2,window.innerHeight/2)

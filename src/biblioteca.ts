@@ -99,8 +99,10 @@ export async function getLibrary() {
       remote = { ...remote, boards: remote.boards.filter(b => copies.some(c => c.key === cacheKey(b.id))) }
     }
   }
+  const placements=account?await (await deviceDB).get('meta',`placements:${account}`) as Record<string,string|null>|undefined:undefined
   return { folders: [...local.folders, ...remote.folders],
-    boards: [...local.boards, ...remote.boards.map(b => ({ ...b, storage: 'shared' as const }))] }
+    boards: [...local.boards, ...remote.boards.map(b => ({ ...b,
+      folder_id:placements&&Object.hasOwn(placements,b.id)?placements[b.id]:b.folder_id, storage: 'shared' as const }))] }
 }
 export async function addFolder(name: string) {
   const folder = { id: newLocalId(), name }
@@ -116,6 +118,10 @@ export async function removeFolder(id: string) {
   }
   await tx.objectStore('folders').delete(id)
   await tx.done
+  if(account){
+    const placements=await db.get('meta',`placements:${account}`) as Record<string,string|null>|undefined
+    if(placements){for(const board of Object.keys(placements))if(placements[board]===id)placements[board]=null;await db.put('meta',placements,`placements:${account}`)}
+  }
 }
 export async function addBoard(name: string, folder_id: string | null, storage: 'private' | 'shared' = 'private') {
   if (storage === 'shared') {
@@ -129,8 +135,17 @@ export async function addBoard(name: string, folder_id: string | null, storage: 
 }
 export async function renameBoard(id: string, name: string, folder_id: string | null) {
   if (!isPrivate(id)) {
-    if (folder_id && isPrivate(folder_id)) throw new Error('Una compartida no puede moverse a una carpeta privada.')
-    return request(`/api/boards/${id}/info`, json('PUT', {name,folder_id}))
+    const db=await deviceDB,key=`placements:${account}`
+    const placements=(await db.get('meta',key)??{}) as Record<string,string|null>
+    if(folder_id&&isPrivate(folder_id)){
+      if(!await db.get('folders',folder_id))throw new Error('Carpeta inexistente.')
+      placements[id]=folder_id
+      await db.put('meta',placements,key)
+      return
+    }
+    const result=await request(`/api/boards/${id}/info`, json('PUT', {name,folder_id}))
+    delete placements[id];await db.put('meta',placements,key)
+    return result
   }
   if (folder_id && !isPrivate(folder_id)) throw new Error('Una privada no puede moverse a una carpeta del servidor.')
   const board = await readDeviceBoard(id)
@@ -469,6 +484,7 @@ export async function publishPrivateCopy() {
   const created = await addBoard(saved.name, null, 'shared')
   const result = await request<{version:number}>(`/api/boards/${created.id}`, json('PUT', {content,version:0}))
   await cacheRemote({id:created.id, name:saved.name, content, version:result.version}, false)
+  if(saved.folder_id&&isPrivate(saved.folder_id))await renameBoard(created.id,saved.name,saved.folder_id)
   return created.id
 }
 

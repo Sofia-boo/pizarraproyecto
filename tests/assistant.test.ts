@@ -1,5 +1,37 @@
 import {describe,it,expect,vi} from 'vitest'
 import {academicPrompt,boundedHistory,visibleAnswer,topicDecision,OUTSIDE_SCOPE,hasLocalModel,MODEL_FILES,MODEL_CACHE,MODEL_ID,MODEL_REVISION,modelURL,canonicalModelURL} from '../src/assistant/config'
+import {verifyArithmetic,safeDerivative,numericResult,graphSuggestion} from '../src/assistant/mathVerification'
+import {materialContext} from '../src/assistant/materials'
+import {fitFollowCamera,followCycle} from '../src/collaborationCamera'
+describe('verified study tools and collaboration cameras',()=>{
+  it('corrects false arithmetic but leaves programming and unsupported claims untouched',()=>{
+    expect(verifyArithmetic('Resultado: 2 + 3 = 6').text).toContain('2 + 3 = 5')
+    expect(verifyArithmetic('Resultado: 2 + 3 = 6').facts).toEqual(['2 + 3 = 5'])
+    expect(verifyArithmetic('```sql\nSELECT 2+3=6;\n```').facts).toEqual([])
+    expect(verifyArithmetic('x^2 = 4').facts).toEqual([])
+    expect(verifyArithmetic('x^2+3 = 10').facts).toEqual([])
+    expect(verifyArithmetic('2+3 = 6.').facts).toEqual(['2+3 = 5'])
+    expect(numericResult('sqrt(16)+3').answer).toBe(7)
+    expect(safeDerivative('x^2')).toBe('2 * x')
+    expect(()=>safeDerivative('import("bad")')).toThrow()
+    expect(()=>numericResult('a=3')).toThrow()
+    expect(graphSuggestion('Una función es y = x^2.')).toBe('x^2')
+    expect(graphSuggestion('y = import("bad")')).toBe('')
+  })
+  it('retrieves relevant passages across all PDF pages within a small model context',()=>{
+    const materials=Array.from({length:30},(_,i)=>({id:String(i),assetId:String(i),name:'Apuntes.pdf',kind:'pdf-page' as const,pageNumber:i+1,pageText:i===29?'Normalización de bases de datos: tercera forma normal, dependencias transitivas.':'Ecuaciones diferenciales y cálculo.'}))
+    const result=materialContext('Explicá dependencias transitivas y normalización',materials)
+    expect(result).toContain('página 30');expect(result).toContain('tercera forma normal');expect(result.length).toBeLessThanOrEqual(1800)
+  })
+  it('fits the followed viewport on a tablet and stops circular following',()=>{
+    const view={center:{x:100,y:200},zoom:2,viewport:{width:1600,height:900}}
+    const fitted=fitFollowCamera(view,800,1100)
+    expect(fitted).toEqual({zoom:1,x:300,y:350})
+    expect((800/2-fitted.x)/fitted.zoom).toBe(100)
+    expect(followCycle('b','a',new Map([['b',{...view,following:'c'}],['c',{...view,following:'a'}]]))).toBe(true)
+    expect(followCycle('b','a',new Map([['b',view]]))).toBe(false)
+  })
+})
 describe('local academic assistant boundaries and offline readiness',()=>{
   it('recognizes math, image exercises and programming while allowing SQL about unrelated table names',()=>{
     expect(topicDecision('Leé el cálculo de esta imagen')).toBe('academic')

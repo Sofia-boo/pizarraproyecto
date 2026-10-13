@@ -83,13 +83,18 @@ async def _presence(board_id: str):
             'name': participant['name'],
             'color': participant['color'],
             'emoji': participant['emoji'],
-            'view': participant.get('view') or previous.get('view'),
+            'view': _active_view(board_id, participant['uid']),
             'client_ids': previous.get('client_ids', []) + [participant['client_id']],
         }
     users = sorted(by_user.values(), key=lambda item: item['name'].casefold())
     for socket, participant in list(peers.items()):
         await _send(socket, {'type': 'presence', 'users': users,
                              'you': participant['uid'], 'board_id': board_id})
+
+
+def _active_view(board_id, uid):
+    candidates = [p for p in _clients.get(board_id, {}).values() if p['uid'] == uid and p.get('view')]
+    return max(candidates, key=lambda p: p.get('view_changed', 0))['view'] if candidates else None
 
 
 def attach_live_sync(app, db_connection):
@@ -193,10 +198,24 @@ def attach_live_sync(app, db_connection):
                     if (center is None or type(zoom) not in (int, float)
                             or not math.isfinite(zoom) or not 0.01 <= zoom <= 5):
                         continue
-                    participant['view'] = {'center': center, 'zoom': zoom}
+                    view = {'center': center, 'zoom': zoom}
+                    viewport = payload.get('viewport')
+                    if isinstance(viewport, dict):
+                        width, height = viewport.get('width'), viewport.get('height')
+                        if all(type(v) in (int,float) and math.isfinite(v) and 1 <= v <= 20000 for v in (width,height)):
+                            view['viewport'] = {'width': width, 'height': height}
+                    following = payload.get('following')
+                    if isinstance(following, str) and len(following) <= 80:
+                        view['following'] = following
+                    if participant.get('view') != view:
+                        participant['view_changed'] = clock
+                    participant['view'] = view
+                    active = _active_view(board_id, user_id)
+                    if active != view:
+                        continue
                     await _broadcast(board_id, {'type': 'camera_move', 'board_id': board_id,
                                                'user_id': user_id, 'client_id': participant['client_id'],
-                                               'center': center, 'zoom': zoom}, exclude=websocket)
+                                               **view}, exclude=websocket)
                     continue
                 if event_type in ('cursor_move', 'cursor_hide'):
                     # Los lectores pueden mostrar cursor, pero nunca dibujar.
