@@ -3,6 +3,24 @@ import {academicPrompt,boundedHistory,visibleAnswer,topicDecision,OUTSIDE_SCOPE,
 import {verifyArithmetic,safeDerivative,numericResult,graphSuggestion} from '../src/assistant/mathVerification'
 import {materialContext} from '../src/assistant/materials'
 import {fitFollowCamera,followCycle} from '../src/collaborationCamera'
+import {messageParts,mathMarkup,plainAssistantText,stripVerifierNotes} from '../src/assistant/messageFormat'
+describe('readable assistant responses',()=>{
+  it('typesets fractions and inline formulas while preserving literal code',()=>{
+    const text='Resultado $n = 9$.\n$$\\frac{1}{2} \\cdot \\frac{1}{3}$$\n```cpp\nstd::cout << "$x$";\n```'
+    const parts=messageParts(text)
+    expect(parts.filter(p=>p.kind==='math')).toHaveLength(2)
+    expect(parts.find(p=>p.kind==='code')?.text).toContain('"$x$"')
+    expect(mathMarkup('\\frac{1}{2}')).toContain('mfrac')
+    expect(plainAssistantText('$$\\frac{1}{2} \\cdot \\frac{1}{3}$$')).toBe('1/2  ×  1/3')
+    expect(mathMarkup('\\badcommand{')).toBeNull()
+    expect(stripVerifierNotes('2+3=5.\n\nVerificación aritmética local: 2+3=5.')).toBe('2+3=5.')
+  })
+  it('does not allow math to create external image requests or javascript links',()=>{
+    expect(mathMarkup('\\includegraphics{https://example.com/private}')).not.toContain('<img')
+    expect(mathMarkup('\\href{javascript:alert(1)}{click}')).not.toContain('<a ')
+    expect(mathMarkup('x'.repeat(4001))).toBeNull()
+  })
+})
 describe('verified study tools and collaboration cameras',()=>{
   it('corrects false arithmetic but leaves programming and unsupported claims untouched',()=>{
     expect(verifyArithmetic('Resultado: 2 + 3 = 6').text).toContain('2 + 3 = 5')

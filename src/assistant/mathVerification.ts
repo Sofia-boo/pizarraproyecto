@@ -41,5 +41,5 @@ export function verifyArithmetic(text:string){
     }catch{/* An unsupported or ambiguous claim is not marked as verified. */}
     return whole
   })).join('')
-  return {text:checked+(corrections.length?`\n\nCorrección comprobada con calculadora local: ${corrections.join('; ')}.`:facts.length?`\n\nVerificación aritmética local: ${facts.join('; ')}.`:''),facts:[...new Set(facts)]}
+  return {text:checked,facts:[...new Set(facts)],corrections}
 }

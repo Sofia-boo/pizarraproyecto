@@ -3163,6 +3163,7 @@ function App() {
       transformRef.current = null
       if(changed)scheduleSave()
     }
+    let recognitionCrop:Bounds|undefined
     if (marqueeRef.current) {
       const area = rectangle(marqueeRef.current.start, marqueeRef.current.end)
       marqueeRef.current = null
@@ -3170,6 +3171,7 @@ function App() {
       // Un clic sin arrastrar limpia la selección.
       if (area.width > 2 / cameraRef.current.zoom || area.height > 2 / cameraRef.current.zoom) {
         selectInRectangle(area)
+        if(ocrPicking)recognitionCrop=area
       } else {
         selectElement(null)
       }
@@ -3178,7 +3180,7 @@ function App() {
     lastPointerRef.current = null
     redraw()
     if(ocrPicking&&groupRef.current.some(s=>s.kind==='stroke'||s.kind==='media')){
-      setOCRPicking(false);void openSelectionOCR()
+      setOCRPicking(false);void openSelectionOCR(selectionDestinationRef.current,recognitionCrop)
     }
   }
 
@@ -4171,14 +4173,15 @@ function App() {
     setDocumentOCR(null);setStudyAssistant(null);setOpenMenu(null);selectTool('select');selectElement(null);setOCRPicking(true)
   }
 
-  async function openSelectionOCR(destination:'ocr'|'assistant'=selectionDestinationRef.current) {
+  async function openSelectionOCR(destination:'ocr'|'assistant'=selectionDestinationRef.current,crop?:Bounds) {
     setOpenMenu(null)
     const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
     if(!boxes.length){startOCRSelection(destination);return}
-    const left=Math.min(...boxes.map(b=>b.x))-16,top=Math.min(...boxes.map(b=>b.y))-16
-    const width=Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=Math.max(...boxes.map(b=>b.y+b.height))-top+16
+    const left=crop?.x??Math.min(...boxes.map(b=>b.x))-16,top=crop?.y??Math.min(...boxes.map(b=>b.y))-16
+    const width=crop?.width??Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=crop?.height??Math.max(...boxes.map(b=>b.y+b.height))-top+16
+    if(width<=0||height<=0)return
     const scale=Math.min(2,2400/Math.max(width,height),Math.sqrt(4000000/(width*height)))
     const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale)
     const ctx=canvas.getContext('2d')!
@@ -4207,7 +4210,7 @@ function App() {
       }
       const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
       if(boardId!==getActiveBoardId())return
-      const file=new File([blob],'manuscrito-seleccionado.png',{type:'image/png'})
+      const file=new File([blob],crop?'recorte-de-la-pizarra.png':'seleccion-de-la-pizarra.png',{type:'image/png'})
       if(destination==='assistant')setStudyAssistant({boardId,file})
       else setDocumentOCR({file,boardId,position:{x:left+16,y:top+height+8}})
     }catch(e){setRecognitionError(e instanceof Error?e.message:'No se pudo preparar el OCR.')}
@@ -5347,8 +5350,7 @@ function App() {
       {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||documentOCR||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
       {studyAssistant&&<StudyAssistant key={studyAssistant.boardId} boardId={studyAssistant.boardId} materials={mediaRef.current} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question}
         onGraph={expr=>{if(studyAssistant.boardId===getActiveBoardId())insertBoardGraph([{id:createId(),expr,color:'#4f46e5',enabled:true}])}}
-        onReadMaterial={async material=>{const blob=await loadAsset(material.assetId);if(!blob)throw new Error('El archivo todavía no está descargado en este dispositivo.');return new File([blob],material.name,{type:blob.type})}}
-        onInsertImage={async material=>{if(studyAssistant.boardId!==getActiveBoardId())return;const blob=await loadAsset(material.assetId);if(!blob)throw new Error('Archivo no disponible.');await importFiles([new File([blob],material.name+'.png',{type:blob.type})])}}
+        onInsertImage={async file=>{if(studyAssistant.boardId===getActiveBoardId())await importFiles([file])}}
         onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsert={text=>{
         if(studyAssistant.boardId!==getActiveBoardId())return
         rememberChange()
@@ -5405,7 +5407,7 @@ function App() {
       </div>}
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
-      {ocrPicking&&<div className="ocr-selection-instruction" role="status">Arrastrá un recuadro sobre el manuscrito con el lápiz, el dedo o el mouse.<button onClick={()=>setOCRPicking(false)}>Cancelar selección OCR</button></div>}
+      {ocrPicking&&<div className="ocr-selection-instruction" role="status">Marcá el área del manuscrito, imagen o PDF que querés enviar.<button onClick={()=>setOCRPicking(false)}>Cancelar selección</button></div>}
       {printPreview&&<A4PrintPreview value={printPreview} onClose={()=>{printRequestRef.current++;setPrintPreview(null)}}/>}
       {!visualEditor&&!openMenu&&groupRef.current.some(sel=>sel.kind==='shape'&&shapesRef.current.some(s=>s.id===sel.id&&s.visualType==='page'))&&<button type="button" className="visual-edit-button" onClick={()=>void printA4(true)}>Imprimir hojas A4 seleccionadas</button>}
       {!visualEditor && !treePanel && !openMenu && selectedTreeExpression() && <button type="button" className="visual-edit-button tree-expression-button"

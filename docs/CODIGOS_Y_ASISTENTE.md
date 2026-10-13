@@ -10,12 +10,13 @@ El seguimiento transmite centro, zoom y tamaño de pantalla para encuadrar la vi
 
 ## Asistente sin conexión
 
-- **Materiales de la pizarra** enumera todas las imágenes y páginas de PDF. Consultar adjunta una página a la IA local; Poner imagen coloca una copia en la pizarra.
+- El panel contiene el chat, la entrada de texto, el botón para descargar o cargar la IA y **Adjuntar**. Ese menú permite elegir un PDF, imagen o archivo de texto/código, o marcar una selección de la pizarra. Las acciones para insertar una respuesta o imagen están en **⋯** dentro de cada mensaje.
 - Los PDF importados a partir de esta versión conservan hasta 16.000 caracteres de texto por página. Al preguntar se buscan fragmentos relevantes en todas las páginas, con un contexto acotado para la tablet. Los PDF anteriores o escaneados se consultan seleccionando una página como imagen. No se procesan todos los archivos simultáneamente.
-- **Comprobar matemática y dibujar** permite calcular expresiones reales y [derivar funciones en x con Math.js](https://mathjs.org/docs/reference/functions/derivative.html), sin servidor. Las igualdades aritméticas explícitas de respuestas matemáticas se comprueban y corrigen cuando son compatibles con la calculadora. Esto no verifica una demostración ni toda una solución.
-- Los resultados comprobados se guardan por cuenta en este navegador y se recuperan como contexto para consultas relacionadas. Es memoria de cálculos verificados; no es entrenamiento ni modificación de pesos del modelo. Puede borrarse desde Almacenamiento de la IA.
-- Se pueden escribir respuestas, activar su inserción automática, agregar un gráfico de una función y copiar imágenes disponibles. No se incorpora un modelo generador de fotografías.
-- Las preguntas de seguimiento aparecen mientras la página está visible y hay actividad. Por defecto son cada diez minutos; se pueden desactivar o cambiar a cinco o veinte desde el asistente. Son avisos locales y no ejecutan inferencia pesada en segundo plano.
+- Las igualdades aritméticas explícitas de respuestas matemáticas se comprueban internamente con Math.js y se corrigen cuando son compatibles con la calculadora. Esto no verifica una demostración ni toda una solución. Las fórmulas se presentan con KaTeX y sus fuentes locales, también sin internet; al insertarlas como texto en la pizarra, se convierte la notación LaTeX básica a texto legible.
+- Los resultados comprobados se guardan por cuenta en este navegador y se recuperan como contexto para consultas relacionadas. Es memoria de cálculos verificados; no es entrenamiento ni modificación de pesos del modelo.
+- El menú **⋯** de una respuesta permite escribirla en la pizarra o graficarla si contiene una función compatible. El de una imagen permite colocar una copia. No se incorpora un modelo generador de fotografías.
+- Las preguntas de seguimiento aparecen mientras la página está visible y hay actividad, por defecto cada diez minutos. Se pueden pausar desde el aviso. Son avisos locales y no ejecutan inferencia pesada en segundo plano.
+- Al agregar una selección se envía exactamente el recuadro marcado, incluso dentro de una página de PDF rotada o ampliada. En esa consulta no se agrega automáticamente el texto completo de la página; la selección sirve como contexto visual.
 - Los manuscritos siguen teniendo selección manual. Su lectura puede ser imprecisa; no se escanea continuamente la escritura.
 
 La IA necesita descargar sus modelos una vez por dispositivo. Para tener imágenes y PDF sin conexión también hay que preparar la copia de la pizarra. La colaboración y el OCR de Datalab necesitan internet y el servidor encendido.

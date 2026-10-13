@@ -14,7 +14,7 @@ En Android conviene usar Chrome actualizado y cerrar otras aplicaciones para lib
 
 ## Alcance y limitaciones
 
-- Se elige Matemática, Bases de datos o Programación. Antes de responder, una clasificación local comprueba si la consulta corresponde a esas materias; cuando no la reconoce como académica, devuelve un aviso de alcance. Las instrucciones también enfocan la respuesta en esas materias. Es una configuración sobre modelos generales, no un entrenamiento exclusivo ni una garantía absoluta de clasificación correcta.
+- La materia se deduce de la pregunta. Antes de responder, una clasificación local comprueba si la consulta corresponde a matemática, bases de datos o programación; cuando no la reconoce como académica, devuelve un aviso de alcance. Las instrucciones también enfocan la respuesta en esas materias. Es una configuración sobre modelos generales, no un entrenamiento exclusivo ni una garantía absoluta de clasificación correcta.
 - Se usan modelos pequeños para limitar memoria y descarga. Pueden cometer errores de cálculo, transcripción, interpretación de gráficos y programación; no sustituyen la verificación de resultados.
 - La lectura de imágenes y manuscritos es aproximada. Es mejor adjuntar un ejercicio por imagen, legible y recortado. No usa la API de Datalab.
 - El contexto y la longitud de las respuestas son limitados para controlar el consumo de memoria. Se conserva la imagen más reciente del contexto, de modo que se pueden hacer preguntas posteriores sobre ella.
@@ -34,4 +34,4 @@ La red se utiliza para descargar los archivos públicos del modelo durante la pr
 
 Las pruebas unitarias se ejecutan con `npm test`. `tests/browser/local-assistant.spec.mjs` verifica la interfaz con un motor simulado. Para probar inferencia real, primero compilá y ejecutá el preview de producción en el puerto 4173, y luego ejecutá `node scripts/verify-local-assistant.mjs`. Esta prueba usa un perfil separado en `logs/ia-prueba-browser`, descarga los modelos en su primera ejecución y comprueba texto, imagen, SQL, programación, rechazo de una receta y recarga con la red completamente desactivada.
 
-**Quitar modelo de este dispositivo** borra únicamente la caché del asistente. No borra pizarras, respaldos, el historial del chat ni los ejemplos enseñados al reconocedor local del servidor. **Vaciar esta conversación** afecta únicamente el chat de la cuenta y pizarra actuales.
+La interfaz se limita al chat, la pregunta, la descarga/carga y el menú **Adjuntar**. Los modelos descargados y las conversaciones se conservan al actualizar. La selección de la pizarra recorta exactamente el área marcada; las respuestas muestran las fórmulas como matemática legible. Ver [flujo actualizado](CODIGOS_Y_ASISTENTE.md).

@@ -88,15 +88,15 @@ test('four digit join switches boards, keeps pending work and follows a differen
   }finally{await Promise.all(contexts.map(c=>c.close()))}
 })
 
-test('assistant reads board PDF passages and images and can insert an image copy',async({browser})=>{
+test('assistant uses board PDF text, crops only the marked image region and inserts a crop copy',async({browser})=>{
   const context=await browser.newContext()
   try{
     await signedIn(context,'Assistant materials')
     const board=(await (await context.request.post(`${api}/api/boards`,{data:{name:'Materiales de estudio'}})).json()).id
-    const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0N8AAAAASUVORK5CYII=','base64')
-    expect((await context.request.put(`${api}/api/assets/study-page`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
-    expect((await context.request.put(`${api}/api/boards/${board}`,{data:{version:0,content:{media:[{id:'pdf-page',assetId:'study-page',kind:'pdf-page',name:'Bases.pdf',pageNumber:3,pageText:'La tercera forma normal elimina dependencias transitivas.',x:100,y:200,width:200,height:300}]}}})).status()).toBe(200)
     const page=await context.newPage()
+    const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=500;c.height=400;const ctx=c.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,250,400);ctx.fillStyle='blue';ctx.fillRect(250,0,250,400);return c.toDataURL().split(',')[1]}),'base64')
+    expect((await context.request.put(`${api}/api/assets/study-page`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
+    expect((await context.request.put(`${api}/api/boards/${board}`,{data:{version:0,content:{camera:{x:0,y:0,zoom:.5},media:[{id:'pdf-page',assetId:'study-page',kind:'pdf-page',name:'Bases.pdf',pageNumber:3,pageText:'La tercera forma normal elimina dependencias transitivas.',x:100,y:200,width:500,height:400,rotation:Math.PI/12}]}}})).status()).toBe(200)
     await page.addInitScript(()=>{
       const Original=window.Worker
       window.Worker=class{
@@ -109,16 +109,27 @@ test('assistant reads board PDF passages and images and can insert an image copy
     await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
     await page.getByRole('menuitem',{name:/Asistente de estudio local/}).click()
     const dialog=page.getByRole('dialog',{name:'Asistente de estudio local'})
-    await dialog.getByText('Materiales de la pizarra · 1',{exact:true}).click()
-    await expect(dialog.getByText('Texto disponible',{exact:true})).toBeVisible()
     await dialog.getByRole('button',{name:/Descargar IA para/}).click()
-    await dialog.getByLabel('Materia del asistente').selectOption('bases')
     await dialog.getByLabel('Pregunta al asistente').fill('Explicá las dependencias transitivas')
     await dialog.getByRole('button',{name:'Preguntar',exact:true}).click()
     await expect.poll(()=>page.evaluate(()=>window.materialRequest?.context)).toContain('Bases.pdf · página 3')
-    await dialog.getByRole('button',{name:'Consultar',exact:true}).click()
+    await dialog.getByLabel('Pregunta al asistente').fill('Explicá la imagen seleccionada')
+    await dialog.getByRole('button',{name:'Adjuntar ▾',exact:true}).click()
+    await dialog.getByRole('menuitem',{name:'Agregar selección de la pizarra',exact:true}).click()
+    await expect(page.locator('.ocr-selection-instruction')).toBeVisible()
+    await page.mouse.move(100,200);await page.mouse.down();await page.mouse.move(160,240,{steps:8});await page.mouse.up()
     await expect(dialog.getByRole('img',{name:'Imagen a consultar',exact:true})).toBeVisible()
-    await dialog.getByRole('button',{name:'Poner imagen',exact:true}).click()
+    const crop=await dialog.getByRole('img',{name:'Imagen a consultar',exact:true}).evaluate(image=>{
+      const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(image,0,0)
+      return {width:c.width,height:c.height,pixel:Array.from(ctx.getImageData(c.width/2,c.height/2,1,1).data)}
+    })
+    expect(crop.width).toBe(240);expect(crop.height).toBe(160);expect(crop.pixel[0]).toBeGreaterThan(245);expect(crop.pixel[2]).toBeLessThan(10)
+    await dialog.getByRole('button',{name:/Descargar IA para|Cargar IA guardada/}).click()
+    await dialog.getByRole('button',{name:'Preguntar',exact:true}).click()
+    await expect.poll(()=>page.evaluate(()=>window.materialRequest?.messages.at(-1).fileName)).toBe('recorte-de-la-pizarra.png')
+    expect(await page.evaluate(()=>window.materialRequest.context)).not.toContain('tercera forma normal')
+    await dialog.locator('.assistant-message.user').last().getByLabel('Acciones del mensaje').click()
+    await dialog.getByRole('button',{name:'Poner imagen en la pizarra',exact:true}).click()
     await expect.poll(async()=>((await (await context.request.get(`${api}/api/boards/${board}`)).json()).content.media??[]).length).toBe(2)
   }finally{await context.close()}
 })

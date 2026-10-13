@@ -26,7 +26,7 @@ try{
   let dialog=page.getByRole('dialog',{name:'Asistente de estudio local'})
   await dialog.getByRole('button',{name:/Cargar IA guardada|Descargar IA para/}).click()
   const timer=setInterval(async()=>console.log('ESTADO',(await dialog.innerText().catch(()=>'' )).slice(-700)),15000)
-  try{await Promise.race([expect(dialog.getByText('IA cargada · podés usarla sin internet.',{exact:true})).toBeVisible({timeout:300000}),dialog.getByRole('alert').waitFor({timeout:300000}).then(async()=>{throw new Error(await dialog.getByRole('alert').innerText())})])}finally{clearInterval(timer)}
+  try{await Promise.race([expect(dialog.getByRole('status')).toHaveText('IA lista',{timeout:300000}),dialog.getByRole('alert').waitFor({timeout:300000}).then(async()=>{throw new Error(await dialog.getByRole('alert').innerText())})])}finally{clearInterval(timer)}
   console.log('MODELO CARGADO')
   await context.setOffline(true)
   await page.getByRole('textbox',{name:'Pregunta al asistente'}).fill('¿Cuánto es 2 + 3? Respondé brevemente.')
@@ -44,7 +44,7 @@ try{
   await page.getByRole('menuitem',{name:/Asistente de estudio local/}).click()
   dialog=page.getByRole('dialog',{name:'Asistente de estudio local'})
   await dialog.getByRole('button',{name:'Cargar IA guardada',exact:true}).click()
-  await expect(dialog.getByText('IA cargada · podés usarla sin internet.',{exact:true})).toBeVisible({timeout:90000})
+  await expect(dialog.getByRole('status')).toHaveText('IA lista',{timeout:90000})
   result.reloadOffline=true
   const base64=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=360;c.height=120;const ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,c.width,c.height);ctx.font='bold 44px Arial';ctx.fillStyle='black';ctx.fillText('4 + 5 = ?',40,75);return c.toDataURL().split(',')[1]})
   await dialog.locator('input[type=file]').setInputFiles({name:'ejercicio.png',mimeType:'image/png',buffer:Buffer.from(base64,'base64')})
@@ -57,7 +57,6 @@ try{
   console.log('IMAGEN',result.imageAnswer)
   expect(result.imageAnswer).toContain('9')
   for(const [subject,question,term] of [['bases','¿Para qué sirve SELECT en SQL? Una oración.','SELECT'],['programacion','¿Qué hace un bucle for en C++? Una oración.','bucle'],['programacion','Escribí una receta de pizza.','matemática']]){
-    await dialog.getByRole('combobox',{name:'Materia del asistente'}).selectOption(subject)
     await dialog.getByRole('textbox',{name:'Pregunta al asistente'}).fill(question)
     await dialog.getByRole('button',{name:'Preguntar',exact:true}).click()
     await expect(dialog.getByRole('button',{name:'Detener respuesta'})).toHaveCount(0,{timeout:180000})
