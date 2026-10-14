@@ -13,6 +13,8 @@ import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import HtmlWidget from './components/HtmlWidget'
+import {HTML_PRESENCE_EVENT} from './components/htmlActivity'
+import type {HtmlActivity} from './components/htmlActivity'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
 import ImageCropDialog from './components/ImageCropDialog'
 import TouchButton from './components/TouchButton'
@@ -159,7 +161,7 @@ function occursOn(event: CalendarEvent, date: string): boolean {
 type ThemeMode = 'light' | 'dark' | 'rest'
 type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape' | 'connector'
 type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:CameraView;client_ids?:string[]}
-type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number}
+type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number;htmlId?:string;htmlPresenceAt?:number;clickedAt?:number}
 // PERFILES_Y_CURSORES_V1
 type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
 // TRAZOS_Y_PRESENCIA_V2
@@ -904,6 +906,8 @@ function App() {
   const remoteStrokesRef = useRef<Map<string, RemoteLiveStroke>>(new Map())
   const remoteCursorsRef = useRef<Map<string, LiveCursor>>(new Map())
   const lastCursorSentRef = useRef(0)
+  const lastHtmlActivityRef=useRef(0)
+  const drawFrameRef=useRef<number|null>(null),cursorFrameRef=useRef<number|null>(null)
   const liveStrokeProgressRef = useRef<{id:string;sent:number;lastSent:number}|null>(null)
 
   function sendLive(value: Record<string,unknown>) {
@@ -918,6 +922,11 @@ function App() {
     if (now - lastCursorSentRef.current < 42) return
     lastCursorSentRef.current = now
     sendLive({type:'cursor_move',point:toWorld(clientX,clientY)})
+  }
+
+  function sendHtmlActivity(id:string,activity:HtmlActivity){
+    lastHtmlActivityRef.current=performance.now()
+    sendLive({type:'cursor_move',point:activity.point,html_id:id,html_action:activity.action})
   }
 
   function stopFollowing() {
@@ -1591,6 +1600,14 @@ function App() {
   }
 
   function redraw() {
+    if(drawFrameRef.current!==null)return
+    drawFrameRef.current=requestAnimationFrame(()=>{drawFrameRef.current=null;paintBoard()})
+  }
+  function redrawCursors(){
+    if(cursorFrameRef.current!==null)return
+    cursorFrameRef.current=requestAnimationFrame(()=>{cursorFrameRef.current=null;paintCursors()})
+  }
+  function paintBoard() {
     sendCamera()
     if(sceneRef.current){
       const cam=cameraRef.current
@@ -1817,6 +1834,12 @@ function App() {
       uiCtx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height)
       uiCtx.setLineDash([])
     }
+    paintCursors()
+  }
+
+  function paintCursors(){
+    const cam=cameraRef.current,dpr=window.devicePixelRatio||1
+    const viewWidth=(canvasRef.current?.width??0)/dpr,viewHeight=(canvasRef.current?.height??0)/dpr
     // Los cursores remotos se dibujan en píxeles de pantalla pero se reciben
     // como coordenadas del mundo: no se desalinean con zooms distintos.
     const cursorCtx = cursorCanvasRef.current?.getContext('2d')
@@ -1831,6 +1854,7 @@ function App() {
       const color=/^#[0-9a-fA-F]{6}$/.test(cursor.color)?cursor.color:'#6366f1'
       cursorCtx.save()
       cursorCtx.translate(px,py)
+      if(cursor.clickedAt&&Date.now()-cursor.clickedAt<700){cursorCtx.strokeStyle=color;cursorCtx.lineWidth=2;cursorCtx.beginPath();cursorCtx.arc(0,0,13,0,Math.PI*2);cursorCtx.stroke()}
       cursorCtx.save();cursorCtx.scale(.6,.6)
       cursorCtx.shadowColor='#0004';cursorCtx.shadowBlur=3
       cursorCtx.fillStyle='#fff';cursorCtx.strokeStyle=color;cursorCtx.lineWidth=2
@@ -2025,7 +2049,12 @@ function App() {
       strokes: structuredClone(strokesRef.current),
       texts: structuredClone(textsRef.current),
       media: structuredClone(mediaRef.current),
-      shapes: structuredClone(shapesRef.current.map(item=>materializeConnector(item,resolveObject))),
+      // HTML documents are immutable. Reuse their source in undo snapshots
+      // rather than copying every embedded file for each pen stroke.
+      shapes: shapesRef.current.map(item=>{
+        const {html,...geometry}=materializeConnector(item,resolveObject)
+        return {...structuredClone(geometry),...(html?{html}:{})}
+      }),
       tables: structuredClone(tablesRef.current),
       graphs: structuredClone(graphsRef.current),
       videos: structuredClone(videosRef.current),
@@ -2234,6 +2263,8 @@ function App() {
         cancelAnimationFrame(viewportFrameRef.current)
         viewportFrameRef.current = null // Permite remontar el efecto en React StrictMode.
       }
+      if(drawFrameRef.current!==null){cancelAnimationFrame(drawFrameRef.current);drawFrameRef.current=null}
+      if(cursorFrameRef.current!==null){cancelAnimationFrame(cursorFrameRef.current);cursorFrameRef.current=null}
     }
   }, [])
 
@@ -2372,7 +2403,7 @@ function App() {
             const msg = JSON.parse(event.data) as {
               type?:string;board_id?:string;version?:number;base_version?:number;patch?:unknown;you?:string;center?:Point;zoom?:number;viewport?:{width:number;height:number};following?:string;
               users?:LiveUser[];client_id?:string;stroke_id?:string;user_id?:string;
-              name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;
+              name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;html_id?:string;html_action?:string;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
             }
             if (msg.board_id !== boardId) return
@@ -2424,15 +2455,20 @@ function App() {
                 setVideos([...videosRef.current])
               }
             } else if (msg.type === 'cursor_move' && msg.client_id && msg.point && msg.user_id && msg.name) {
+              const previous=remoteCursorsRef.current.get(msg.client_id),now=Date.now()
+              const htmlId=msg.html_action!=='leave'?msg.html_id:undefined
+              const publish=Boolean(htmlId||previous?.htmlId)&&(htmlId!==previous?.htmlId||msg.html_action==='interact'||now-(previous?.htmlPresenceAt??0)>800)
               remoteCursorsRef.current.set(msg.client_id,{
                 clientId:msg.client_id,userId:msg.user_id,name:msg.name,
                 color:msg.color||'#6366f1',emoji:msg.emoji||'🙂',
-                point:msg.point,updated:Date.now()
+                point:msg.point,updated:now,htmlId,htmlPresenceAt:publish?now:previous?.htmlPresenceAt,
+                clickedAt:msg.html_action==='interact'?now:previous?.clickedAt
               })
-              redraw()
+              if(publish)window.dispatchEvent(new CustomEvent(HTML_PRESENCE_EVENT,{detail:{clientId:msg.client_id,htmlId,name:msg.name,color:msg.color??'#6366f1',emoji:msg.emoji??'🙂',updated:now}}))
+              redrawCursors()
             } else if (msg.type === 'cursor_hide' && msg.client_id) {
               remoteCursorsRef.current.delete(msg.client_id)
-              redraw()
+              redrawCursors()
             } else if (msg.client_id && msg.stroke_id) {
               const key = `${msg.client_id}:${msg.stroke_id}`
               if (msg.type === 'stroke_start' && msg.point && msg.color && msg.width) {
@@ -3326,7 +3362,7 @@ function App() {
     const heartbeat = setInterval(()=>{
       sendCamera(true)
       const p=cursorScreenRef.current
-      if(p && document.visibilityState==='visible') sendCursorPosition(p.x,p.y)
+      if(p && document.visibilityState==='visible'&&performance.now()-lastHtmlActivityRef.current>1500) sendCursorPosition(p.x,p.y)
     },1000)
     document.addEventListener('wheel', onWheel, { passive: false, capture:true })
     document.addEventListener('pointermove',onMove,true)
@@ -4712,7 +4748,7 @@ function App() {
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{deleteSelected();setContextMenu(null)}}>Eliminar selección <small>Supr</small></button>
         </div></>}
       <div className="board-scene" ref={sceneRef} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
-      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>selectElement({kind:'shape',id:item.id})} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu}/>)}
+      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>{if(tool!=='select')selectTool('select');selectElement({kind:'shape',id:item.id})}} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu} onActivity={activity=>sendHtmlActivity(item.id,activity)}/>)}
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>

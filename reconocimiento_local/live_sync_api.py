@@ -228,6 +228,10 @@ def attach_live_sync(app, db_connection):
                         if position is None:
                             continue
                         outgoing['point'] = position
+                        html_id, html_action = payload.get('html_id'), payload.get('html_action')
+                        if (isinstance(html_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,80}', html_id)
+                                and html_action in ('pointer', 'interact', 'leave')):
+                            outgoing.update(html_id=html_id, html_action=html_action)
                     await _broadcast(board_id, outgoing, exclude=websocket)
                     continue
                 if not _allowed(board_id, user_id, 'editor'):

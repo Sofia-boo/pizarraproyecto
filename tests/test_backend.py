@@ -459,6 +459,26 @@ class BackendTest(unittest.TestCase):
                 bad=copy.deepcopy(content);bad['shapes'][0]['html'][field]=value
                 self.assertEqual(owner.put(f'/api/boards/{bid}',json={'version':2,'content':bad}).status_code,422)
 
+    def test_html_presence_is_bounded_and_allowed_for_viewers(self):
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'HTML presence owner','password':'html-password'})
+            board=client.post('/api/boards',json={'name':'HTML presence'}).json()['id']
+            token=client.post(f'/api/share/boards/{board}',json={'role':'viewer','days':1}).json()['token']
+            with client.websocket_connect(f'wss://testserver/api/live/{board}') as a:
+                a.receive_json();a.receive_json()
+                client.cookies.clear()
+                person=client.post('/api/auth/guest',json={'name':'HTML presence reader','password':'html-password'}).json()
+                client.post('/api/share/join',json={'token':token})
+                with client.websocket_connect(f'wss://testserver/api/live/{board}') as b:
+                    b.receive_json();b.receive_json();a.receive_json()
+                    b.send_json({'type':'cursor_move','point':{'x':100,'y':200},'html_id':'html-widget','html_action':'interact','html_source':'not forwarded','name':'Spoofed'})
+                    event=a.receive_json()
+                    self.assertEqual(event['html_id'],'html-widget');self.assertEqual(event['html_action'],'interact')
+                    self.assertEqual(event['user_id'],person['id']);self.assertNotEqual(event['name'],'Spoofed')
+                    self.assertNotIn('html_source',event)
+                    b.send_json({'type':'cursor_move','point':{'x':100,'y':200},'html_id':'a'*81,'html_action':'interact'})
+                    self.assertNotIn('html_id',a.receive_json())
+
     def test_printable_pages_cartesian_and_code_save_with_validation(self):
         import copy
         with TestClient(self.app,base_url='https://testserver') as client:

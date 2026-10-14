@@ -15,6 +15,8 @@ async function insert(page){
   await(await chooser).setFiles({name:'ejercicio.html',mimeType:'text/html',buffer:Buffer.from(source)})
   await expect(page.locator('.board-html-widget')).toBeVisible()
   await expect.poll(async()=>(await content(page))?.shapes?.filter(item=>item.visualType==='html').length).toBe(1)
+  await expect(page.locator('.board-html-widget iframe')).toHaveCount(0)
+  await page.getByRole('button',{name:'Activar HTML ejercicio.html',exact:true}).click()
   return page.frameLocator('iframe[title="HTML: ejercicio.html"]')
 }
 test('HTML scripts and forms work in isolation, survive movement and are saved with the board',async({page,context})=>{
@@ -37,6 +39,7 @@ test('HTML scripts and forms work in isolation, survive movement and are saved w
   await page.getByRole('menuitem',{name:'Traer al frente',exact:true}).click()
   await expect(frame.locator('output')).toHaveText('1')
   await page.reload();frame=page.frameLocator('iframe[title="HTML: ejercicio.html"]')
+  await page.getByRole('button',{name:'Activar HTML ejercicio.html',exact:true}).click()
   await page.getByRole('button',{name:'Seleccionar área',exact:true}).click()
   await expect(frame.getByRole('button',{name:'Sumar',exact:true})).toBeVisible()
   expect((await content(page)).shapes[0].html.source).toBe(source)
@@ -46,6 +49,7 @@ test('HTML scripts and forms work in isolation, survive movement and are saved w
   await page.getByRole('button',{name:'Eliminar HTML ejercicio.html',exact:true}).click()
   await expect(page.locator('.board-html-widget')).toHaveCount(0)
   await page.keyboard.press('Control+z');await expect(page.locator('.board-html-widget')).toHaveCount(1)
+  await expect(page.locator('.board-html-widget iframe')).toHaveCount(0)
 })
 
 test.describe('tablet',()=>{

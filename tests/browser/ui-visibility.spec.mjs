@@ -20,6 +20,7 @@ test('board controls stay on screen when an embedded input requests focus outsid
     });db.close()
   })
   await page.reload();await expect(page.locator('.board-html-widget')).toBeAttached()
+  await page.getByRole('button',{name:'Activar HTML focus.html',exact:true}).evaluate(button=>button.click())
   await page.frameLocator('iframe[title="HTML: focus.html"]').locator('input').evaluate(input=>{input.focus();input.scrollIntoView({block:'center',inline:'center'})})
   expect(await page.evaluate(()=>({x:document.querySelector('.app').scrollLeft,y:document.querySelector('.app').scrollTop}))).toEqual({x:0,y:0})
   for(const selector of ['.toolbar','.zoom-controls','.theme-switcher','.library-open-button','.anon-profile']){
