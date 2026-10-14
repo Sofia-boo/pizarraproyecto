@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react'
+import {useEffect,useEffectEvent,useRef,useState} from 'react'
 import type {PointerEvent as ReactPointerEvent,ButtonHTMLAttributes} from 'react'
 import {flushSync} from 'react-dom'
 import {deviceDB} from '../storage/device'
@@ -7,6 +7,8 @@ import {useOnline} from '../connectivity'
 import {plainAssistantText} from '../assistant/messageFormat'
 import {responseImage} from '../assistant/responseImage'
 import {openOfficialChatGPT,downloadStudyFile,CHATGPT_URL} from '../assistant/chatgptBridge'
+import {transcriptionKey} from '../assistant/transcription'
+import type {TranscriptionTarget,TextInsertion} from '../assistant/transcription'
 import AssistantMessageText from './AssistantMessageText'
 import './chatgptConsultation.css'
 
@@ -14,6 +16,7 @@ const API=import.meta.env.DEV?`${location.protocol}//${location.hostname}:8765`:
 type Message={id:string;role:'user'|'assistant';text:string;files?:string[]}
 type State={state:'closed'|'manual_login'|'login'|'verification'|'loading'|'ready'|'attention';busy?:boolean}
 type Job={id:string;status:'running'|'complete'|'error';text?:string;error?:string;conversation?:string}
+type TranscriptionResult={id:string;text:string;inserted:boolean}
 class ChatGPTError extends Error{status:number;constructor(message:string,status:number){super(message);this.status=status}}
 async function api<T>(path:string,init?:RequestInit):Promise<T>{
   const response=await fetch(API+'/api/chatgpt/'+path,{...init,credentials:'include',signal:AbortSignal.timeout(60000)})
@@ -47,18 +50,25 @@ function ChatGPTButton({onPress,...props}:Omit<ButtonHTMLAttributes<HTMLButtonEl
   }}/>
 }
 
-export default function ChatGPTConsultation({boardId,initialImage,initialQuestion,beforeOpen,onSelectImage,onClose,onInsertImage,onInsertText}:{boardId:string;initialImage?:File;initialQuestion?:string;beforeOpen:()=>Promise<void>;onSelectImage:()=>void;onClose:()=>void;onInsertImage:(file:File)=>Promise<void>;onInsertText:(text:string)=>Promise<void>}){
-  const key=`chatgpt-browser:${personalStorageScope()}:${boardId}`
+export default function ChatGPTConsultation({boardId,initialImage,initialQuestion,transcription,beforeOpen,onSelectImage,onClose,onInsertImage,onInsertText}:{boardId:string;initialImage?:File;initialQuestion?:string;transcription?:TranscriptionTarget;beforeOpen:()=>Promise<void>;onSelectImage:()=>void;onClose:()=>void;onInsertImage:(file:File)=>Promise<void>;onInsertText:(text:string,insertion?:TextInsertion)=>Promise<void>}){
+  const transcribing=Boolean(transcription),key=transcribing?transcriptionKey(boardId):`chatgpt-browser:${personalStorageScope()}:${boardId}`
   const online=useOnline(),[state,setState]=useState<State>({state:'closed'}),[loaded,setLoaded]=useState(false)
-  const [mode,setMode]=useState<'device'|'pc'>(()=>sessionStorage.getItem(`chatgpt-mode:${personalStorageScope()}`)==='pc'?'pc':'device'),[officialOpened,setOfficialOpened]=useState(false)
+  const [mode,setMode]=useState<'device'|'pc'>(()=>!transcribing&&sessionStorage.getItem(`chatgpt-mode:${personalStorageScope()}`)==='pc'?'pc':'device'),[officialOpened,setOfficialOpened]=useState(false)
   const [question,setQuestion]=useState(''),[files,setFiles]=useState<File[]>([]),[messages,setMessages]=useState<Message[]>([]),[job,setJob]=useState<string|null>(null)
   const [conversation,setConversation]=useState<string|null>(null)
+  const [target,setTarget]=useState<TranscriptionTarget|null>(transcription??null),[result,setResult]=useState<TranscriptionResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attachments,setAttachments]=useState(false),[manualPaste,setManualPaste]=useState(false),[pasted,setPasted]=useState('')
   const input=useRef<HTMLInputElement>(null),answers=useRef(new Map<string,HTMLDivElement>()),clipboardPreview=useRef<HTMLDivElement>(null),shell=useRef<HTMLDivElement>(null)
-  const alive=useRef(true),latest=useRef({question,files,messages,job,conversation}),bottom=useRef<HTMLDivElement>(null)
+  const alive=useRef(true),latest=useRef({question,files,messages,job,conversation,target,result}),bottom=useRef<HTMLDivElement>(null)
+  const autoStarted=useRef(false),insertionAttempted=useRef<string|null>(null)
   const sending=useRef(false)
   const pc=mode==='pc',pending=pc&&Boolean(job)
-  useEffect(()=>{latest.current={question,files,messages,job,conversation}},[question,files,messages,job,conversation])
+  const submitTranscription=useEffectEvent(()=>{void send()})
+  const insertTranscription=useEffectEvent((text:string)=>{
+    if(!text.trim()){setError('ChatGPT devolvió una transcripción vacía. Tus trazos se conservan.');return}
+    void insert(text,null,true)
+  })
+  useEffect(()=>{latest.current={question,files,messages,job,conversation,target,result}},[question,files,messages,job,conversation,target,result])
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
   useEffect(()=>{
     const viewport=window.visualViewport
@@ -81,15 +91,17 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
     void(async()=>{
       try{
         const db=await deviceDB,saved=await db.get('meta',key)
-        const legacy=!saved?await db.get('meta',`chatgpt-draft:${personalStorageScope()}:${boardId}`):null
+        const legacy=!saved&&!transcribing?await db.get('meta',`chatgpt-draft:${personalStorageScope()}:${boardId}`):null
         if(stopped)return
-        setQuestion(initialQuestion??saved?.question??'');setMessages(Array.isArray(saved?.messages)?saved.messages:legacy?.answer?[{id:'respuesta-pegada-anterior',role:'assistant',text:legacy.answer}]:[]);setJob(saved?.job??null)
-        setConversation(saved?.conversation??null)
+        const resuming=transcribing&&Boolean(saved?.job||(saved?.result&&!saved.result.inserted))
+        setQuestion((resuming?saved?.question:initialQuestion)??saved?.question??'');setMessages(Array.isArray(saved?.messages)?saved.messages:legacy?.answer?[{id:'respuesta-pegada-anterior',role:'assistant',text:legacy.answer}]:[]);setJob(saved?.job??null)
+        setConversation(transcribing?null:saved?.conversation??null)
+        setTarget(resuming?saved.target:transcription??null);setResult(resuming?saved.result??null:null)
         const old:File[]=(saved?.files??[]).filter((file:unknown)=>file instanceof Blob).map((file:File)=>new File([file],file.name??'ejercicio.png',{type:file.type}))
-        setFiles(initialImage?[...old,initialImage].slice(-3):old);setLoaded(true)
+        setFiles(transcribing?(resuming?old:initialImage?[initialImage]:old):initialImage?[...old,initialImage].slice(-3):old);setLoaded(true)
       }catch{if(!stopped){setLoaded(true);setError('No se pudo recuperar el borrador de este dispositivo.')}}
     })();return()=>{stopped=true}
-  },[key,boardId,initialImage,initialQuestion])
+  },[key,boardId,initialImage,initialQuestion,transcription,transcribing])
   async function save(){if(loaded)await(await deviceDB).put('meta',latest.current,key)}
   useEffect(()=>{if(!loaded)return;const timer=setTimeout(()=>{void save().catch(()=>setError('No se pudo guardar el chat en este dispositivo.'))},200);return()=>clearTimeout(timer)})
   useEffect(()=>{
@@ -115,10 +127,10 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
         if(stopped)return
         if(result.status==='complete'){
           const message:Message={id:result.id,role:'assistant',text:result.text??''}
-          const next={...latest.current,job:null,conversation:result.conversation??latest.current.conversation,messages:latest.current.messages.some(m=>m.id===result.id)?latest.current.messages:[...latest.current.messages,message]}
+          const next={...latest.current,job:null,conversation:result.conversation??latest.current.conversation,messages:latest.current.messages.some(m=>m.id===result.id)?latest.current.messages:[...latest.current.messages,message],...(transcribing?{result:{id:result.id,text:result.text??'',inserted:false}}:{})}
           await(await deviceDB).put('meta',next,key)
           if(stopped)return
-          latest.current=next;setMessages(next.messages);setConversation(next.conversation);setJob(null);setError('')
+          latest.current=next;setMessages(next.messages);setConversation(next.conversation);setJob(null);setResult(next.result);setError('')
         }else if(result.status==='error'){setJob(null);setError(result.error??'Revisá ChatGPT en la PC.');setState({state:'attention'})}
         else timer=setTimeout(()=>void poll(),1000)
       }catch(cause){if(!stopped){
@@ -127,7 +139,18 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
       }}
     }
     void poll();return()=>{stopped=true;clearTimeout(timer)}
-  },[pc,job,online,loaded,key])
+  },[pc,job,online,loaded,key,transcribing])
+  useEffect(()=>{
+    // The action is explicitly requested by choosing transcription. Only the
+    // optional PC bridge can submit and return a response automatically.
+    if(!transcribing||!pc||!loaded||!online||busy||job||result||!target||!files.length||!question.trim()||state.state!=='ready'||autoStarted.current)return
+    autoStarted.current=true;submitTranscription()
+  },[transcribing,pc,loaded,online,busy,job,result,target,files,question,state.state])
+  useEffect(()=>{
+    if(!transcribing||!pc||!result||result.inserted||!target||busy||insertionAttempted.current===result.id)return
+    insertionAttempted.current=result.id
+    insertTranscription(result.text)
+  },[transcribing,pc,result,target,busy])
   useEffect(()=>{bottom.current?.scrollIntoView({block:'end'})},[messages,job])
   async function connect(){
     setBusy(true);setError('')
@@ -170,7 +193,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
       const payload=new FormData();payload.set('request_id',crypto.randomUUID());payload.set('prompt',question.trim());files.forEach(file=>payload.append('files',file))
       if(conversation)payload.set('conversation',conversation)
       const result=await api<Job>('consult',{method:'POST',body:payload})
-      const next={question:'',files:[],messages:[...messages,{id:crypto.randomUUID(),role:'user' as const,text:question.trim(),files:files.map(file=>file.name)}],job:result.id,conversation}
+      const next={...latest.current,question:'',files:[],messages:[...messages,{id:crypto.randomUUID(),role:'user' as const,text:question.trim(),files:files.map(file=>file.name)}],job:result.id,conversation}
       try{await(await deviceDB).put('meta',next,key)}catch{setError('La consulta se envió, pero no se pudo guardar el chat en este dispositivo. Esperá la respuesta antes de cerrar.')}
       latest.current=next
       if(alive.current){setMessages(next.messages);setQuestion('');setFiles([]);setJob(result.id)}
@@ -186,9 +209,14 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
     if(busy)return
     setBusy(true);setError('');setNotice('')
     try{
-      if(editable)await onInsertText(plainAssistantText(text))
+      if(editable||transcribing)await onInsertText(plainAssistantText(text),transcribing&&target?{id:`chatgpt-transcription-${target.id}`,position:target.position}:undefined)
       else{if(!element)throw new Error('No se pudo preparar la respuesta.');await onInsertImage(await responseImage(element))}
-      setNotice('Respuesta agregada a la pizarra.');setManualPaste(false)
+      if(transcribing&&target){
+        const completed={id:result?.id??target.id,text,inserted:true}
+        const next={...latest.current,result:completed};await(await deviceDB).put('meta',next,key)
+        latest.current=next;setResult(completed)
+      }
+      setNotice(transcribing?'Transcripción agregada como texto editable.':'Respuesta agregada a la pizarra.');setManualPaste(false)
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function paste(){
@@ -202,9 +230,9 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   async function close(){try{await save();onClose()}catch{setError('No se pudo guardar el chat antes de cerrar.')}}
   return <div ref={shell} className="chatgpt-backdrop" onPointerDown={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
     <section className="chatgpt-consultation" role="dialog" aria-modal="true" aria-label="ChatGPT">
-      <header><div><h2>ChatGPT</h2><small>{!online?'Sin conexión':!pc?'En este dispositivo · sin PC':state.state==='ready'?'Tu cuenta · conectado desde la PC':job?'Consultando…':'Tu cuenta personal · navegador de la PC'}</small></div><ChatGPTButton aria-label="Cerrar ChatGPT" disabled={busy} onPress={()=>void close()}>×</ChatGPTButton></header>
+      <header><div><h2>{transcribing?'Transcribir con ChatGPT':'ChatGPT'}</h2><small>{!online?'Sin conexión':!pc?'En este dispositivo · sin PC':state.state==='ready'?'Tu cuenta · conectado desde la PC':job?'Consultando…':'Tu cuenta personal · navegador de la PC'}</small></div><ChatGPTButton aria-label="Cerrar ChatGPT" disabled={busy} onPress={()=>void close()}>×</ChatGPTButton></header>
       <div className="chatgpt-mode" role="group" aria-label="Dónde consultar ChatGPT"><ChatGPTButton disabled={busy} aria-pressed={!pc} onPress={()=>changeMode('device')}>En este dispositivo</ChatGPTButton><ChatGPTButton disabled={busy} aria-pressed={pc} onPress={()=>changeMode('pc')}>Con PC</ChatGPTButton></div>
-      {!pc&&<div className="chatgpt-connect"><ChatGPTButton disabled={!online||!loaded||busy} onPress={()=>void openOnDevice()}>{officialOpened?'Volver a abrir ChatGPT':'Abrir ChatGPT en este dispositivo'}</ChatGPTButton><p>Consultá allí con tu cuenta. Copiá la respuesta y usá «Pegar respuesta en la pizarra» al volver.</p><a href={CHATGPT_URL} target="_blank" rel="noopener noreferrer">Abrir directamente</a></div>}
+      {!pc&&<div className="chatgpt-connect"><ChatGPTButton disabled={!online||!loaded||busy} onPress={()=>void openOnDevice()}>{officialOpened?'Volver a abrir ChatGPT':'Abrir ChatGPT en este dispositivo'}</ChatGPTButton><p>{transcribing?'Compartí el recorte y la instrucción con ChatGPT, o descargalos para adjuntarlos allí. Copiá su respuesta y tocá «Pegar transcripción» al volver.':'Consultá allí con tu cuenta. Copiá la respuesta y usá «Pegar respuesta en la pizarra» al volver.'}</p><a href={CHATGPT_URL} target="_blank" rel="noopener noreferrer">Abrir directamente</a></div>}
       {pc&&online&&state.state!=='ready'&&!job&&<div className="chatgpt-connect"><ChatGPTButton disabled={busy} onPress={()=>void connect()}>{busy?'Conectando…':state.state==='manual_login'?'Ya inicié sesión · activar':state.state==='verification'?'Completar verificación en Chrome normal':state.state==='loading'?'Abrir Chrome normal':['login','attention'].includes(state.state)?'Iniciar sesión en Chrome normal':'Conectar mi ChatGPT en la PC'}</ChatGPTButton><p>{state.state==='manual_login'?'Completá el acceso y cualquier verificación en el Chrome normal de la PC. No toques Activar mientras veas «Verificá que sos humano» o el logo cargando. Activá únicamente cuando aparezca tu chat y puedas escribir allí.':state.state==='login'?'Google puede rechazar un navegador automatizado. Abrí Chrome normal para iniciar sesión antes de activar la conexión.':state.state==='verification'?'ChatGPT está pidiendo una verificación humana. Las consultas están pausadas. Completala en Chrome de la PC; si no avanza, el botón vuelve a abrir ese perfil sin automatización.':state.state==='loading'?'ChatGPT todavía está cargando en la PC. La app espera sin recargarlo. Si no avanza, abrí Chrome normal para revisar el acceso.':'La primera vez se abre Chrome normal en la PC. Iniciá sesión allí y luego activá la conexión.'}</p></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!messages.length&&<p className="chatgpt-empty">{pc?'Preguntá sobre tu ejercicio o adjuntá una selección de la pizarra.':'Podés preparar tu pregunta y los archivos acá. La consulta se hace en ChatGPT.'}</p>}
@@ -214,6 +242,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
           {message.role==='assistant'&&<div className="chatgpt-message-actions"><ChatGPTButton disabled={busy} onPress={()=>void insert(message.text,answers.current.get(message.id)??null)}>Insertar en pizarra</ChatGPTButton><ChatGPTButton disabled={busy} onPress={()=>void insert(message.text,null,true)}>Texto editable</ChatGPTButton></div>}
         </article>)}
         {pending&&<p role="status">ChatGPT está resolviendo tu consulta…</p>}{!pc&&job&&<p className="chatgpt-empty">Hay una consulta pendiente en la conexión con PC. Podés retomarla en «Con PC».</p>}<div ref={bottom}/>
+        {transcribing&&pc&&result&&!result.inserted&&result.text.trim()&&<ChatGPTButton disabled={busy} onPress={()=>void insert(result.text,null,true)}>Reintentar insertar texto</ChatGPTButton>}
       </div>
       {error&&<p className="chatgpt-error" role="alert">{error}</p>}{notice&&<p className="chatgpt-notice" role="status">{notice}</p>}
       <footer>
@@ -223,7 +252,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
         <input ref={input} hidden type="file" multiple accept="image/png,image/jpeg,image/webp,application/pdf" onChange={e=>{choose(Array.from(e.target.files??[]));e.target.value=''}}/>
         {!pc&&typeof navigator.share==='function'&&Boolean(question.trim()||files.length)&&(!files.length||navigator.canShare?.({files}))&&<ChatGPTButton className="chatgpt-share" disabled={busy||!online} onPress={()=>void shareQuestion()}>Compartir consulta…</ChatGPTButton>}
         {!pc&&files.length>0&&<p className="chatgpt-file-help">Compartí con ChatGPT si aparece entre tus aplicaciones, o descargá los archivos y adjuntalos allí.</p>}
-        <ChatGPTButton className="chatgpt-paste" disabled={busy} onPress={()=>void paste()}>Pegar respuesta en la pizarra</ChatGPTButton>
+        <ChatGPTButton className="chatgpt-paste" disabled={busy} onPress={()=>void paste()}>{transcribing?'Pegar transcripción':'Pegar respuesta en la pizarra'}</ChatGPTButton>
         {manualPaste&&<div className="chatgpt-manual-paste"><textarea aria-label="Respuesta para pegar en la pizarra" value={pasted} onChange={e=>setPasted(e.target.value)} placeholder="Pegá acá la respuesta"/><ChatGPTButton disabled={busy||!pasted.trim()} onPress={()=>void insert(pasted,clipboardPreview.current)}>Insertar</ChatGPTButton></div>}
       </footer>
       <div className="chatgpt-clipboard-render" aria-hidden="true"><div ref={clipboardPreview} className="chatgpt-response-preview"><AssistantMessageText text={pasted}/></div></div>

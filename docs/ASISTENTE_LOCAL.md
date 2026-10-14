@@ -13,6 +13,20 @@
 
 El ejercicio y el borrador permanecen en el dispositivo. La consulta y la respuesta se gestionan en la interfaz oficial; la pizarra no lee el chat oficial ni recoge sus respuestas automáticamente. Las respuestas anteriores del modo con PC se conservan.
 
+## Transcribir manuscritos
+
+El menú IA ofrece **Consultar con ChatGPT** y **Transcribir manuscrito con ChatGPT**. Se retiraron Datalab, el escaneo de documentos y los reconocedores y entrenamientos locales, incluidas sus rutas del servidor. Los archivos de ejemplos ya guardados y las pizarras no se borran ni se modifican al retirar esos motores.
+
+Seleccioná los trazos o marcá un área del manuscrito, imagen o página de PDF. La acción prepara solamente ese recorte PNG y una instrucción de transcribir en español, conservando espacios y párrafos, sin resolver el ejercicio. La transcripción se agrega como **texto editable junto al recorte** y mantiene la tinta original.
+
+En **En este dispositivo**, compartí o descargá el recorte, copiá la instrucción y enviá la consulta desde ChatGPT. Copiá su respuesta y tocá **Pegar transcripción** al volver. La app no puede enviar ni leer automáticamente dentro del chat oficial de la tablet.
+
+Esta acción siempre comienza en **En este dispositivo**, aunque la consulta general recuerde una conexión anterior con PC.
+
+En **Con PC**, si la conexión está lista, la selección y la instrucción se envían automáticamente y el resultado se inserta al terminar. Una transcripción pendiente se recupera al volver a esta opción después de recargar, sin reenviarla. La inserción tiene un identificador estable para evitar duplicados si se interrumpe el guardado. Los resultados vacíos o errores conservan el manuscrito.
+
+La selección para calculadora y calendario usa texto editable; transcribí primero los manuscritos con ChatGPT.
+
 El APK existente abre ChatGPT mediante Android Chrome Custom Tabs, con panel lateral cuando Chrome lo admite. En la PWA o navegador se abre una ventana o pestaña aparte. No hace falta reinstalar el APK para estos cambios web. Chrome gestiona el acceso a la cuenta; no se utiliza un WebView que almacene las credenciales en la app.
 
 ChatGPT necesita internet, aunque la PC puede estar apagada y la tablet puede usar otra red. Copiar preguntas, consultar lo guardado e insertar respuestas copiadas funcionan sobre las pizarras locales. Las pizarras compartidas se sincronizan cuando vuelve su servidor; este cambio no sustituye ese servidor.

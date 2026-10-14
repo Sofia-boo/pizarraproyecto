@@ -60,9 +60,9 @@ test('offline private study opens in a new window, imports PDF, draws, calculate
   await expect.poll(async()=>(await saved(offline))?.content.media.length).toBe(1)
   expect((await saved(offline)).content.strokes).toHaveLength(1)
   await offline.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
-  await offline.getByRole('menuitem',{name:'OCR Datalab · PDF completo o imagen…'}).click()
-  await expect(offline.getByRole('dialog',{name:'Transcripción con Datalab'})).toContainText('Sin conexión:')
-  await expect(offline.getByRole('button',{name:'Transcribir con Datalab',exact:true})).toBeDisabled()
+  await offline.getByRole('menuitem',{name:/Consultar con ChatGPT/}).click()
+  await expect(offline.getByRole('dialog',{name:'ChatGPT',exact:true})).toContainText('Sin conexión')
+  await expect(offline.getByRole('button',{name:'Abrir ChatGPT en este dispositivo',exact:true})).toBeDisabled()
 })
 
 test('cached signed-in shared board reopens offline and synchronizes its edits as soon as the connection returns',async({page,context})=>{

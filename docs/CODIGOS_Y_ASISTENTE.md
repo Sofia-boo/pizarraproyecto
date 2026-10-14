@@ -10,20 +10,7 @@ El seguimiento transmite centro, zoom y tamaño de pantalla para encuadrar la vi
 
 ## Asistente de estudio
 
-El asistente generativo local fue reemplazado por **Consultar con ChatGPT**. El chat utiliza tu cuenta personal a través de Chrome de la PC y admite consultas desde la PC o la tablet. El flujo vigente está en [ChatGPT personal](ASISTENTE_LOCAL.md). Requiere conexión y la PC encendida; no se ejecuta el modelo local descrito en versiones anteriores.
-
-### Comportamiento histórico del asistente local
-
-- El panel contiene el chat, la entrada de texto, el botón para descargar o cargar la IA y **Adjuntar**. Ese menú permite elegir un PDF, imagen o archivo de texto/código, o marcar una selección de la pizarra. Las acciones para insertar una respuesta o imagen están en **⋯** dentro de cada mensaje.
-- Los PDF importados a partir de esta versión conservan hasta 16.000 caracteres de texto por página. Al preguntar se buscan fragmentos relevantes en todas las páginas, con un contexto acotado para la tablet. Los PDF anteriores o escaneados se consultan seleccionando una página como imagen. No se procesan todos los archivos simultáneamente.
-- Las igualdades aritméticas explícitas de respuestas matemáticas se comprueban internamente con Math.js y se corrigen cuando son compatibles con la calculadora. Esto no verifica una demostración ni toda una solución. Las fórmulas se presentan con KaTeX y sus fuentes locales, también sin internet; al insertarlas como texto en la pizarra, se convierte la notación LaTeX básica a texto legible.
-- Los resultados comprobados se guardan por cuenta en este navegador y se recuperan como contexto para consultas relacionadas. Es memoria de cálculos verificados; no es entrenamiento ni modificación de pesos del modelo.
-- El menú **⋯** de una respuesta permite escribirla en la pizarra o graficarla si contiene una función compatible. El de una imagen permite colocar una copia. No se incorpora un modelo generador de fotografías.
-- Las preguntas de seguimiento aparecen mientras la página está visible y hay actividad, por defecto cada diez minutos. Se pueden pausar desde el aviso. Son avisos locales y no ejecutan inferencia pesada en segundo plano.
-- Al agregar una selección se envía exactamente el recuadro marcado, incluso dentro de una página de PDF rotada o ampliada. En esa consulta no se agrega automáticamente el texto completo de la página; la selección sirve como contexto visual.
-- Los manuscritos siguen teniendo selección manual. Su lectura puede ser imprecisa; no se escanea continuamente la escritura.
-
-La IA necesita descargar sus modelos una vez por dispositivo. Para tener imágenes y PDF sin conexión también hay que preparar la copia de la pizarra. La colaboración y el OCR de Datalab necesitan internet y el servidor encendido.
+**Consultar con ChatGPT** abre el chat oficial desde el dispositivo. **Transcribir manuscrito con ChatGPT** prepara un recorte y una instrucción de transcripción; al volver, **Pegar transcripción** inserta texto editable junto al manuscrito. La tablet funciona sin la PC, con internet y transferencia manual. La conexión con PC sigue siendo una opción explícita. Se retiraron los modelos locales y Datalab; no se usan claves de OpenAI. El flujo vigente está en [ChatGPT personal](ASISTENTE_LOCAL.md).
 
 ## Conexión de Vercel
 

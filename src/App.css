@@ -110,25 +110,9 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
 .ai-popover button small { display: block; font-weight: 400; opacity: .75; margin-top: 3px; }
 .ai-popover details { border-top: 1px solid var(--border-color, #d5dbea); margin-top: 6px; padding-top: 8px; }
 .ai-popover summary { cursor: pointer; padding: 10px; font-size: 13px; }
-.recognition-dialog.ocr-dialog { width: min(700px, 94vw); max-height: 90dvh; overflow-y: auto; box-sizing: border-box; }
-.ocr-dialog h3, .ocr-dialog p { margin: 0; }
-.ocr-dialog p { line-height: 1.5; }
-.ocr-dialog input[type=file] { display: block; max-width: 100%; min-height: 44px; margin-top: 8px; }
-.ocr-dialog button { min-height: 44px; }
-.ocr-dialog select { min-height: 44px; max-width: 100%; }
-.ocr-auto-insert { display: flex; align-items: center; gap: 8px; }
-.ocr-auto-insert input { width: 20px; height: 20px; flex-shrink: 0; }
-.ocr-dialog .recognition-actions { flex-wrap: wrap; }
-.ocr-selection-instruction { position: absolute; z-index: 70; left: 50%; top: 145px; transform: translateX(-50%); width: min(500px,calc(100vw - 32px)); box-sizing: border-box; padding: 12px; border-radius: 12px; background: #fff; color: #202020; box-shadow: 0 4px 20px #0002; }
-.ocr-selection-instruction button { display: block; margin-top: 8px; padding: 8px 12px; cursor: pointer; }
-.recognition-dialog:not(.ocr-dialog) { max-height: 90dvh; overflow-y: auto; box-sizing: border-box; }
-.recognition-actions { flex-wrap: wrap; }
-.ocr-file-name { overflow-wrap: anywhere; }
-.ocr-preview { display: block; max-width: 100%; max-height: 230px; object-fit: contain; margin: 12px auto; border-radius: 8px; }
-.ocr-dialog input.ocr-camera-input { display: none; }
-@media (max-width: 600px) {
-  .recognition-dialog.ocr-dialog { padding: 16px; }
-}
+.chatgpt-selection-instruction { position: absolute; z-index: 70; left: 50%; top: 145px; transform: translateX(-50%); width: min(500px,calc(100vw - 32px)); box-sizing: border-box; padding: 12px; border-radius: 12px; background: #fff; color: #202020; box-shadow: 0 4px 20px #0002; }
+.chatgpt-selection-instruction button { display: block; margin-top: 8px; padding: 8px 12px; cursor: pointer; }
+.recognition-dialog { max-height: 90dvh; overflow-y: auto; box-sizing: border-box; }
 
 /* Buscador compacto debajo del nombre: ventana hacia la derecha. */
 .board-search-dock {

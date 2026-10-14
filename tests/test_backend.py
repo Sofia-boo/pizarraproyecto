@@ -10,6 +10,14 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_retired_ocr_routes_are_absent_and_boards_still_load(self):
+        paths={route.path for route in self.app.routes if hasattr(route,'path')}
+        self.assertFalse(any(path.startswith(('/recognize/','/api/ocr/')) for path in paths))
+        with TestClient(self.app,base_url='https://testserver') as client:
+            self.assertEqual(client.post('/api/auth/guest',json={'name':'OCR retirado','password':'retired-password'}).status_code,200)
+            self.assertEqual(client.get('/api/library').status_code,200)
+            self.assertEqual(client.get('/healthz').json(),{'ok':True})
+
     def test_chatgpt_restart_only_resumes_the_requesting_users_activated_browser(self):
         import time
         from unittest.mock import patch
@@ -157,109 +165,6 @@ class BackendTest(unittest.TestCase):
         self.assertIsNone(scene_patch({}, {'texts':[{'id':'large','text':'x'*512001}]}))
         self.assertIsNone(scene_patch({}, {'strokes':[{'points':[]}]}))
 
-    def test_datalab_transcribes_whole_document_keeps_private_jobs_and_reports_failed_pages(self):
-        import httpx
-        from unittest.mock import patch
-        calls=[]
-        def handler(request):
-            calls.append(request)
-            self.assertEqual(request.headers.get('X-API-Key'),'private-test-key')
-            if request.method=='POST':
-                self.assertNotIn(b'max_pages',request.content)
-                self.assertIn(b'accurate',request.content)
-                self.assertIn(b'name="exact_transcription"\r\n\r\ntrue',request.content)
-                return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/test-job'})
-            return httpx.Response(200,json={'status':'complete','success':True,'markdown':'# Página 1\nTexto completo\n\n# Página 3\nFinal','page_count':3,'metadata':{'failed_pages':[1]}})
-        client_class=httpx.AsyncClient
-        factory=lambda **kwargs: client_class(transport=httpx.MockTransport(handler),**kwargs)
-        with TestClient(self.app,base_url='https://testserver') as a, TestClient(self.app,base_url='https://testserver') as b:
-            self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,401)
-            a.post('/api/auth/guest',json={'name':'OCR owner','password':'test-password'})
-            b.post('/api/auth/guest',json={'name':'OCR outsider','password':'test-password'})
-            with patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':''}):
-                self.assertEqual(a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')}).status_code,503)
-            with patch.dict(os.environ,{'DATALAB_API_KEY':'private-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=factory):
-                response=a.post('/api/ocr/documents',files={'file':('test.pdf',b'%PDF-test','application/pdf')})
-                self.assertEqual(response.status_code,200,response.text)
-                job=response.json()['id']
-                self.assertNotIn('private-test-key',response.text)
-                self.assertEqual(b.get('/api/ocr/documents/'+job).status_code,404)
-                result=a.get('/api/ocr/documents/'+job)
-                self.assertEqual(result.status_code,200,result.text)
-                self.assertIn('Final',result.json()['text'])
-                self.assertEqual(result.json()['failed_pages'],[1])
-                self.assertIn('2',result.json()['warning'])
-                self.assertEqual(a.get('/api/ocr/documents/'+job).json(),result.json())
-                self.assertEqual(len(calls),2)
-
-    def test_ocr_pairing_is_private_expires_and_cannot_be_reused(self):
-        import json,hashlib,time
-        from unittest.mock import patch
-        directory=Path(self.storage.name)
-        pairing=directory/'ocr_pairing.json'
-        target=directory/'datalab.json'
-        ticket='a'*64
-        def prepare(expires):
-            pairing.write_text(json.dumps({'digest':hashlib.sha256(ticket.encode()).hexdigest(),'expires':expires}),encoding='utf-8')
-        try:
-            with TestClient(self.app,base_url='https://testserver') as client, patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':''}):
-                payload={'ticket':ticket,'api_key':'private-pairing-test-key'}
-                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
-                prepare(time.time()+60)
-                self.assertEqual(client.post('/api/ocr/setup-private',json={**payload,'ticket':'b'*64}).status_code,403)
-                self.assertFalse(target.exists())
-                prepare(time.time()-1)
-                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
-                prepare(time.time()+60)
-                linked=client.post('/api/ocr/setup-private',json=payload)
-                self.assertEqual(linked.status_code,200,linked.text)
-                self.assertEqual(linked.json(),{'configured':True})
-                self.assertFalse(pairing.exists())
-                self.assertEqual(json.loads(target.read_text())['api_key'],payload['api_key'])
-                self.assertEqual(client.post('/api/ocr/setup-private',json=payload).status_code,403)
-                self.assertEqual(client.get('/api/ocr/status').status_code,401)
-                client.post('/api/auth/guest',json={'name':'Pairing status','password':'test-password'})
-                self.assertEqual(client.get('/api/ocr/status').json(),{'configured':True})
-                self.assertEqual(client.get('/api/ocr/setup-private').status_code,405)
-        finally:
-            pairing.unlink(missing_ok=True);target.unlink(missing_ok=True)
-
-    def test_ocr_accepts_vercel_key_name_and_image_without_exposing_secrets(self):
-        import httpx
-        from unittest.mock import patch
-        client_class=httpx.AsyncClient
-        def handler(request):
-            self.assertEqual(request.headers['X-API-Key'],'private-vercel-test-key')
-            self.assertIn(b'image/png',request.content)
-            self.assertIn(b'fast',request.content)
-            self.assertNotIn(b'accurate',request.content)
-            self.assertIn(b'name="paginate"\r\n\r\nfalse',request.content)
-            self.assertIn(b'disable_image_captions',request.content)
-            self.assertIn(b'name="exact_transcription"\r\n\r\ntrue',request.content)
-            return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/image-job'})
-        with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'','ocrkey':'private-vercel-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
-            client.post('/api/auth/guest',json={'name':'Image OCR','password':'test-password'})
-            result=client.post('/api/ocr/documents',files={'file':('manuscrito.png',b'\x89PNG-test','image/png')})
-            self.assertEqual(result.status_code,200,result.text)
-            self.assertNotIn('private-vercel-test-key',result.text)
-            self.assertNotIn('datalab.to',result.text)
-
-    def test_ocr_precision_override_and_invalid_modes(self):
-        import httpx
-        from unittest.mock import patch
-        client_class=httpx.AsyncClient
-        calls=[]
-        def handler(request):
-            calls.append(request)
-            self.assertIn(b'accurate',request.content)
-            return httpx.Response(200,json={'success':True,'request_check_url':'https://www.datalab.to/api/v1/convert/precise-image'})
-        with TestClient(self.app,base_url='https://testserver') as client,patch.dict(os.environ,{'DATALAB_API_KEY':'private-test-key'}),patch('reconocimiento_local.datalab_api.httpx.AsyncClient',side_effect=lambda **kwargs:client_class(transport=httpx.MockTransport(handler),**kwargs)):
-            client.post('/api/auth/guest',json={'name':'Precise OCR','password':'test-password'})
-            file={'file':('test.png',b'\x89PNG-test','image/png')}
-            self.assertEqual(client.post('/api/ocr/documents',files=file,data={'mode':'accurate'}).status_code,200)
-            self.assertEqual(client.post('/api/ocr/documents',files=file,data={'mode':'unlimited'}).status_code,422)
-            self.assertEqual(len(calls),1)
-
     def test_media_permissions_are_committed_before_live_notification(self):
         from unittest.mock import patch
         from reconocimiento_local.server import db_connection
@@ -349,7 +254,7 @@ class BackendTest(unittest.TestCase):
             "assert db.execute('SELECT content FROM boards WHERE id=?', (__import__('sys').argv[1],)).fetchone(); "
             "db.close()", board_id], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((Path(self.storage.name) / 'letter_samples.json').is_file())
+        self.assertFalse((Path(self.storage.name) / 'letter_samples.json').exists())
         paths = set(self.app.openapi()['paths'])
         self.assertIn('/api/excel/import', paths)
         self.assertTrue(any('history' in path for path in paths))
@@ -432,92 +337,6 @@ class BackendTest(unittest.TestCase):
                 result = client.put(f'/api/boards/{board}', json={'version': 1, 'content': invalid})
                 self.assertEqual(result.status_code, 422, result.text)
             self.assertEqual(client.get(f'/api/boards/{board}').json()['content'], content)
-
-    def test_local_handwriting_routes_recognize_seed_strokes_without_training_real_data(self):
-        import json
-        from reconocimiento_local import server
-        def ink(sample):
-            return {'strokes': [{'width': 3, 'points': [{'x': x*100+10, 'y': y*100+20} for x, y in path]}
-                                for path in sample['stroke_paths']]}
-        with TestClient(self.app, base_url='https://testserver') as client:
-            client.post('/api/auth/guest', json={'name': 'Handwriting validator', 'password': 'ink-password'})
-            letters = json.loads(server.LETTER_DATA.read_text(encoding='utf-8'))
-            letter = next(s for s in letters if s.get('stroke_paths'))
-            for route in ('letters', 'words', 'text-local', 'calendar-handwriting'):
-                result = client.post('/recognize/'+route, json=ink(letter))
-                self.assertEqual(result.status_code, 200, result.text)
-                self.assertTrue(result.json()['text'])
-            math_file = Path(self.storage.name)/'math_samples.json'
-            sample = next(s for s in json.loads(math_file.read_text(encoding='utf-8')) if s.get('stroke_paths'))
-            before = math_file.read_bytes()
-            for route in ('math-symbols', 'math-local'):
-                result = client.post('/recognize/'+route, json=ink(sample))
-                self.assertEqual(result.status_code, 200, result.text)
-                self.assertTrue(result.json()['text'])
-            self.assertEqual(client.post('/recognize/math-symbols/train', json={**ink(sample), 'label': ''}).status_code, 422)
-            self.assertEqual(math_file.read_bytes(), before)
-
-    def test_local_spaces_survive_scale_and_short_phrases(self):
-        from unittest.mock import patch
-        from reconocimiento_local import server
-        def stroke(x,scale):
-            return {'width':3,'points':[{'x':x*scale,'y':0},{'x':(x+40)*scale,'y':100*scale}]}
-        with TestClient(self.app,base_url='https://testserver') as client:
-            client.post('/api/auth/guest',json={'name':'Local spaces','password':'test-password'})
-            for scale in (.2,1,5):
-                # Character gaps are 8; the space between words is 35 (less than 65% of letter height).
-                body={'strokes':[stroke(x,scale) for x in (0,48,123,171)]}
-                with patch.object(server,'_predict_letter',side_effect=list('hola')):
-                    result=client.post('/recognize/text-local',json=body)
-                self.assertEqual(result.status_code,200,result.text)
-                self.assertEqual(result.json()['text'],'ho la')
-            with patch.object(server,'_predict_letter',side_effect=list('ab')):
-                result=client.post('/recognize/text-local',json={'strokes':[stroke(0,1),stroke(75,1)]})
-            self.assertEqual(result.json()['text'],'a b')
-            with patch.object(server,'_predict_letter',side_effect=list('hola')):
-                result=client.post('/recognize/text-local',json={'strokes':[stroke(x,1) for x in (0,48,96,144)]})
-            self.assertEqual(result.json()['text'],'hola')
-            # Espaciado amplio pero uniforme dentro de una palabra no agrega espacios falsos.
-            with patch.object(server,'_predict_letter',side_effect=list('hola')):
-                result=client.post('/recognize/text-local',json={'strokes':[stroke(x,1) for x in (0,75,150,225)]})
-            self.assertEqual(result.json()['text'],'hola')
-
-    def test_all_accounts_can_teach_words_letters_and_symbols_without_losing_previous_samples(self):
-        import json
-        from reconocimiento_local import server
-        letters_before=server.LETTER_DATA.read_bytes()
-        math_file=Path(self.storage.name)/'math_samples.json'
-        math_before=math_file.read_bytes()
-        word_path=server.WORD_DATA
-        words_before=word_path.read_bytes() if word_path.exists() else None
-        strokes=[{'width':3,'points':[{'x':0,'y':80},{'x':30,'y':0},{'x':60,'y':80}]},
-                 {'width':3,'points':[{'x':90,'y':80},{'x':120,'y':15},{'x':150,'y':80}]}]
-        try:
-            with TestClient(self.app,base_url='https://testserver') as a,TestClient(self.app,base_url='https://testserver') as b:
-                self.assertEqual(a.post('/recognize/words/train',json={'label':'hay una','strokes':strokes}).status_code,401)
-                for i,client in enumerate((a,b)):
-                    user=client.post('/api/auth/guest',json={'name':'Local teacher '+str(i),'password':'test-password'}).json()
-                    self.assertEqual(user['is_admin'],0)
-                    taught=client.post('/recognize/words/train',json={'label':'hay una','strokes':strokes})
-                    self.assertEqual(taught.status_code,200,taught.text)
-                moved=[{**s,'points':[{'x':p['x']*3+500,'y':p['y']*3-400} for p in s['points']]} for s in strokes]
-                result=b.post('/recognize/text-local',json={'strokes':moved})
-                self.assertEqual(result.json()['text'],'hay una')
-                self.assertEqual(server.LETTER_DATA.read_bytes(),letters_before)
-                self.assertEqual(math_file.read_bytes(),math_before)
-                letter=a.post('/recognize/letters/train',json={'label':'Ñ','strokes':strokes[:1]})
-                self.assertEqual(letter.status_code,200,letter.text)
-                self.assertEqual(json.loads(server.LETTER_DATA.read_text())[:-1],json.loads(letters_before))
-                symbol=b.post('/recognize/math-symbols/train',json={'label':'3','strokes':strokes[:1]})
-                self.assertEqual(symbol.status_code,200,symbol.text)
-                self.assertEqual(json.loads(math_file.read_text())[:-1],json.loads(math_before))
-                saved=word_path.read_bytes()
-                self.assertEqual(b.post('/recognize/words/train',json={'label':'','strokes':strokes}).status_code,400)
-                self.assertEqual(word_path.read_bytes(),saved)
-        finally:
-            server.LETTER_DATA.write_bytes(letters_before);math_file.write_bytes(math_before)
-            if words_before is None:word_path.unlink(missing_ok=True)
-            else:word_path.write_bytes(words_before)
 
     def test_deck_notes_and_large_fractional_fonts_save_without_an_upper_font_limit(self):
         import copy

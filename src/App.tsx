@@ -11,8 +11,9 @@ import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
-import DocumentOCR from './components/DocumentOCR'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
+import {TRANSCRIPTION_PROMPT,transcriptionKey} from './assistant/transcription'
+import {deviceDB} from './storage/device'
 import {beforeAppUpdate} from './pwa'
 import StudyCheckIn from './components/StudyCheckIn'
 import {fitFollowCamera,followCycle} from './collaborationCamera'
@@ -1035,28 +1036,11 @@ function App() {
 
   const [importStatus, setImportStatus] = useState('')
   const [recognizing, setRecognizing] = useState(false)
-  const [recognizedText, setRecognizedText] = useState<string | null>(null)
-  const [recognitionMode, setRecognitionMode] = useState<'text' | 'math'>('text')
-  const [documentOCR,setDocumentOCR]=useState<{file:File|null;boardId:string;position?:Point}|null>(null)
-  const [ocrPicking,setOCRPicking]=useState(false)
-  const [studyAssistant,setStudyAssistant]=useState<{boardId:string;file?:File;question?:string}|null>(null)
-  const selectionDestinationRef=useRef<'ocr'|'assistant'>('ocr')
+  const [selectionPicking,setSelectionPicking]=useState(false)
+  const [studyAssistant,setStudyAssistant]=useState<{boardId:string;file?:File;question?:string;transcription?:{id:string;position:Point}}|null>(null)
+  const selectionDestinationRef=useRef<'assistant'|'transcription'>('assistant')
   const [controlNavigation,setControlNavigation]=useState(false)
-  const [recognitionError, setRecognitionError] = useState('')
-  const [recognitionSuggestion, setRecognitionSuggestion] = useState<string | null>(null)
-  const [recognitionEngine, setRecognitionEngine] = useState('')
-  const [recognitionWarning, setRecognitionWarning] = useState('')
-  const recognitionIds = useRef<number[]>([])
-  // Una corrección de letra usa exactamente los trazos que fueron reconocidos.
-  // No entrenar jamás con las letras de una palabra ni al cerrar el diálogo.
-  const [singleLetterRecognition, setSingleLetterRecognition] = useState(false)
-  const [correctionType, setCorrectionType] = useState<'letter' | 'math'>('letter')
-  const predictedLetterRef = useRef('')
-  const letterStrokesRef = useRef<{ width: number; points: { x: number; y: number }[] }[]>([])
-  const correctionSavedLabelRef = useRef('')
-  const correctionSavingRef = useRef(false)
-  const [correctionSaving, setCorrectionSaving] = useState(false)
-  const [correctionNotice, setCorrectionNotice] = useState('')
+  const [selectionError,setSelectionError]=useState('')
   const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | 'calendar' | null>(null)
   const [visualEditor,setVisualEditor] = useState<string|null>(null)
   const [printPreview,setPrintPreview]=useState<PrintPreview|null>(null)
@@ -1380,7 +1364,7 @@ function App() {
     const displayColor = enPizarra&&!onPaper ? colorVisibleEnOscuro(stroke.color) : stroke.color
     // IMPORTANTE: al alejar mucho la vista, anchoOriginal * zoom puede
     // ser menor que 1 píxel y el antialiasing hace casi invisible la tinta.
-    // El mínimo es solo visual: NO modifica los trazos ni el OCR.
+    // El mínimo es solo visual: no modifica los trazos originales.
     const displayWidth = enPizarra
       ? Math.max(stroke.width, 1.7 / Math.max(0.01, cameraRef.current.zoom))
       : stroke.width
@@ -2751,7 +2735,7 @@ function App() {
     const hit=hitSelectionAt(toWorld(e.clientX,e.clientY))
     const visibleControl=control&&((hit?.kind==='graph'&&target.closest<HTMLElement>('[data-graph-id]')?.dataset.graphId===hit.id)||
       (hit?.kind==='video'&&target.closest<HTMLElement>('[data-video-id]')?.dataset.videoId===hit.id))
-    if(!navigation&&(tool!=='select'||(visibleControl&&!ocrPicking)))return
+    if(!navigation&&(tool!=='select'||(visibleControl&&!selectionPicking)))return
     if(e.button!==0&&!navigation)return
     e.stopPropagation();routedPointerRef.current=e.pointerId
     tabletPointerDown(e as unknown as ReactPointerEvent<HTMLCanvasElement>)
@@ -2894,7 +2878,7 @@ function App() {
 
   function pointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if(contextMenu) setContextMenu(null)
-    if (e.pointerType === 'touch' && !ocrPicking) {
+    if (e.pointerType === 'touch' && !selectionPicking) {
       e.preventDefault()
       // Rechazar la palma mientras se escribe con el lápiz activo.
       if (!loadedRef.current || pointerRef.current !== null || activeStroke.current) return
@@ -2954,7 +2938,7 @@ function App() {
     // Las herramientas reciben eventos de lápiz digital o mouse.
     if (editingRef.current) commitText()
     if (tool === 'select') {
-      if(ocrPicking){
+      if(selectionPicking){
         e.preventDefault();selectElement(null);marqueeRef.current={start:point,end:point}
         pointerRef.current=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId);redraw();return
       }
@@ -3024,7 +3008,7 @@ function App() {
   }
 
   function pointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (e.pointerType === 'touch' && !ocrPicking) {
+    if (e.pointerType === 'touch' && !selectionPicking) {
       const fingers = touchPointersRef.current
       if (!fingers.has(e.pointerId)) return
       e.preventDefault()
@@ -3166,7 +3150,7 @@ function App() {
       transformRef.current = null
       if(changed)scheduleSave()
     }
-    let recognitionCrop:Bounds|undefined
+    let selectionCrop:Bounds|undefined
     if (marqueeRef.current) {
       const area = rectangle(marqueeRef.current.start, marqueeRef.current.end)
       marqueeRef.current = null
@@ -3174,7 +3158,7 @@ function App() {
       // Un clic sin arrastrar limpia la selección.
       if (area.width > 2 / cameraRef.current.zoom || area.height > 2 / cameraRef.current.zoom) {
         selectInRectangle(area)
-        if(ocrPicking)recognitionCrop=area
+        if(selectionPicking)selectionCrop=area
       } else {
         selectElement(null)
       }
@@ -3182,8 +3166,8 @@ function App() {
     pointerRef.current = null
     lastPointerRef.current = null
     redraw()
-    if(ocrPicking&&groupRef.current.some(s=>s.kind==='stroke'||s.kind==='media')){
-      setOCRPicking(false);void openSelectionOCR(selectionDestinationRef.current,recognitionCrop)
+    if(selectionPicking&&groupRef.current.some(s=>s.kind==='stroke'||s.kind==='media')){
+      setSelectionPicking(false);void openChatGPTSelection(selectionDestinationRef.current,selectionCrop)
     }
   }
 
@@ -3313,7 +3297,7 @@ function App() {
   }, [])
 
   function selectTool(next: Tool) {
-    setOCRPicking(false)
+    setSelectionPicking(false)
     finishPendingPen()
     if (editingRef.current && (next !== 'text' || tool !== 'text')) commitText()
     setVisualEditor(null)
@@ -4092,7 +4076,7 @@ function App() {
     function onClipboardPaste(e: ClipboardEvent) {
       const target = e.target
       if (target instanceof Element && target.closest('input,textarea,select,[contenteditable],[role="textbox"]')) return
-      if (!loadedRef.current || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || importBusyRef.current) return
+      if (!loadedRef.current || libraryOpen || selectionError || handwrittenEvent || handwrittenError || importBusyRef.current) return
       // Excel suele adjuntar simultáneamente HTML y una miniatura de imagen.
       // Priorizar las celdas, para que Ctrl+V pegue una tabla EDITABLE.
       const clipboard=e.clipboardData
@@ -4139,12 +4123,9 @@ function App() {
     }
     window.addEventListener('paste', onClipboardPaste)
     return () => window.removeEventListener('paste', onClipboardPaste)
-  }, [theme, libraryOpen, recognizedText, recognitionError, handwrittenEvent, handwrittenError])
+  }, [theme, libraryOpen, selectionError, handwrittenEvent, handwrittenError])
 
-  // El OCR personalizado recibe exclusivamente coordenadas originales.
-  // No se crean imágenes gigantes ni se usan APIs de terceros.
-  // Permite que la calculadora use la selección actual sin alterar los dibujos.
-  // Los textos se leen directamente; los trazos se reconocen con el motor matemático local.
+  // La calculadora lee textos y matrices editables sin alterar los dibujos.
   async function getMathSelectionForDock(): Promise<string> {
     const selected = [...groupRef.current]
     const texts = selected.filter(item => item.kind === 'text')
@@ -4154,34 +4135,33 @@ function App() {
       const shape=shapesRef.current.find(item=>item.id===sel.id)
       if(shape){const cells=matrixCells(shape);const text=cells?matrixLabel(cells):shape.note?.text??shape.label;if(text)texts.push(text)}
     }
-    const ids = selected.filter(item => item.kind === 'stroke').map(item => Number(item.id))
-    const strokes = ids.map(id => strokesRef.current[id]).filter((item): item is Stroke => Boolean(item))
-    if (!strokes.length) return texts.join('\n')
-    const body = {
-      strokes: strokes.map(stroke => ({
-        width: stroke.width,
-        points: stroke.points.map(point => ({ x: point.x, y: point.y })),
-      })),
-    }
-    const response = await fetch(`${API_BASE}/recognize/math-local`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    })
-    const result: { text?: string; detail?: string } = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(result.detail || 'El reconocedor matemático no pudo leer la selección.')
-    return [...texts, result.text ?? ''].filter(Boolean).join('\n')
+    if (!texts.length && selected.some(item=>item.kind==='stroke')) throw new Error('Transcribí primero el manuscrito con ChatGPT y seleccioná el texto resultante.')
+    return texts.join('\n')
   }
 
-  function startOCRSelection(destination:'ocr'|'assistant'='ocr') {
+  function startChatGPTSelection(destination:'assistant'|'transcription'='assistant') {
     selectionDestinationRef.current=destination
-    setDocumentOCR(null);setStudyAssistant(null);setOpenMenu(null);selectTool('select');selectElement(null);setOCRPicking(true)
+    setStudyAssistant(null);setSelectionError('');setOpenMenu(null);selectTool('select');selectElement(null);setSelectionPicking(true)
   }
 
-  async function openSelectionOCR(destination:'ocr'|'assistant'=selectionDestinationRef.current,crop?:Bounds) {
+  async function transcribeSelection() {
+    const boardId=getActiveBoardId()
+    try {
+      const saved=await(await deviceDB).get('meta',transcriptionKey(boardId))
+      if(boardId!==getActiveBoardId())return
+      if(saved?.target&&(saved.job||(saved.result&&!saved.result.inserted))){
+        setOpenMenu(null);setStudyAssistant({boardId,transcription:saved.target});return
+      }
+    }catch{setSelectionError('No se pudo recuperar la transcripción pendiente.');return}
+    await openChatGPTSelection('transcription')
+  }
+
+  async function openChatGPTSelection(destination:'assistant'|'transcription'=selectionDestinationRef.current,crop?:Bounds) {
     setOpenMenu(null)
     const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
-    if(!boxes.length){startOCRSelection(destination);return}
+    if(!boxes.length){startChatGPTSelection(destination);return}
     const left=crop?.x??Math.min(...boxes.map(b=>b.x))-16,top=crop?.y??Math.min(...boxes.map(b=>b.y))-16
     const width=crop?.width??Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=crop?.height??Math.max(...boxes.map(b=>b.y+b.height))-top+16
     if(width<=0||height<=0)return
@@ -4214,141 +4194,21 @@ function App() {
       const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
       if(boardId!==getActiveBoardId())return
       const file=new File([blob],crop?'recorte-de-la-pizarra.png':'seleccion-de-la-pizarra.png',{type:'image/png'})
-      if(destination==='assistant')setStudyAssistant({boardId,file})
-      else setDocumentOCR({file,boardId,position:{x:left+16,y:top+height+8}})
-    }catch(e){setRecognitionError(e instanceof Error?e.message:'No se pudo preparar el OCR.')}
+      setStudyAssistant({boardId,file,...(destination==='transcription'?{question:TRANSCRIPTION_PROMPT,transcription:{id:crypto.randomUUID(),position:{x:left+16,y:top+height+8}}}:{})})
+    }catch(e){setSelectionError(e instanceof Error?e.message:'No se pudo preparar el recorte.')}
   }
 
-  async function recognizeSelection(mode: 'letter' | 'letter-train' | 'word-train' | 'text-local' | 'math-train' | 'math-symbol' | 'math-local' | 'event') {
-    if(navigator.onLine===false){setRecognitionError('El reconocimiento necesita conexión con el servidor. Tus trazos siguen guardados en este dispositivo.');return}
-    setRecognitionSuggestion(null)
-    setRecognitionEngine('')
-    setRecognitionWarning('')
-    setCorrectionNotice('')
-    setSingleLetterRecognition(false)
-    letterStrokesRef.current = []
-    correctionSavedLabelRef.current = ''
-
-    const ids = groupRef.current.filter(item => item.kind === 'stroke').map(item => Number(item.id))
-    const selectedTexts = mode === 'event'
-      ? groupRef.current.filter(item => item.kind === 'text')
-          .map(item => textsRef.current.find(t => t.id === item.id)?.text || '').filter(Boolean)
-      : []
-    if (!ids.length && !selectedTexts.length) {
-      alert(mode === 'event'
-        ? 'Seleccioná textos o trazos para agregar al calendario.'
-        : 'Primero seleccioná con el recuadro los trazos que querés reconocer.')
-      return
-    }
-
-    const interpretEventText = async (value: string) => {
-      const response = await fetch(`${API_BASE}/api/calendar/parse-handwriting`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: value }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.detail || 'No se pudo interpretar el evento')
-      setHandwrittenEvent({
-        title: result.title || '', date: result.date ?? '',
-        time: result.time || '', notes: result.notes || '',
-        recurrence: result.recurrence || 'none', calendar_id: activeCalendarId,
-        color: '#22c55e', source: value,
-      })
-      setHandwrittenError('')
-    }
-
-    if (!ids.length && selectedTexts.length) {
-      setRecognizing(true); setHandwrittenError('')
-      try { await interpretEventText(selectedTexts.join('\n')) }
-      catch (error) { setHandwrittenError(error instanceof Error ? error.message : 'Error desconocido') }
-      finally { setRecognizing(false) }
-      return
-    }
-
-    const selected = ids.map(i => strokesRef.current[i]).filter((s): s is Stroke => Boolean(s))
-    const strokePayload = selected.map(stroke => ({
-      width: stroke.width,
-      points: stroke.points.map(point => ({ x: point.x, y: point.y })),
-    }))
-    if (!strokePayload.length || !strokePayload.some(stroke => stroke.points.length)) return
-
-    let label = ''
-    if(mode==='word-train'){
-      const answer=window.prompt('¿Qué palabra o frase escribiste? Incluí los espacios:')
-      if(answer===null)return
-      label=answer.trim()
-      if(!label||label.length>240){alert('Ingresá una palabra o frase de hasta 240 caracteres.');return}
-    }
-    if (mode === 'letter-train') {
-      const answer = window.prompt('¿Qué letra escribiste? Ingresá una sola letra:')
-      if (answer === null) return
-      label = answer.trim()
-      if (!/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]$/.test(label)) {
-        alert('Ingresá una única letra.'); return
-      }
-    }
-    if (mode === 'math-train') {
-      const answer = window.prompt('¿Qué número o símbolo matemático escribiste? Un único carácter (ej.: 7, +, =, ., x, ^):')
-      if (answer === null) return
-      label = answer.trim()
-      if (label.length !== 1 || !'0123456789+-=*/×÷().,^%xyzXYZ'.includes(label)) {
-        alert('Ingresá un solo número o símbolo admitido: 0-9, +, -, =, *, /, ×, ÷, (, ), ., ,, ^, %, x, y, z.')
-        return
-      }
-    }
-
-    setRecognizing(true)
-    setRecognitionError('')
+  async function addSelectionToCalendar() {
+    const text=groupRef.current.filter(item=>item.kind==='text').map(item=>textsRef.current.find(t=>t.id===item.id)?.text??'').filter(Boolean).join('\n')
+    if(!text.trim()){setHandwrittenError('Seleccioná un texto editable. Si es manuscrito, transcribilo primero con ChatGPT.');return}
+    setRecognizing(true);setHandwrittenError('')
     try {
-      if (mode === 'letter-train' || mode === 'math-train' || mode === 'word-train') {
-        const endpoint = mode === 'letter-train' ? 'letters/train' : mode==='word-train'?'words/train':'math-symbols/train'
-        const response = await fetch(`${API_BASE}/recognize/${endpoint}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ label, strokes: strokePayload }),
-        })
-        const data = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(data.detail || 'No se pudo guardar el ejemplo.')
-        alert(`Ejemplo guardado: ${label} (${data.count} muestras). Disponible para todas las cuentas.`)
-        return
-      }
-
-      const endpoint = mode === 'letter' ? 'letters'
-        : mode === 'math-symbol' ? 'math-symbols'
-        : mode === 'math-local' ? 'math-local'
-        : mode === 'event' ? 'calendar-handwriting'
-        : 'text-local'
-      const response = await fetch(`${API_BASE}/recognize/${endpoint}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ strokes: strokePayload }),
-      })
-      const result: { text?: string; warning?: string; engine?: string; detail?: string } = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.detail || 'Error de reconocimiento local')
-      const value = result.text || ''
-      if (!value.trim()) throw new Error('No se pudo reconocer la escritura.')
-      if (mode === 'event') {
-        await interpretEventText([...selectedTexts, value].join('\n'))
-        return
-      }
-
-      recognitionIds.current = ids
-      const isSingle = mode === 'letter' || mode === 'math-symbol'
-      setSingleLetterRecognition(isSingle)
-      setCorrectionType(mode === 'math-symbol' ? 'math' : 'letter')
-      predictedLetterRef.current = isSingle ? value : ''
-      letterStrokesRef.current = isSingle || mode==='text-local' ? structuredClone(strokePayload) : []
-      correctionSavedLabelRef.current = ''
-      setRecognitionMode(mode === 'math-symbol' || mode === 'math-local' ? 'math' : 'text')
-      setRecognizedText(value)
-      setRecognitionEngine(result.engine === 'matematica-personalizada'
-        ? 'Matemática (personalizado, local)'
-        : result.engine==='palabras-personalizado'?'Palabras (personalizado, local)'
-        : 'Letras (personalizado, local)')
-      setRecognitionWarning(result.warning || '')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error desconocido'
-      if (mode === 'event') setHandwrittenError(message)
-      else setRecognitionError(message)
-    } finally { setRecognizing(false) }
+      const response=await fetch(`${API_BASE}/api/calendar/parse-handwriting`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})
+      const result=await response.json()
+      if(!response.ok)throw new Error(result.detail||'No se pudo interpretar el evento.')
+      setHandwrittenEvent({title:result.title||'',date:result.date??'',time:result.time||'',notes:result.notes||'',recurrence:result.recurrence||'none',calendar_id:activeCalendarId,color:'#22c55e',source:text})
+    }catch(error){setHandwrittenError(error instanceof Error?error.message:'No se pudo interpretar el evento.')}
+    finally{setRecognizing(false)}
   }
 
   async function reinterpretHandwrittenEvent() {
@@ -4387,117 +4247,6 @@ function App() {
       setHandwrittenEvent(null)
     } catch (error) { setHandwrittenError('No se pudo guardar: ' + String(error)) }
     finally { setHandwrittenBusy(false) }
-  }
-
-  // Enseña al clasificador la letra verdadera sin perder el trazo original.
-  // El usuario debe confirmar: editar el campo solamente NO guarda muestras.
-  async function teachLetterCorrection(): Promise<boolean> {
-    if (correctionSavingRef.current || !singleLetterRecognition || recognizedText === null) return false
-    const corrected = recognizedText.trim()
-    if (correctionType === 'math'
-      ? (corrected.length !== 1 || !'0123456789+-=*/×÷().,^%xyzXYZ'.includes(corrected))
-      : !/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]$/.test(corrected)) {
-      setRecognitionError('Para enseñar, ingresá un único carácter válido.')
-      return false
-    }
-    if (corrected === predictedLetterRef.current) {
-      setRecognitionError('La letra sigue igual que la predicción. Modificala para enseñar una corrección.')
-      return false
-    }
-    if (!letterStrokesRef.current.length) {
-      setRecognitionError('No quedaron trazos disponibles para guardar esta corrección.')
-      return false
-    }
-    // Si ya se guardó desde «Enseñar sin reemplazar», evitar muestras duplicadas.
-    if (correctionSavedLabelRef.current === corrected) return true
-    correctionSavingRef.current = true
-    setCorrectionSaving(true)
-    setRecognitionError('')
-    setCorrectionNotice('')
-    try {
-      const response = await fetch(`${API_BASE}/recognize/${correctionType === 'math' ? 'math-symbols' : 'letters'}/train`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          label: corrected,
-          predicted_label: predictedLetterRef.current,
-          strokes: letterStrokesRef.current,
-        }),
-      })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.detail || 'No se pudo guardar la corrección.')
-      correctionSavedLabelRef.current = corrected
-      setCorrectionNotice(`Aprendido: «${predictedLetterRef.current}» era «${corrected}». Ya tiene ${result.count} ejemplos de «${corrected}».`)
-      return true
-    } catch (error) {
-      setRecognitionError(error instanceof Error ? error.message : 'No se pudo guardar la corrección.')
-      return false
-    } finally {
-      correctionSavingRef.current = false
-      setCorrectionSaving(false)
-    }
-  }
-
-  async function teachWordCorrection() {
-    if(correctionSavingRef.current||!recognizedText?.trim()||!letterStrokesRef.current.length)return
-    if(correctionSavedLabelRef.current===recognizedText.trim())return
-    correctionSavingRef.current=true;setCorrectionSaving(true);setRecognitionError('')
-    try {
-      const response=await fetch(`${API_BASE}/recognize/words/train`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({label:recognizedText.trim(),strokes:letterStrokesRef.current})})
-      const data=await response.json()
-      if(!response.ok)throw new Error(data.detail||'No se pudo enseñar la palabra.')
-      correctionSavedLabelRef.current=recognizedText.trim()
-      setCorrectionNotice('Palabra o frase aprendida con sus espacios. Disponible para todas las cuentas.')
-    }catch(error){setRecognitionError(error instanceof Error?error.message:'No se pudo guardar el ejemplo.')}
-    finally{correctionSavingRef.current=false;setCorrectionSaving(false)}
-  }
-
-  async function confirmRecognition() {
-    if (correctionSavingRef.current || recognizedText === null) return
-    if (singleLetterRecognition && recognizedText.trim() !== predictedLetterRef.current) {
-      // Primero confirmar que la muestra quedó guardada; recién después reemplazar.
-      if (!await teachLetterCorrection()) return
-    }
-    acceptRecognition()
-  }
-
-  function acceptRecognition() {
-    if (!recognizedText) return
-    const ids = recognitionIds.current
-    // Guardar los trazos antes de eliminarlos: sus índices cambian al filtrar.
-    const selected = ids.map(i => strokesRef.current[i]).filter((s): s is Stroke => Boolean(s))
-    const points = selected.flatMap(stroke => stroke.points)
-    if (!points.length) {
-      setRecognitionError('No se encontraron los trazos originales para reemplazar.')
-      return
-    }
-    const x = Math.min(...points.map(p => p.x))
-    const y = Math.min(...points.map(p => p.y))
-    const height = Math.max(...points.map(p => p.y)) - y
-    const item: TextItem = {
-      id: createId(), x, y,
-      text: recognizedText, color: '#202020',
-      fontSize: Math.max(18, Math.min(72, Math.round(height * 0.85 / Math.max(1, recognizedText.split('\n').length * 1.4)) || 28)),
-    }
-    rememberChange()
-    const deleted = new Set(ids)
-    strokesRef.current = strokesRef.current.filter((_, i) => !deleted.has(i))
-    textsRef.current = [...textsRef.current, item]
-    recognitionIds.current = []
-    letterStrokesRef.current = []
-    predictedLetterRef.current = ''
-    correctionSavedLabelRef.current = ''
-    setSingleLetterRecognition(false)
-    setCorrectionNotice('')
-    setRecognizedText(null)
-    setRecognitionSuggestion(null)
-    setRecognitionError('')
-    selectedRef.current = { kind: 'text', id: item.id }
-    groupRef.current = [{ kind: 'text', id: item.id }]
-    setSelection({ kind: 'text', id: item.id })
-    redraw()
-    scheduleSave()
   }
 
   function deleteSelected() {
@@ -4742,8 +4491,8 @@ function App() {
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
-      if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setOCRPicking(false)}
-      if (editingRef.current || documentOCR || studyAssistant || treePanel || libraryOpen || recognizedText !== null || recognitionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
+      if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setSelectionPicking(false)}
+      if (editingRef.current || studyAssistant || treePanel || libraryOpen || selectionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
@@ -4771,7 +4520,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [documentOCR, studyAssistant, libraryOpen, treePanel, recognizedText, recognitionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
+  }, [studyAssistant, libraryOpen, treePanel, selectionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
 
   const cam = cameraRef.current
   const editorX = editing ? editing.x * cam.zoom + cam.x : 0
@@ -4842,7 +4591,7 @@ function App() {
           <hr/>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>reorderSelected(true)}>Traer al frente</button>
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>reorderSelected(false)}>Llevar al fondo</button>
-          <button role="menuitem" disabled={recognizing||!groupRef.current.some(sel=>sel.kind==='stroke'||sel.kind==='text')} onClick={()=>{setContextMenu(null);setHandwrittenError('');void recognizeSelection('event')}}>Agregar al calendario</button>
+          <button role="menuitem" disabled={recognizing||!groupRef.current.some(sel=>sel.kind==='text')} onClick={()=>{setContextMenu(null);setHandwrittenError('');void addSelectionToCalendar()}}>Agregar al calendario</button>
           <hr/>
           <button role="menuitem" disabled={groupRef.current.length<2} onClick={groupSelected}>Agrupar selección</button>
           <button role="menuitem" disabled={!groupRef.current.some(sel=>groupIdFor(sel))} onClick={ungroupSelected}>Desagrupar</button>
@@ -5231,20 +4980,7 @@ function App() {
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
             <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con ChatGPT</span><small>Abrí ChatGPT en este dispositivo y llevá tu ejercicio, sin depender de la PC.</small></button>
-            <div className="ai-menu-options">
-            <strong>Escanear y transcribir</strong>
-            <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR('ocr')}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>
-            <button role="menuitem" aria-label="OCR Datalab · PDF completo o imagen…" onClick={()=>{setOpenMenu(null);setDocumentOCR({file:null,boardId:getActiveBoardId()})}}><span>PDF completo, imagen o foto…</span><small>Transcribí todas las páginas, incluidos manuscritos.</small></button>
-            <details><summary>Reconocimiento local (opcional)</summary>
-            <button role="menuitem" onClick={()=>{setOpenMenu(null);void recognizeSelection('word-train')}}>Enseñar palabra o frase (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter-train') }}>✎ Enseñar letra (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('letter') }}>A Reconocer letra (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('text-local') }}>T Reconocer texto con espacios (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-train') }}>✎ Enseñar número o símbolo (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-symbol') }}>123 Reconocer número o símbolo (local)</button>
-            <button role="menuitem" onClick={() => { setOpenMenu(null); void recognizeSelection('math-local') }}>∑ Reconocer números y fórmulas (local)</button>
-            </details>
-            </div>
+            <button className="assistant-menu-entry" role="menuitem" aria-label="Transcribir manuscrito con ChatGPT" onClick={()=>void transcribeSelection()}><span>Transcribir manuscrito con ChatGPT</span><small>Prepará la selección para convertirla en texto editable.</small></button>
           </div>}
         </div>
         <span className="separator" />
@@ -5263,7 +4999,7 @@ function App() {
           {openMenu==='calendar'&&<div className="toolbar-popover calendar-popover" role="menu" aria-label="Opciones de calendario">
             <button role="menuitem" onClick={()=>void openCalendar()}>Ver calendario</button>
             <button role="menuitem" onClick={()=>void openCalendar(true)}>Agregar evento</button>
-            <button role="menuitem" disabled={recognizing} onClick={()=>{setOpenMenu(null);setHandwrittenError('');void recognizeSelection('event')}}>Agregar selección al calendario</button>
+            <button role="menuitem" disabled={recognizing} onClick={()=>{setOpenMenu(null);setHandwrittenError('');void addSelectionToCalendar()}}>Agregar selección al calendario</button>
           </div>}
         </div>
         <button type="button" title="Agregar nota adhesiva (N)" aria-label="Agregar nota adhesiva" onClick={insertNote}><LuStickyNote/></button>
@@ -5326,10 +5062,10 @@ function App() {
       {(handwrittenEvent || handwrittenError) && <div className="recognition-overlay" onPointerDown={e => { if (e.target === e.currentTarget && !handwrittenBusy) { setHandwrittenEvent(null); setHandwrittenError('') } }}>
         <div className="recognition-dialog handwriting-calendar-dialog" role="dialog" aria-modal="true" aria-label="Revisar evento reconocido">
           <h3>Agregar al calendario</h3>
-          <p>Podés seleccionar una fecha escrita a mano. Se reconocen letras y, si los enseñaste, números y separadores de fecha. Revisá todo antes de guardar; el dibujo no se modifica.</p>
+          <p>Se usa el texto editable seleccionado. Para manuscritos, transcribí primero con ChatGPT. Revisá la fecha antes de guardar.</p>
           {handwrittenError && <p className="recognition-error">{handwrittenError}</p>}
           {handwrittenEvent && <form onSubmit={e => { e.preventDefault(); void saveHandwrittenEvent() }}>
-            <label>Texto manuscrito reconocido (editable)
+            <label>Texto seleccionado (editable)
               <textarea rows={3} value={handwrittenEvent.source}
                 onChange={e => setHandwrittenEvent({ ...handwrittenEvent, source: e.target.value })} />
             </label>
@@ -5350,67 +5086,24 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
-      {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||documentOCR||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
-      {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question}
+      {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
+      {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
         beforeOpen={flushBoardForHistory}
         onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
-        onSelectImage={()=>startOCRSelection('assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async text=>{
+        onSelectImage={()=>startChatGPTSelection(studyAssistant.transcription?'transcription':'assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async (text,insertion)=>{
         if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
+        // A completed transcription can be resumed after a reload. Its stable
+        // ID prevents inserting it twice if saving the chat was interrupted.
+        if(insertion&&textsRef.current.some(item=>item.id===insertion.id)){await flushBoardForHistory();return}
         rememberChange()
-        const center=toWorld(window.innerWidth/2,window.innerHeight/2)
-        const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
+        const center=insertion?.position??toWorld(window.innerWidth/2,window.innerHeight/2)
+        const item:TextItem={id:insertion?.id??crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
         textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave();await flushBoardForHistory()
       }}/>}
-      {documentOCR&&<DocumentOCR initialFile={documentOCR.file} boardId={documentOCR.boardId} onSelectHandwriting={()=>startOCRSelection()} onClose={()=>setDocumentOCR(null)} onInsert={text=>{
-        if(documentOCR.boardId!==getActiveBoardId())return
-        rememberChange()
-        const center=documentOCR.position??toWorld(window.innerWidth/2,window.innerHeight/2)
-        const item:TextItem={id:crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
-        textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave()
-      }}/>}
-      {(recognizedText !== null || recognitionError) && <div className="recognition-overlay">
-        <div className="recognition-dialog">
-          <h3>{recognitionMode === 'math' ? 'Reconocimiento matemático local' : 'Reconocimiento de texto local'}</h3>
-          {recognitionError && <p className="recognition-error">{recognitionError}</p>}
-          {recognizedText !== null && recognitionEngine && <p style={{ margin: 0, fontSize: 14 }}><strong>Motor utilizado:</strong> {recognitionEngine}</p>}
-          {recognizedText !== null && recognitionWarning && <p className="recognition-error" style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap' }}>{'Aviso: '}{recognitionWarning}</p>}
-          {recognizedText !== null && <>
-            <label htmlFor="recognized-latex">Corregí el texto reconocido si hace falta</label>
-            <textarea id="recognized-latex" value={recognizedText} onChange={e => {
-              setRecognizedText(e.target.value)
-              setCorrectionNotice('')
-              setRecognitionError('')
-            }} rows={3} />
-            {singleLetterRecognition && <p style={{ fontSize: 13, margin: '8px 0', lineHeight: 1.5 }}>
-              {recognizedText.trim() !== predictedLetterRef.current
-                ? <>El modelo predijo <strong>«{predictedLetterRef.current}»</strong>. Al confirmar que es <strong>«{recognizedText.trim()}»</strong>, se guardará este trazo como ejemplo correcto para futuras predicciones.</>
-                : 'Si el reconocedor se equivocó, escribí el carácter correcto arriba y confirmá para que aprenda.'}
-            </p>}
-            {correctionNotice && <p role="status" style={{ color: '#16a34a', fontSize: 14, margin: '8px 0' }}>{correctionNotice}</p>}
-            {recognitionSuggestion && recognitionSuggestion !== recognizedText && <div style={{ marginTop: 12, marginBottom: 12, fontSize: 14 }}>
-              {recognitionMode === 'math' ? 'Sugerencia (opcional):' : 'Sugerencia en español (opcional):'} <button type="button" onClick={() => { setRecognizedText(recognitionSuggestion); setRecognitionSuggestion(null) }} style={{ marginLeft: 8, padding: '6px 12px', cursor: 'pointer' }}>{recognitionSuggestion} — Usar</button>
-            </div>}
-            <div className="recognition-preview"><span style={{ whiteSpace: 'pre-wrap', fontSize: 26 }}>{recognizedText}</span></div>
-            {recognitionMode === 'math' && <p style={{fontSize: 13}}>Esta versión interpreta expresiones matemáticas lineales, por ejemplo 12+3=15. Revisá exponentes y fracciones antes de reemplazar los trazos. Los símbolos se entrenan por separado en math_samples.json.</p>}
-            <div className="recognition-actions">
-              {recognitionMode === 'math' && <button type="button" onClick={() => { void navigator.clipboard.writeText(recognizedText) }}>Copiar expresión</button>}
-              {!singleLetterRecognition&&recognitionMode==='text'&&letterStrokesRef.current.length>0&&<button type="button" disabled={correctionSaving} onClick={()=>void teachWordCorrection()}>Enseñar palabras sin reemplazar</button>}
-              {singleLetterRecognition && recognizedText.trim() !== predictedLetterRef.current &&
-                <button type="button" disabled={correctionSaving} onClick={() => { void teachLetterCorrection() }}>
-                  {correctionSaving ? 'Guardando...' : 'Enseñar sin reemplazar'}
-                </button>}
-              <button type="button" disabled={correctionSaving} onClick={() => { void confirmRecognition() }}>
-                {correctionSaving ? 'Guardando...' : singleLetterRecognition && recognizedText.trim() !== predictedLetterRef.current ? 'Corregir, enseñar y reemplazar' : 'Reemplazar trazos'}
-              </button>
-              <button type="button" disabled={correctionSaving} onClick={() => { setRecognizedText(null); setRecognitionError(''); setCorrectionNotice(''); setSingleLetterRecognition(false); letterStrokesRef.current = [] }}>Cancelar</button>
-            </div>
-          </>}
-          {recognizedText === null && <button onClick={() => setRecognitionError('')}>Cerrar</button>}
-        </div>
-      </div>}
+      {selectionError&&<div className="recognition-overlay"><div className="recognition-dialog" role="dialog" aria-modal="true" aria-label="Selección para ChatGPT"><p role="alert">{selectionError}</p><button onClick={()=>setSelectionError('')}>Cerrar</button></div></div>}
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
-      {ocrPicking&&<div className="ocr-selection-instruction" role="status">Marcá el área del manuscrito, imagen o PDF que querés enviar.<button onClick={()=>setOCRPicking(false)}>Cancelar selección</button></div>}
+      {selectionPicking&&<div className="chatgpt-selection-instruction" role="status">Marcá el área del manuscrito, imagen o PDF que querés enviar.<button onClick={()=>setSelectionPicking(false)}>Cancelar selección</button></div>}
       {printPreview&&<A4PrintPreview value={printPreview} onClose={()=>{printRequestRef.current++;setPrintPreview(null)}}/>}
       {!visualEditor&&!openMenu&&groupRef.current.some(sel=>sel.kind==='shape'&&shapesRef.current.some(s=>s.id===sel.id&&s.visualType==='page'))&&<button type="button" className="visual-edit-button" onClick={()=>void printA4(true)}>Imprimir hojas A4 seleccionadas</button>}
       {!visualEditor && !treePanel && !openMenu && selectedTreeExpression() && <button type="button" className="visual-edit-button tree-expression-button"

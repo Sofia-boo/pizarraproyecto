@@ -80,7 +80,7 @@ test('a finger can mark a board region and the crop returns attached to the tabl
   await dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true}).fill('Explicá estos trazos')
   await dialog.getByRole('button',{name:'Adjuntar ▾',exact:true}).tap()
   await dialog.getByRole('menuitem',{name:'Selección de la pizarra',exact:true}).tap()
-  await expect(page.locator('.ocr-selection-instruction')).toBeVisible()
+  await expect(page.locator('.chatgpt-selection-instruction')).toBeVisible()
   const touch=await context.newCDPSession(page)
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:100,y:300,id:1}]})
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:260,y:450,id:1}]})

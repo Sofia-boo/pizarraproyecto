@@ -1,5 +1,7 @@
 # Reconocimiento, mazos en una tarjeta y capas de Excel
 
+Nota histórica: los motores y entrenamientos OCR descritos aquí se retiraron. El flujo vigente de transcripción está en [ChatGPT](ASISTENTE_LOCAL.md#transcribir-manuscritos). Se conservan los cambios de mazos y capas.
+
 11 de octubre de 2026.
 
 - Se registró `/recognize/text-local`, que la interfaz ya utilizaba pero no

@@ -17,13 +17,12 @@ async function matrixMode(page,name) {
   await page.locator('.study-menu').getByRole('button',{name:new RegExp(`^${name} `)}).click()
 }
 
-test('assistant stays visible while scrolling, calendar replaces tables and tables are in academics',async({page})=>{
+test('compact ChatGPT menu stays visible, calendar replaces tables and tables are in academics',async({page})=>{
   await page.setViewportSize({width:800,height:650})
   await openLocal(page)
   await expect(page.getByRole('toolbar').getByRole('button',{name:'Insertar tabla 2×2 editable',exact:true})).toHaveCount(0)
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
-  await page.getByText('Reconocimiento local (opcional)',{exact:true}).click()
-  await page.locator('.ai-menu-options').evaluate(el=>{el.scrollTop=el.scrollHeight})
+  await expect(page.getByRole('menu',{name:'Reconocimiento con IA'}).getByRole('menuitem')).toHaveCount(2)
   const assistant=page.getByRole('menuitem',{name:/Consultar con ChatGPT/})
   await expect(assistant).toBeInViewport()
   expect(await assistant.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))})).toBe(true)
@@ -102,7 +101,7 @@ test('an editable spreadsheet overlapping the toolbar stays below its buttons an
   await page.mouse.down();await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});await page.mouse.up()
   expect(await trigger.evaluate(el=>{const r=el.getBoundingClientRect();return !!document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.toolbar')})).toBe(true)
   await trigger.click()
-  const item=page.getByRole('menuitem',{name:'OCR Datalab · selección manuscrita o imagen',exact:true})
+  const item=page.getByRole('menuitem',{name:'Transcribir manuscrito con ChatGPT',exact:true})
   await expect(item).toBeVisible()
   expect(await item.evaluate(el=>{const r=el.getBoundingClientRect();return !!document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.ai-popover')})).toBe(true)
   await page.screenshot({path:'test-results/excel-debajo-menu.png'})

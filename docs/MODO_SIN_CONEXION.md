@@ -9,7 +9,7 @@ Sin internet podés abrir las pizarras privadas y las compartidas descargadas, d
 
 **Consultar con ChatGPT**, disponible en IA, requiere conexión para abrir la interfaz oficial. Las respuestas ya pegadas y su formato se conservan localmente y se pueden insertar sin conexión. Consultá [su funcionamiento](ASISTENTE_LOCAL.md).
 
-El reconocimiento OCR (Datalab y el modelo del servidor), la ejecución de C++, los videos de YouTube, los nuevos enlaces multimedia y la colaboración en vivo necesitan conexión. No se descargan videos de YouTube. Una pizarra que nunca abriste en esa tablet necesita internet para obtener su primera copia.
+Consultar y transcribir con ChatGPT, la ejecución de C++, los videos de YouTube, los nuevos enlaces multimedia y la colaboración en vivo necesitan conexión. Podés pegar una transcripción ya copiada sin internet. Se retiraron Datalab y los reconocedores locales. No se descargan videos de YouTube. Una pizarra que nunca abriste en esa tablet necesita internet para obtener su primera copia.
 
 Las modificaciones de una compartida se guardan en la tablet como cambios pendientes. Al recuperar conexión, con la sesión válida y el servidor disponible, se sincronizan automáticamente. Si venció la sesión, volvé a ingresar con la misma cuenta; la copia pendiente permanece guardada. Las privadas siguen siendo privadas y no se publican automáticamente.
 
@@ -24,4 +24,4 @@ npm.cmd run build
 npm.cmd run preview
 ```
 
-`scripts/pwa-build.ts` genera un service worker por versión y precarga todos los recursos compilados. El HTML y los archivos se sirven desde la misma versión instalada; una actualización incompleta no sustituye la anterior. Las rutas de API, OCR y las respuestas de sesión no se guardan en la caché de la aplicación. Las pizarras, archivos y cambios pendientes se guardan en IndexedDB.
+`scripts/pwa-build.ts` genera un service worker por versión y precarga todos los recursos compilados. El HTML y los archivos se sirven desde la misma versión instalada; una actualización incompleta no sustituye la anterior. Las rutas de API y las respuestas de sesión no se guardan en la caché de la aplicación. Las pizarras, archivos y cambios pendientes se guardan en IndexedDB.

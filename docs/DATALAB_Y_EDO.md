@@ -1,20 +1,8 @@
 # OCR, colaboración y ecuaciones diferenciales
 
-## Datalab
+## Transcripción
 
-1. Creá tu cuenta en https://www.datalab.to/auth/sign_up con tu correo personal o institucional.
-2. Consultá los planes vigentes en https://www.datalab.to/pricing. No se confirmó un programa estudiantil específico; no asumir que un correo universitario otorga uno.
-3. Obtené la clave en https://www.datalab.to/app/keys y ejecutá en esta PC:
-
-   `powershell -ExecutionPolicy Bypass -File .\configurar_datalab.ps1`
-
-La clave queda en `datos/datalab.json`, excluido de GitHub. También se admite `DATALAB_API_KEY` como variable del proceso del servidor. Se lee por solicitud: no hace falta reiniciar después de configurar.
-
-En el menú IA, las dos primeras opciones permiten transcribir la selección manuscrita o elegir un PDF/imagen. La selección se convierte en una imagen; para transcribir **todas las páginas de un PDF**, elegí el archivo PDF original. El servidor usa la API actual `/api/v1/convert`, modo accurate, Markdown paginado, sin `max_pages` ni rangos que recorten el documento. Conserva encabezados y pies y comunica las páginas que Datalab indique como fallidas. La exactitud del OCR depende del documento: revisá el resultado.
-
-Se puede descargar la transcripción completa como `.md` o insertarla como texto editable sin eliminar el original. Las tareas y resultados pertenecen a la cuenta que los envió; se conservan en SQLite y se pueden reconsultar después de cerrar la ventana. El archivo se envía a Datalab y utiliza sus créditos. Sin clave se muestra un error explicativo y no se realiza ninguna llamada al proveedor. Los reconocedores locales antiguos siguen disponibles para compatibilidad y entrenamiento individual.
-
-Referencias: https://documentation.datalab.to/docs/recipes/conversion/conversion-api-overview y https://documentation.datalab.to/api-reference/convert-result-check.
+Datalab y los reconocedores locales se retiraron. Usá **IA → Transcribir manuscrito con ChatGPT**; el flujo independiente de la PC está en [ChatGPT](ASISTENTE_LOCAL.md#transcribir-manuscritos). La app prepara el recorte y la instrucción; el usuario consulta en ChatGPT y pega la respuesta como texto editable. Los ejemplos y documentos previamente guardados permanecen intactos.
 
 ## EDO
 

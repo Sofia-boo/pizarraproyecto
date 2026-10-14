@@ -15,7 +15,7 @@ export default function InstallTablet(){
     {help&&<div className="tablet-install-help" role="status">
       <p><strong>Android:</strong> abrí esta página en Chrome, tocá ⋮ y elegí «Instalar aplicación» o «Agregar a pantalla principal».</p>
       <p><strong>iPad:</strong> abrila en Safari, tocá Compartir y «Agregar a pantalla de inicio».</p>
-      <p>Las pizarras privadas quedan en esta tablet. Esperá «App lista para usar sin internet» antes de desconectarte. Las compartidas que ya abriste conservan una copia editable y sincronizan al reconectar. OCR, C++ y YouTube necesitan internet.</p>
+      <p>Las pizarras privadas quedan en esta tablet. Esperá «App lista para usar sin internet» antes de desconectarte. Las compartidas que ya abriste conservan una copia editable y sincronizan al reconectar. ChatGPT, C++ y YouTube necesitan internet.</p>
       <p>Abrí con conexión las pizarras que vas a usar y esperá que carguen sus imágenes. No borres los datos del navegador: ahí se guardan tus pizarras. Podés descargar un respaldo desde Mis pizarras.</p>
       <p>Para mover la pizarra, arrastrá con un dedo. Con dos dedos podés desplazar y ampliar. Mantené el lápiz quieto 3 segundos para abrir el menú de acciones.</p>
     </div>}

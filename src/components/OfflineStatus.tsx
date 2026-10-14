@@ -9,7 +9,7 @@ export default function OfflineStatus(){
     <div role="status">
       <p>Podés dibujar, escribir, estudiar tarjetas, usar la calculadora y editar hojas, tablas y gráficos.</p>
       <p>Las imágenes y páginas de PDF guardadas también están disponibles. Abrí las pizarras compartidas con internet antes de salir para descargar su copia.</p>
-      <p>Consultar con ChatGPT, OCR del servidor, compilación C++, YouTube y colaboración en vivo necesitan internet. Podés insertar respuestas de ChatGPT ya pegadas sin conexión. Los cambios de las compartidas quedan pendientes y se sincronizan al reconectar con tu sesión.</p>
+      <p>Consultar con ChatGPT, compilación C++, YouTube y colaboración en vivo necesitan internet. Podés insertar respuestas de ChatGPT ya copiadas sin conexión. Los cambios de las compartidas quedan pendientes y se sincronizan al reconectar con tu sesión.</p>
     </div>
   </details>
 }
