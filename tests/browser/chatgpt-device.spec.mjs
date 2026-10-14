@@ -14,6 +14,11 @@ async function prepare(page){
   await page.route('**/api/**',r=>r.fulfill({status:503,body:'PC apagada'}))
   await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).tap()
   await expect(page.locator('.library-open-button')).toContainText('privada')
+  await expect.poll(()=>page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    const all=await new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').getAll();r.onsuccess=()=>resolve(r.result)})
+    db.close();const saved=all.find(b=>b.id===localStorage.getItem('pizarra_activa'));return (saved?.draft??saved?.content)?.camera
+  })).toBeDefined()
   return pcRequests
 }
 

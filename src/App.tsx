@@ -12,6 +12,10 @@ import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
+import ImageCropDialog from './components/ImageCropDialog'
+import TouchButton from './components/TouchButton'
+import {croppedGeometry} from './canvas/imageCrop'
+import type {ImageCrop} from './canvas/imageCrop'
 import {TRANSCRIPTION_PROMPT,transcriptionKey} from './assistant/transcription'
 import {deviceDB} from './storage/device'
 import {beforeAppUpdate} from './pwa'
@@ -1041,6 +1045,7 @@ function App() {
   const selectionDestinationRef=useRef<'assistant'|'transcription'>('assistant')
   const [controlNavigation,setControlNavigation]=useState(false)
   const [selectionError,setSelectionError]=useState('')
+  const [imageCrop,setImageCrop]=useState<{boardId:string;itemId:string;assetId:string;blob:Blob;name:string}|null>(null)
   const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | 'calendar' | null>(null)
   const [visualEditor,setVisualEditor] = useState<string|null>(null)
   const [printPreview,setPrintPreview]=useState<PrintPreview|null>(null)
@@ -3897,6 +3902,35 @@ function App() {
     scheduleSave()
   }
 
+  async function openImageCrop() {
+    setContextMenu(null)
+    const selected=groupRef.current.length===1?groupRef.current[0]:null
+    const item=selected?.kind==='media'?mediaRef.current.find(m=>m.id===selected.id):null
+    if(!item)return
+    const boardId=getActiveBoardId(),assetId=item.assetId
+    try {
+      const blob=await loadAsset(assetId)
+      if(!blob)throw new Error('No se pudo cargar la imagen para recortarla.')
+      if(boardId!==getActiveBoardId()||!mediaRef.current.some(m=>m.id===item.id&&m.assetId===assetId))return
+      setImageCrop({boardId,itemId:item.id,assetId,blob,name:item.name})
+    }catch(error){setSelectionError(error instanceof Error?error.message:'No se pudo abrir el recorte.')}
+  }
+
+  async function applyImageCrop(file:File,region:ImageCrop) {
+    const target=imageCrop
+    if(!target||target.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra. Volvé a abrir el recorte.')
+    const image=await imageFromBlob(file)
+    const current=()=>mediaRef.current.find(item=>item.id===target.itemId)
+    if(target.boardId!==getActiveBoardId()||current()?.assetId!==target.assetId)throw new Error('La imagen cambió o se borró. Volvé a abrir el recorte.')
+    const assetId=createId();await saveAsset(assetId,file)
+    if(target.boardId!==getActiveBoardId()||current()?.assetId!==target.assetId)throw new Error('La imagen cambió mientras preparabas el recorte.')
+    rememberChange()
+    imageCacheRef.current.set(assetId,image)
+    mediaRef.current=mediaRef.current.map(item=>item.id===target.itemId?{...item,...croppedGeometry(item,region),assetId,name:file.name,...(item.kind==='pdf-page'?{pageText:undefined}:{})}:item)
+    selectElement({kind:'media',id:target.itemId});redraw();scheduleSave()
+    await flushBoardForHistory()
+  }
+
 
   async function addPDF(file: File, dropPoint?: Point) {
     const bytes = new Uint8Array(await file.arrayBuffer())
@@ -4076,7 +4110,7 @@ function App() {
     function onClipboardPaste(e: ClipboardEvent) {
       const target = e.target
       if (target instanceof Element && target.closest('input,textarea,select,[contenteditable],[role="textbox"]')) return
-      if (!loadedRef.current || libraryOpen || selectionError || handwrittenEvent || handwrittenError || importBusyRef.current) return
+      if (!loadedRef.current || libraryOpen || imageCrop || selectionError || handwrittenEvent || handwrittenError || importBusyRef.current) return
       // Excel suele adjuntar simultáneamente HTML y una miniatura de imagen.
       // Priorizar las celdas, para que Ctrl+V pegue una tabla EDITABLE.
       const clipboard=e.clipboardData
@@ -4123,7 +4157,7 @@ function App() {
     }
     window.addEventListener('paste', onClipboardPaste)
     return () => window.removeEventListener('paste', onClipboardPaste)
-  }, [theme, libraryOpen, selectionError, handwrittenEvent, handwrittenError])
+  }, [theme, libraryOpen, imageCrop, selectionError, handwrittenEvent, handwrittenError])
 
   // La calculadora lee textos y matrices editables sin alterar los dibujos.
   async function getMathSelectionForDock(): Promise<string> {
@@ -4492,7 +4526,7 @@ function App() {
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
       if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setSelectionPicking(false)}
-      if (editingRef.current || studyAssistant || treePanel || libraryOpen || selectionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
+      if (editingRef.current || imageCrop || studyAssistant || treePanel || libraryOpen || selectionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
@@ -4520,7 +4554,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [studyAssistant, libraryOpen, treePanel, selectionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
+  }, [imageCrop, studyAssistant, libraryOpen, treePanel, selectionError, handwrittenEvent, handwrittenError, openMenu, importStatus, recognizing])
 
   const cam = cameraRef.current
   const editorX = editing ? editing.x * cam.zoom + cam.x : 0
@@ -4586,6 +4620,7 @@ function App() {
         onPointerUp={tabletPointerUp} onPointerCancel={tabletPointerCancel} onLostPointerCapture={tabletPointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
         <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y,maxHeight:Math.max(80,window.innerHeight-contextMenu.y-8),overflowY:'auto'}}>
+          {groupRef.current.length===1&&groupRef.current[0].kind==='media'&&<TouchButton role="menuitem" onPress={()=>void openImageCrop()}>Recortar imagen</TouchButton>}
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{copySelected();setContextMenu(null)}}>Copiar <small>Ctrl+C</small></button>
           <button role="menuitem" onClick={()=>{void pasteFromBoardMenu()}}>Pegar <small>Ctrl+V</small></button>
           <hr/>
@@ -5086,7 +5121,7 @@ function App() {
           {!handwrittenEvent && <button onClick={() => setHandwrittenError('')}>Cerrar</button>}
         </div>
       </div>}
-      {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(studyAssistant||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
+      {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(imageCrop||studyAssistant||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
       {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
         beforeOpen={flushBoardForHistory}
         onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
@@ -5100,10 +5135,12 @@ function App() {
         const item:TextItem={id:insertion?.id??crypto.randomUUID(),...center,text,color:'#111827',fontSize:22}
         textsRef.current=[...textsRef.current,item];selectElement({kind:'text',id:item.id});redraw();scheduleSave();await flushBoardForHistory()
       }}/>}
-      {selectionError&&<div className="recognition-overlay"><div className="recognition-dialog" role="dialog" aria-modal="true" aria-label="Selección para ChatGPT"><p role="alert">{selectionError}</p><button onClick={()=>setSelectionError('')}>Cerrar</button></div></div>}
+      {imageCrop&&<ImageCropDialog key={imageCrop.assetId} blob={imageCrop.blob} name={imageCrop.name} onApply={applyImageCrop} onClose={()=>setImageCrop(null)}/>}
+      {selectionError&&<div className="recognition-overlay"><div className="recognition-dialog" role="dialog" aria-modal="true" aria-label="Imagen o selección de la pizarra"><p role="alert">{selectionError}</p><button onClick={()=>setSelectionError('')}>Cerrar</button></div></div>}
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
       {selectionPicking&&<div className="chatgpt-selection-instruction" role="status">Marcá el área del manuscrito, imagen o PDF que querés enviar.<button onClick={()=>setSelectionPicking(false)}>Cancelar selección</button></div>}
+      {!imageCrop&&!studyAssistant&&!libraryOpen&&!openMenu&&groupRef.current.length===1&&groupRef.current[0].kind==='media'&&<TouchButton type="button" className="visual-edit-button" onPress={()=>void openImageCrop()}>Recortar imagen</TouchButton>}
       {printPreview&&<A4PrintPreview value={printPreview} onClose={()=>{printRequestRef.current++;setPrintPreview(null)}}/>}
       {!visualEditor&&!openMenu&&groupRef.current.some(sel=>sel.kind==='shape'&&shapesRef.current.some(s=>s.id===sel.id&&s.visualType==='page'))&&<button type="button" className="visual-edit-button" onClick={()=>void printA4(true)}>Imprimir hojas A4 seleccionadas</button>}
       {!visualEditor && !treePanel && !openMenu && selectedTreeExpression() && <button type="button" className="visual-edit-button tree-expression-button"

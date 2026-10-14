@@ -132,6 +132,42 @@ test('ChatGPT receives only the marked PDF region as an attachment without the f
   }finally{await context.close()}
 })
 
+test('a contributor can crop a rotated shared image and the owner sees the new asset without reloading',async({browser})=>{
+  const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  try{
+    await Promise.all(contexts.map((c,i)=>signedIn(c,`Crop contributor ${i}`)))
+    const owner=contexts[0].request,editor=contexts[1].request
+    const board=(await (await owner.post(api+'/api/boards',{data:{name:'Recorte compartido'}})).json()).id
+    const token=(await (await owner.post(`${api}/api/share/boards/${board}`,{data:{role:'editor'}})).json()).token
+    expect((await editor.post(api+'/api/share/join',{data:{token}})).status()).toBe(200)
+    const pages=await Promise.all(contexts.map(c=>c.newPage()))
+    const png=Buffer.from(await pages[0].evaluate(()=>{const c=document.createElement('canvas');c.width=400;c.height=200;const x=c.getContext('2d');x.fillStyle='red';x.fillRect(0,0,200,200);x.fillStyle='blue';x.fillRect(200,0,200,200);return c.toDataURL().split(',')[1]}),'base64')
+    expect((await owner.put(api+'/api/assets/crop-original',{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
+    const original={id:'rotated-response',assetId:'crop-original',x:100,y:200,width:400,height:200,rotation:Math.PI/2,zIndex:1234,kind:'image',name:'respuesta-chatgpt.png'}
+    expect((await owner.put(`${api}/api/boards/${board}`,{data:{version:0,content:{camera:{x:0,y:0,zoom:1},media:[original]}}})).status()).toBe(200)
+    await Promise.all(pages.map(p=>p.goto(api)))
+    for(const page of pages)await expect(page.getByTitle('Conectado',{exact:true})).toBeVisible()
+    const redAtFormerImage=()=>pages[0].locator('canvas').first().evaluate(canvas=>{
+      const [r,g,b,a]=canvas.getContext('2d').getImageData(300*devicePixelRatio,200*devicePixelRatio,1,1).data
+      return r>200&&g<50&&b<50&&a>200
+    })
+    await expect.poll(redAtFormerImage).toBe(true)
+    await pages[1].getByRole('button',{name:'Seleccionar área',exact:true}).click();await pages[1].keyboard.press('Control+a')
+    await pages[1].getByRole('button',{name:'Recortar imagen',exact:true}).click()
+    const dialog=pages[1].getByRole('dialog',{name:'Recortar imagen',exact:true})
+    const corner=dialog.getByRole('button',{name:'Ajustar esquina superior izquierda'});await corner.focus()
+    for(let i=0;i<20;i++)await corner.press('Shift+ArrowRight')
+    await dialog.getByRole('button',{name:'Aplicar recorte',exact:true}).click();await expect(dialog).toHaveCount(0)
+    await expect.poll(async()=>(await(await owner.get(`${api}/api/boards/${board}`)).json()).content.media[0].assetId).not.toBe('crop-original')
+    const cropped=(await(await owner.get(`${api}/api/boards/${board}`)).json()).content.media[0]
+    expect(cropped.id).toBe(original.id);expect(cropped.rotation).toBe(original.rotation);expect(cropped.zIndex).toBe(original.zIndex)
+    expect(cropped.width).toBe(200);expect(cropped.height).toBe(200);expect(cropped.x).toBeCloseTo(200);expect(cropped.y).toBeCloseTo(300)
+    expect((await owner.get(`${api}/api/assets/${cropped.assetId}`)).status()).toBe(200)
+    expect((await owner.get(api+'/api/assets/crop-original')).status()).toBe(200)
+    await expect.poll(redAtFormerImage).toBe(false)
+  }finally{await Promise.all(contexts.map(c=>c.close()))}
+})
+
 test('all shared object types appear live and either contributor can delete them',async({browser})=>{
   test.setTimeout(60000)
   const contexts=await Promise.all([browser.newContext(),browser.newContext()])

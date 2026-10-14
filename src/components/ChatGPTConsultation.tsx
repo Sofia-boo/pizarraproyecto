@@ -1,5 +1,4 @@
 import {useEffect,useEffectEvent,useRef,useState} from 'react'
-import type {PointerEvent as ReactPointerEvent,ButtonHTMLAttributes} from 'react'
 import {flushSync} from 'react-dom'
 import {deviceDB} from '../storage/device'
 import {personalStorageScope} from '../biblioteca'
@@ -10,6 +9,7 @@ import {openOfficialChatGPT,downloadStudyFile,CHATGPT_URL} from '../assistant/ch
 import {transcriptionKey} from '../assistant/transcription'
 import type {TranscriptionTarget,TextInsertion} from '../assistant/transcription'
 import AssistantMessageText from './AssistantMessageText'
+import ChatGPTButton from './TouchButton'
 import './chatgptConsultation.css'
 
 const API=import.meta.env.DEV?`${location.protocol}//${location.hostname}:8765`:location.origin
@@ -25,31 +25,6 @@ async function api<T>(path:string,init?:RequestInit):Promise<T>{
   return data
 }
 
-function ChatGPTButton({onPress,...props}:Omit<ButtonHTMLAttributes<HTMLButtonElement>,'onClick'> & {onPress:()=>void}){
-  const start=useRef<{id:number;x:number;y:number}|null>(null),handled=useRef(false)
-  function down(e:ReactPointerEvent<HTMLButtonElement>){
-    handled.current=false
-    start.current=e.isPrimary&&e.pointerType!=='mouse'?{id:e.pointerId,x:e.clientX,y:e.clientY}:null
-  }
-  function move(e:ReactPointerEvent<HTMLButtonElement>){
-    const first=start.current
-    if(first?.id===e.pointerId&&Math.hypot(e.clientX-first.x,e.clientY-first.y)>10){start.current=null;handled.current=true}
-  }
-  function up(e:ReactPointerEvent<HTMLButtonElement>){
-    const first=start.current;start.current=null
-    if(!first||first.id!==e.pointerId)return
-    const rect=e.currentTarget.getBoundingClientRect()
-    if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)return
-    // Board drags can suppress the browser's subsequent compatibility click.
-    // Handle the completed touch directly and ignore that click if it arrives.
-    handled.current=true;e.preventDefault();onPress()
-  }
-  return <button {...props} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={()=>{start.current=null;handled.current=true}} onClick={e=>{
-    if(handled.current&&e.detail!==0){handled.current=false;e.preventDefault();return}
-    onPress()
-  }}/>
-}
-
 export default function ChatGPTConsultation({boardId,initialImage,initialQuestion,transcription,beforeOpen,onSelectImage,onClose,onInsertImage,onInsertText}:{boardId:string;initialImage?:File;initialQuestion?:string;transcription?:TranscriptionTarget;beforeOpen:()=>Promise<void>;onSelectImage:()=>void;onClose:()=>void;onInsertImage:(file:File)=>Promise<void>;onInsertText:(text:string,insertion?:TextInsertion)=>Promise<void>}){
   const transcribing=Boolean(transcription),key=transcribing?transcriptionKey(boardId):`chatgpt-browser:${personalStorageScope()}:${boardId}`
   const online=useOnline(),[state,setState]=useState<State>({state:'closed'}),[loaded,setLoaded]=useState(false)
@@ -58,6 +33,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   const [conversation,setConversation]=useState<string|null>(null)
   const [target,setTarget]=useState<TranscriptionTarget|null>(transcription??null),[result,setResult]=useState<TranscriptionResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attachments,setAttachments]=useState(false),[manualPaste,setManualPaste]=useState(false),[pasted,setPasted]=useState('')
+  const [pasteEditable,setPasteEditable]=useState(false)
   const input=useRef<HTMLInputElement>(null),answers=useRef(new Map<string,HTMLDivElement>()),clipboardPreview=useRef<HTMLDivElement>(null),shell=useRef<HTMLDivElement>(null)
   const alive=useRef(true),latest=useRef({question,files,messages,job,conversation,target,result}),bottom=useRef<HTMLDivElement>(null)
   const autoStarted=useRef(false),insertionAttempted=useRef<string|null>(null)
@@ -219,11 +195,12 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
       setNotice(transcribing?'Transcripción agregada como texto editable.':'Respuesta agregada a la pizarra.');setManualPaste(false)
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
-  async function paste(){
+  async function paste(editable=false){
+    setPasteEditable(editable)
     try{
       const text=(await navigator.clipboard.readText()).slice(0,60000)
       if(!text.trim()){setError('Copiá primero una respuesta de ChatGPT.');return}
-      flushSync(()=>setPasted(text));await insert(text,clipboardPreview.current)
+      flushSync(()=>setPasted(text));await insert(text,clipboardPreview.current,editable)
     }catch{setManualPaste(true);setError('Pegá la respuesta en el cuadro y tocá Insertar.')}
   }
   async function select(){try{await save();onSelectImage()}catch{setError('No se pudo guardar el borrador antes de seleccionar.')}}
@@ -253,7 +230,8 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
         {!pc&&typeof navigator.share==='function'&&Boolean(question.trim()||files.length)&&(!files.length||navigator.canShare?.({files}))&&<ChatGPTButton className="chatgpt-share" disabled={busy||!online} onPress={()=>void shareQuestion()}>Compartir consulta…</ChatGPTButton>}
         {!pc&&files.length>0&&<p className="chatgpt-file-help">Compartí con ChatGPT si aparece entre tus aplicaciones, o descargá los archivos y adjuntalos allí.</p>}
         <ChatGPTButton className="chatgpt-paste" disabled={busy} onPress={()=>void paste()}>{transcribing?'Pegar transcripción':'Pegar respuesta en la pizarra'}</ChatGPTButton>
-        {manualPaste&&<div className="chatgpt-manual-paste"><textarea aria-label="Respuesta para pegar en la pizarra" value={pasted} onChange={e=>setPasted(e.target.value)} placeholder="Pegá acá la respuesta"/><ChatGPTButton disabled={busy||!pasted.trim()} onPress={()=>void insert(pasted,clipboardPreview.current)}>Insertar</ChatGPTButton></div>}
+        {!transcribing&&<ChatGPTButton className="chatgpt-paste" disabled={busy} onPress={()=>void paste(true)}>Pegar como texto editable</ChatGPTButton>}
+        {manualPaste&&<div className="chatgpt-manual-paste"><textarea aria-label="Respuesta para pegar en la pizarra" value={pasted} onChange={e=>setPasted(e.target.value)} placeholder="Pegá acá la respuesta"/><ChatGPTButton disabled={busy||!pasted.trim()} onPress={()=>void insert(pasted,clipboardPreview.current,pasteEditable)}>Insertar</ChatGPTButton></div>}
       </footer>
       <div className="chatgpt-clipboard-render" aria-hidden="true"><div ref={clipboardPreview} className="chatgpt-response-preview"><AssistantMessageText text={pasted}/></div></div>
     </section>

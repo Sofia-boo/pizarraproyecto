@@ -13,6 +13,14 @@
 
 El ejercicio y el borrador permanecen en el dispositivo. La consulta y la respuesta se gestionan en la interfaz oficial; la pizarra no lee el chat oficial ni recoge sus respuestas automáticamente. Las respuestas anteriores del modo con PC se conservan.
 
+## Editar respuestas y recortar imágenes
+
+**Pegar respuesta en la pizarra** conserva títulos y fórmulas como imagen. Para modificar palabras o números, usá **Pegar como texto editable**: convierte títulos y notación LaTeX básica, por ejemplo `\frac{1}{2}` a `1/2`. Si el navegador bloquea el portapapeles, el cuadro manual conserva la opción elegida. Las fórmulas complejas pueden requerir ajustes como texto.
+
+Para recortar una respuesta ya insertada, seleccioná su imagen y tocá **Recortar imagen**, o elegí esa acción en el menú contextual. Marcá la zona con mouse, dedo o lápiz; podés mover el recuadro y ajustar sus esquinas. Las flechas del teclado ajustan la esquina enfocada, con Shift para avanzar diez píxeles. **Aplicar recorte** conserva posición, escala, rotación y orden de capas. **Cancelar** deja la imagen intacta.
+
+El recorte se guarda como un archivo nuevo, sin sobrescribir el original ni otras copias que lo usen. **Deshacer** recupera el original; **Rehacer** vuelve al recorte. El cambio se guarda localmente sin internet y se sincroniza en las pizarras compartidas por el mecanismo habitual. Una imagen modificada por otro usuario durante el recorte se comprueba antes de aplicar para evitar sobrescribir ese cambio.
+
 ## Transcribir manuscritos
 
 El menú IA ofrece **Consultar con ChatGPT** y **Transcribir manuscrito con ChatGPT**. Se retiraron Datalab, el escaneo de documentos y los reconocedores y entrenamientos locales, incluidas sus rutas del servidor. Los archivos de ejemplos ya guardados y las pizarras no se borran ni se modifican al retirar esos motores.
