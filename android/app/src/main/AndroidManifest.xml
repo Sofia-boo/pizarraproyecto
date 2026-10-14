@@ -2,12 +2,17 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <queries><package android:name="com.android.chrome"/></queries>
     <application android:label="Pizarra + ChatGPT" android:icon="@drawable/ic_launcher" android:allowBackup="false" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true">
+        <service android:name="androidx.browser.customtabs.PostMessageService" android:exported="true" />
+        <service android:name=".ChatGPTAccessService" android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:label="Pizarra: control local de ChatGPT">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/chatgpt_accessibility" />
+        </service>
+        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="https://pizarraproyecto.vercel.app/?app=1&amp;native=1"/>
             <meta-data android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY" android:value="customtabs"/>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
-        <activity android:name=".ChatGPTActivity" android:exported="true" android:theme="@style/BrowserOverlay">
+        <activity android:name=".ChatGPTActivity" android:exported="true" android:theme="@style/BrowserOverlay" android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

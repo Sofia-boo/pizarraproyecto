@@ -1,0 +1,3 @@
+<resources>
+    <string name="chatgpt_access_description">Control local opcional de ChatGPT. Sólo actúa en Chrome al conectar o enviar una consulta desde la pizarra: escribe el texto, adjunta los archivos elegidos, pulsa Enviar y Copiar respuesta. No completa contraseñas ni verificaciones humanas. No utiliza una API paga ni envía tus credenciales al servidor. Podés desactivarlo en Accesibilidad.</string>
+</resources>

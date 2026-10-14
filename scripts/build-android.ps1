@@ -29,14 +29,14 @@ New-Item -ItemType Directory -Force -Path $drawable | Out-Null
 Copy-Item -LiteralPath (Join-Path $workspace 'public/icons/pizarra-192.png') -Destination (Join-Path $drawable 'ic_launcher.png')
 Push-Location (Join-Path $workspace 'android')
 try{
-    & $gradlePath --console=plain wrapper --gradle-version 8.11.1 assembleRelease lintRelease
+    & $gradlePath --console=plain wrapper --gradle-version 8.11.1 assembleRelease lintRelease testReleaseUnitTest
     if($LASTEXITCODE -ne 0){throw 'La compilacion o la revision Android fallo.'}
 }finally{Pop-Location}
 $cert=Join-Path $toolsPath 'signing-certificate.der'
 & (Join-Path $jdkPath 'bin/keytool.exe') -exportcert -alias pizarra -keystore $keyStore -storepass:env PIZARRA_ANDROID_SIGN_PASSWORD -file $cert
 if($LASTEXITCODE -ne 0){throw 'No se pudo exportar el certificado publico.'}
 $fingerprint=((Get-FileHash -LiteralPath $cert -Algorithm SHA256).Hash -replace '(..)(?!$)','$1:')
-$links=@(@{relation=@('delegate_permission/common.handle_all_urls');target=@{namespace='android_app';package_name='com.sofic.pizarra';sha256_cert_fingerprints=@($fingerprint)}})
+$links=@(@{relation=@('delegate_permission/common.handle_all_urls','delegate_permission/common.use_as_origin');target=@{namespace='android_app';package_name='com.sofic.pizarra';sha256_cert_fingerprints=@($fingerprint)}})
 $wellKnown=Join-Path $workspace 'public/.well-known'
 New-Item -ItemType Directory -Force -Path $wellKnown | Out-Null
 ConvertTo-Json -InputObject $links -Depth 6 | Set-Content -LiteralPath (Join-Path $wellKnown 'assetlinks.json') -Encoding utf8

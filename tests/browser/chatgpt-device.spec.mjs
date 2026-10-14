@@ -6,7 +6,9 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 async function open(page){
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).tap()
   await page.getByRole('menuitem',{name:/Consultar con ChatGPT/}).tap()
-  return page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  await dialog.locator('.chatgpt-manual-options summary').click()
+  return dialog
 }
 async function prepare(page){
   const pcRequests=[]
@@ -90,6 +92,7 @@ test('tablet can download a finger-selected crop and open official ChatGPT witho
   const download=page.waitForEvent('download')
   await dialog.getByRole('button',{name:'Descargar recorte-de-la-pizarra.png',exact:true}).tap()
   expect((await download).suggestedFilename()).toBe('recorte-de-la-pizarra.png')
+  await dialog.locator('.chatgpt-manual-options summary').click()
   const opening=page.waitForEvent('popup');await dialog.getByRole('button',{name:'Abrir ChatGPT en este dispositivo',exact:true}).tap()
   const popup=await opening;await popup.waitForURL('https://chatgpt.com/');await popup.close()
   expect(requests).toEqual([])

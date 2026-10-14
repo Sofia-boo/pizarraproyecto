@@ -21,6 +21,32 @@ async function transcribe(page){
   return dialog
 }
 
+test('automatic transcription sends the selected ink once and inserts editable text on completion',async({page})=>{
+  let sends=0
+  await page.route('**/api/**',async route=>{
+    const request=route.request(),path=new URL(request.url()).pathname
+    if(path.endsWith('/chatgpt/status'))return route.fulfill({json:{state:'ready'}})
+    if(path.endsWith('/chatgpt/consult')){
+      sends++
+      const form=await new Request(request.url(),{method:'POST',headers:request.headers(),body:request.postDataBuffer()}).formData()
+      expect(form.get('prompt')).toContain('en español')
+      expect(form.getAll('files')).toHaveLength(1)
+      return route.fulfill({status:202,json:{id:'transcription-job',status:'running'}})
+    }
+    if(path.endsWith('/chatgpt/consult/transcription-job'))return route.fulfill({json:{id:'transcription-job',status:'complete',text:'Mi manuscrito con espacios'}})
+    return route.fulfill({status:503,body:'isolated fixture'})
+  })
+  await prepare(page)
+  const dialog=await transcribe(page)
+  await dialog.getByRole('button',{name:'Conectar ChatGPT',exact:true}).click()
+  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Mi manuscrito con espacios')
+  const saved=await content(page)
+  expect(saved.strokes).toHaveLength(1);expect(saved.texts).toHaveLength(1);expect(sends).toBe(1)
+  await dialog.getByRole('button',{name:'Cerrar ChatGPT',exact:true}).click()
+  await page.reload()
+  expect((await content(page)).texts).toHaveLength(1);expect(sends).toBe(1)
+})
+
 test('without a PC the menu has no OCR and pasting a transcription creates editable text without duplicate ink changes',async({page})=>{
   const requests=[];page.on('request',r=>{if(/\/(api\/(ocr|chatgpt)|recognize)\//.test(new URL(r.url()).pathname))requests.push(r.url())})
   await page.route('**/api/**',r=>r.fulfill({status:503,body:'PC apagada'}))
