@@ -8,6 +8,7 @@
 .board-html-widget header button.html-stop {font:12px system-ui;color:#3730a3;border:1px solid #c7d2fe;border-radius:6px;padding:5px;}
 .html-presence {position:absolute;top:40px;right:8px;z-index:1;display:flex;flex-direction:column;gap:4px;pointer-events:none;font:12px system-ui;max-width:90%;}
 .html-presence span {padding:5px 8px;border:1px solid;border-radius:7px;background:#ffffffed;color:#243047;}
+.html-sync-status {position:absolute;bottom:0;left:0;max-width:80%;padding:3px 10px;background:#eef2ffed;color:#3730a3;font:12px system-ui;pointer-events:none;z-index:1;}
 .html-resize {position:absolute;bottom:0;right:0;display:grid;place-items:center;width:28px;height:28px;border-radius:8px 0 0;background:#e0e7ff;color:#3730a3;cursor:nwse-resize;touch-action:none;}
 .app:is([data-tool='pen'],[data-tool='eraser'],[data-tool='text'],[data-tool='pan'],[data-tool='shape'],[data-tool='connector']) .board-html-widget,
 .app:is([data-tool='pen'],[data-tool='eraser'],[data-tool='text'],[data-tool='pan'],[data-tool='shape'],[data-tool='connector']) .board-html-widget *,

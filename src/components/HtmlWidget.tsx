@@ -1,25 +1,107 @@
-import {useEffect,useMemo,useRef,useState} from 'react'
+import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react'
 import type {PointerEvent,MouseEvent} from 'react'
 import type {ShapeItem} from '../canvas/visualObjects'
 import {rotate} from '../canvas/visualObjects'
 import {HTML_PRESENCE_EVENT,instrumentHtml} from './htmlActivity'
 import type {HtmlActivity,HtmlPresence} from './htmlActivity'
+import {HTML_SYNC_EVENT,htmlView,htmlDifference,mirrorDocument,sharedHtmlHook} from './htmlShared'
+import type {HtmlSignal} from './htmlShared'
 import './htmlWidget.css'
 
-export default function HtmlWidget({item,getZoom,onSelect,onBegin,onChange,onEnd,onDelete,onContextMenu,onActivity}:{item:ShapeItem;getZoom:()=>number;onSelect:()=>void;onBegin:()=>void;onChange:(geometry:Partial<ShapeItem>)=>void;onEnd:()=>void;onDelete:()=>void;onContextMenu:(event:MouseEvent<HTMLElement>)=>void;onActivity:(activity:HtmlActivity)=>void}){
+export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelect,onBegin,onChange,onEnd,onDelete,onContextMenu,onActivity}:{item:ShapeItem;shared:boolean;connected:boolean;onSync:(value:Record<string,unknown>)=>void;getZoom:()=>number;onSelect:()=>void;onBegin:()=>void;onChange:(geometry:Partial<ShapeItem>)=>void;onEnd:()=>void;onDelete:()=>void;onContextMenu:(event:MouseEvent<HTMLElement>)=>void;onActivity:(activity:HtmlActivity)=>void}){
   const [active,setActive]=useState(false),[presence,setPresence]=useState<HtmlPresence[]>([])
-  const frame=useRef<HTMLIFrameElement>(null),latest=useRef({item,onActivity})
+  const [remote,setRemote]=useState<HtmlSignal|undefined>(()=>htmlView(item.id)),[error,setError]=useState('')
+  const remoteView=useRef(remote),session=useRef<string|null>(null),pending=useRef<string|null>(null)
+  const sent=useRef({document:'',revision:0}),snapshot=useRef('')
+  const retry=useRef<ReturnType<typeof setTimeout>|null>(null),attempts=useRef(0)
+  const frame=useRef<HTMLIFrameElement>(null),latest=useRef({item,onActivity,onSync,active,shared,connected})
   const activityAt=useRef(0)
-  useEffect(()=>{latest.current={item,onActivity}},[item,onActivity])
+  useLayoutEffect(()=>{latest.current={item,onActivity,onSync,active,shared,connected}},[item,onActivity,onSync,active,shared,connected])
   const source=item.html!.source
+  const mirrored=Boolean(!active&&remote?.document)
   const frameDocument=useMemo(()=>{
-    if(!active)return null
-    const token=crypto.randomUUID();return {token,source:instrumentHtml(source,token)}
-  },[active,source])
+    if(!active&&!mirrored)return null
+    const token=crypto.randomUUID();return {token,source:mirrored?instrumentHtml(mirrorDocument(token),token):instrumentHtml(source,token,shared?`<script>${sharedHtmlHook(token)}</script>`:'')}
+  },[active,mirrored,source,shared])
+  const frameDocumentRef=useRef(frameDocument)
+  useLayoutEffect(()=>{frameDocumentRef.current=frameDocument},[frameDocument])
+  const sendSnapshot=useCallback((document:string)=>{
+    snapshot.current=document
+    if(!session.current||!latest.current.connected)return
+    const previous=sent.current
+    if(document===previous.document)return
+    latest.current.onSync({type:'html_frame',html_id:item.id,session:session.current,base:previous.revision,...htmlDifference(previous.document,document)})
+    sent.current={document,revision:previous.revision+1}
+  },[item.id])
+  function start(){
+    onSelect();setError('')
+    attempts.current=0
+    if(!active)snapshot.current=''
+    if(shared&&connected){
+      pending.current=crypto.randomUUID();onSync({type:'html_start',html_id:item.id,request:pending.current})
+    }else{setActive(true);if(shared)setError('Sin conexión: esta actividad sólo se ve en este dispositivo.')}
+    onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'interact'})
+  }
+  useEffect(()=>{
+    function receive(event:Event){
+      const signal=(event as CustomEvent<HtmlSignal>).detail
+      if(signal.html_id!==item.id)return
+      const document=frameDocumentRef.current
+      if(signal.type==='html_input'){
+        if(session.current===signal.session&&document)frame.current?.contentWindow?.postMessage({token:document.token,kind:'input',event:signal.event},'*')
+        return
+      }
+      if(signal.type==='html_error'){
+        setError(signal.error??'No se pudo activar el HTML.')
+        if(signal.retry&&pending.current&&attempts.current++<10){
+          if(retry.current)clearTimeout(retry.current)
+          retry.current=setTimeout(()=>{retry.current=null;if(pending.current)latest.current.onSync({type:'html_start',html_id:item.id,request:pending.current})},1000)
+        }else pending.current=null
+        return
+      }
+      if(signal.type==='html_resync'){
+        if(signal.session===session.current)latest.current.onSync({type:'html_request',html_id:item.id})
+        return
+      }
+      if(!['html_session','html_state','html_stop'].includes(signal.type))return
+      const grant=Boolean(signal.request&&signal.request===pending.current&&signal.session===pending.current)
+      if(grant){
+        session.current=signal.session!;pending.current=null;sent.current={document:'',revision:0};setError('');setActive(true);setRemote(undefined)
+        if(snapshot.current)sendSnapshot(snapshot.current)
+        return
+      }
+      if(signal.session===session.current&&signal.running){
+        sent.current={document:signal.document??'',revision:signal.revision??0};if(snapshot.current)sendSnapshot(snapshot.current);return
+      }
+      if(signal.type==='html_stop'&&signal.session===session.current){session.current=null;setActive(false)}
+      if(signal.running&&latest.current.active&&signal.session!==session.current){session.current=null;setActive(false)}
+      remoteView.current=signal
+      setRemote(previous=>previous&&previous.session===signal.session&&Boolean(previous.document)===Boolean(signal.document)&&previous.running===signal.running?previous:signal)
+      if(document&&signal.document&&!latest.current.active)frame.current?.contentWindow?.postMessage({token:document.token,kind:'render',document:signal.document},'*')
+    }
+    window.addEventListener(HTML_SYNC_EVENT,receive)
+    return()=>window.removeEventListener(HTML_SYNC_EVENT,receive)
+  },[item.id,sendSnapshot])
+  useEffect(()=>{
+    if(!shared||!connected)return
+    latest.current.onSync({type:'html_request',html_id:item.id})
+    if(latest.current.active){pending.current=crypto.randomUUID();latest.current.onSync({type:'html_start',html_id:item.id,request:pending.current})}
+  },[shared,connected,item.id])
+  useEffect(()=>()=>{
+    if(retry.current)clearTimeout(retry.current)
+    if(session.current)latest.current.onSync({type:'html_stop',html_id:item.id,session:session.current})
+  },[item.id])
   useEffect(()=>{
     if(!frameDocument)return
     function receive(event:MessageEvent){
       const data=event.data,element=frame.current
+      if(element&&event.source===element.contentWindow&&event.origin==='null'&&data?.type==='pizarra-html-sync'&&data.token===frameDocument!.token){
+        if(data.kind==='snapshot'&&latest.current.active&&typeof data.document==='string'&&data.document.length<=500000)sendSnapshot(data.document)
+        if(data.kind==='error')setError(String(data.error).slice(0,200))
+        if(data.kind==='ready'&&remoteView.current?.document)element.contentWindow?.postMessage({token:frameDocument!.token,kind:'render',document:remoteView.current.document},'*')
+        if(data.kind==='input'&&!latest.current.active&&remoteView.current?.running)latest.current.onSync({type:'html_input',html_id:item.id,session:remoteView.current.session,event:data.event})
+        return
+      }
       if(!element||event.source!==element.contentWindow||event.origin!=='null'||!data||data.type!=='pizarra-html-activity'||data.token!==frameDocument!.token||!['pointer','interact','leave'].includes(data.action)||!Number.isFinite(data.x)||!Number.isFinite(data.y)||data.x<0||data.x>1||data.y<0||data.y>1)return
       const now=performance.now();if(now-activityAt.current<32)return;activityAt.current=now
       const shape=latest.current.item,point={x:shape.x+element.offsetLeft+data.x*element.clientWidth,y:shape.y+element.offsetTop+data.y*element.clientHeight}
@@ -27,7 +109,7 @@ export default function HtmlWidget({item,getZoom,onSelect,onBegin,onChange,onEnd
     }
     window.addEventListener('message',receive)
     return()=>window.removeEventListener('message',receive)
-  },[frameDocument])
+  },[frameDocument,item.id,sendSnapshot])
   useEffect(()=>{
     function receive(event:Event){
       const update=(event as CustomEvent<HtmlPresence>).detail
@@ -72,11 +154,14 @@ export default function HtmlWidget({item,getZoom,onSelect,onBegin,onChange,onEnd
   return <section className="board-html-widget" data-html-id={item.id} onContextMenu={onContextMenu} style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??150000)*2,transform:`rotate(${item.rotation??0}rad)`}}>
     <header aria-label={`Mover HTML ${item.html!.name}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <span title={`${item.html!.name} · Usá el selector para interactuar`}>↔ {item.html!.name}</span>
-      {active&&<button type="button" className="html-stop" aria-label={`Detener HTML ${item.html!.name}`} title="Detener y liberar memoria; al activarlo se reinicia" onPointerDown={event=>event.stopPropagation()} onClick={()=>{setActive(false);onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'leave'})}}>Detener</button>}
+      {active&&<button type="button" className="html-stop" aria-label={`Detener HTML ${item.html!.name}`} title="Detener y liberar memoria; al activarlo se reinicia" onPointerDown={event=>event.stopPropagation()} onClick={()=>{if(session.current)onSync({type:'html_stop',html_id:item.id,session:session.current});else setActive(false);onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'leave'})}}>Detener</button>}
+      {mirrored&&!remote?.running&&<button type="button" className="html-stop" onPointerDown={event=>event.stopPropagation()} onClick={start}>Reactivar</button>}
       <button type="button" aria-label={`Eliminar HTML ${item.html!.name}`} onPointerDown={event=>event.stopPropagation()} onClick={onDelete}>×</button>
     </header>
     {presence.length>0&&<div className="html-presence" role="status">{presence.map(user=><span key={user.clientId} style={{borderColor:user.color}}>{user.emoji} {user.name} está usando este HTML</span>)}</div>}
-    {frameDocument?<iframe ref={frame} title={`HTML: ${item.html!.name}`} srcDoc={frameDocument.source} sandbox="allow-scripts allow-forms allow-downloads" referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"/>:<button type="button" className="html-activate" aria-label={`Activar HTML ${item.html!.name}`} onClick={()=>{onSelect();setActive(true);onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'interact'})}}><strong>Activar HTML</strong><span>Tocá para cargar e interactuar</span></button>}
+    {error&&<div className="html-sync-status" role="alert">{error}</div>}
+    {mirrored&&<div className="html-sync-status">{remote?.running?'Vista compartida · podés interactuar':'HTML detenido · última vista'}</div>}
+    {frameDocument?<iframe ref={frame} title={`HTML: ${item.html!.name}`} onLoad={()=>{const document=frameDocumentRef.current;if(document)frame.current?.contentWindow?.postMessage(remoteView.current?.document&&!active?{token:document.token,kind:'render',document:remoteView.current.document}:{token:document.token,kind:'capture'},'*')}} srcDoc={frameDocument.source} sandbox={mirrored?'allow-scripts':'allow-scripts allow-forms allow-downloads'} referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"/>:<button type="button" className="html-activate" aria-label={`Activar HTML ${item.html!.name}`} onClick={start}><strong>Activar HTML</strong><span>Tocá para cargar e interactuar</span></button>}
     <div className="html-resize" role="button" tabIndex={0} aria-label={`Cambiar tamaño HTML ${item.html!.name}`} onPointerDown={event=>down(event,true)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();onBegin();onChange({width:Math.max(240,item.width+(event.key==='ArrowRight'?20:event.key==='ArrowLeft'?-20:0)),height:Math.max(160,item.height+(event.key==='ArrowDown'?20:event.key==='ArrowUp'?-20:0))});onEnd()}}>↘</div>
   </section>

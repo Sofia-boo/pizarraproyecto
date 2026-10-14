@@ -479,6 +479,52 @@ class BackendTest(unittest.TestCase):
                     b.send_json({'type':'cursor_move','point':{'x':100,'y':200},'html_id':'a'*81,'html_action':'interact'})
                     self.assertNotIn('html_id',a.receive_json())
 
+    def test_live_html_has_one_executor_bounded_input_and_late_join_state(self):
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'HTML live owner','password':'html-password'})
+            board=client.post('/api/boards',json={'name':'HTML live'}).json()['id']
+            token=client.post(f'/api/share/boards/{board}',json={'role':'editor'}).json()['token']
+            viewer=client.post(f'/api/share/boards/{board}',json={'role':'viewer'}).json()['token']
+            content={'shapes':[{'id':'html-live','kind':'rectangle','visualType':'html','x':0,'y':0,'width':640,'height':440,'color':'#64748b','strokeWidth':1,'html':{'name':'live.html','source':'<button>1</button>'}}]}
+            self.assertEqual(client.put(f'/api/boards/{board}',json={'version':0,'content':content}).status_code,200)
+            with client.websocket_connect(f'wss://testserver/api/live/{board}') as a:
+                a.receive_json();a.receive_json()
+                client.cookies.clear()
+                client.post('/api/auth/guest',json={'name':'HTML live member','password':'html-password'})
+                client.post('/api/share/join',json={'token':token})
+                with client.websocket_connect(f'wss://testserver/api/live/{board}') as b:
+                    b.receive_json();b.receive_json();a.receive_json()
+                    a.send_json({'type':'html_start','html_id':'missing','request':'missing'})
+                    self.assertTrue(a.receive_json()['retry'])
+                    a.send_json({'type':'html_start','html_id':'html-live','request':'session-a'})
+                    session=a.receive_json();self.assertEqual(session['type'],'html_session')
+                    self.assertEqual(b.receive_json()['session'],'session-a')
+                    b.send_json({'type':'html_start','html_id':'html-live','request':'session-b'})
+                    self.assertEqual(b.receive_json()['session'],'session-a')
+                    document='<html><body><button data-pizarra-node="5">Matemática 🙂</button></body></html>'
+                    a.send_json({'type':'html_frame','html_id':'html-live','session':'session-a','base':0,'prefix':0,'remove':0,'text':document})
+                    self.assertEqual(b.receive_json()['revision'],1)
+                    b.send_json({'type':'html_frame','html_id':'html-live','session':'session-a','base':1,'prefix':0,'remove':0,'text':'not owner'})
+                    b.send_json({'type':'html_input','html_id':'html-live','session':'session-a','event':{'action':'input','node':'5','value':'x'*8001}})
+                    b.send_json({'type':'html_input','html_id':'html-live','session':'session-a','event':{'action':'click','node':'5','name':'spoof','source':'not forwarded','x':.5}})
+                    event=a.receive_json();self.assertEqual(event['type'],'html_input')
+                    self.assertEqual(event['event'],{'action':'click','node':'5','x':.5})
+                    b.send_json({'type':'html_request','html_id':'html-live'})
+                    self.assertEqual(b.receive_json()['document'],document)
+                    client.cookies.clear()
+                    client.post('/api/auth/guest',json={'name':'HTML live viewer','password':'html-password'})
+                    client.post('/api/share/join',json={'token':viewer})
+                    with client.websocket_connect(f'wss://testserver/api/live/{board}') as c:
+                        c.receive_json();c.receive_json();a.receive_json();b.receive_json()
+                        cached=c.receive_json();self.assertEqual(cached['document'],document)
+                        c.send_json({'type':'html_stop','html_id':'html-live','session':'session-a'})
+                        c.send_json({'type':'html_input','html_id':'html-live','session':'session-a','event':{'action':'click','node':'5'}})
+                        c.send_json({'type':'cursor_move','point':{'x':0,'y':0}})
+                        self.assertEqual(a.receive_json()['type'],'cursor_move');b.receive_json()
+                        a.send_json({'type':'html_stop','html_id':'html-live','session':'session-a'})
+                        for peer in [a,b,c]:
+                            self.assertFalse(peer.receive_json()['running'])
+
     def test_printable_pages_cartesian_and_code_save_with_validation(self):
         import copy
         with TestClient(self.app,base_url='https://testserver') as client:

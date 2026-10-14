@@ -15,6 +15,8 @@ import CodeWorkspace from './components/CodeWorkspace'
 import HtmlWidget from './components/HtmlWidget'
 import {HTML_PRESENCE_EVENT} from './components/htmlActivity'
 import type {HtmlActivity} from './components/htmlActivity'
+import {clearHtmlViews,receiveHtmlSignal} from './components/htmlShared'
+import type {HtmlSignal} from './components/htmlShared'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
 import ImageCropDialog from './components/ImageCropDialog'
 import TouchButton from './components/TouchButton'
@@ -2407,6 +2409,10 @@ function App() {
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
             }
             if (msg.board_id !== boardId) return
+            if(msg.type?.startsWith('html_')){
+              if(!receiveHtmlSignal(msg as HtmlSignal)&&msg.html_id)sendLive({type:'html_request',html_id:msg.html_id})
+              return
+            }
             if (msg.type === 'board_version' && typeof msg.version === 'number') {
               if (!applying && !pendingReplicaRef.current && !localIsBusy() && msg.base_version===getActiveBoardVersion() && msg.version===msg.base_version+1) {
                 const base=getCommittedBoardContent()
@@ -2537,6 +2543,7 @@ function App() {
       if (socket) { socket.onclose = null; socket.onerror = null; socket.close() }
       if (liveSocketRef.current === socket) liveSocketRef.current = null
       liveStrokeProgressRef.current = null
+      clearHtmlViews()
       remoteStrokesRef.current.clear()
       remoteCursorsRef.current.clear()
       viewsRef.current.clear()
@@ -4748,7 +4755,7 @@ function App() {
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{deleteSelected();setContextMenu(null)}}>Eliminar selección <small>Supr</small></button>
         </div></>}
       <div className="board-scene" ref={sceneRef} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
-      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>{if(tool!=='select')selectTool('select');selectElement({kind:'shape',id:item.id})}} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu} onActivity={activity=>sendHtmlActivity(item.id,activity)}/>)}
+      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} shared={Boolean(liveBoardId&&!privateBoard(liveBoardId))} connected={liveConnected} onSync={sendLive} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>{if(tool!=='select')selectTool('select');selectElement({kind:'shape',id:item.id})}} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu} onActivity={activity=>sendHtmlActivity(item.id,activity)}/>)}
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>

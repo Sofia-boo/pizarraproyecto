@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, quote
 from collections import deque
 from fastapi import WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import JSONResponse
+from reconocimiento_local import html_live
 
 # {board_id: {websocket: {uid, client_id, name, color, role, active, points, traffic}}}
 _clients: dict[str, dict[WebSocket, dict]] = {}
@@ -168,9 +169,11 @@ def attach_live_sync(app, db_connection):
             # al resto de participantes. Se limita el tamaño de la memoria.
             for state in list(_video_states.get(board_id, {}).values()):
                 await _send(websocket, state)
+            for state in html_live.states(board_id):
+                await _send(websocket, html_live.public(state))
             while True:
                 raw = await websocket.receive_text()
-                if len(raw) > 30000:
+                if len(raw) > 600000:
                     await websocket.close(code=1009)
                     break
                 try:
@@ -180,7 +183,10 @@ def attach_live_sync(app, db_connection):
                 if not isinstance(payload, dict):
                     continue
                 event_type = payload.get('type')
-                if event_type not in ('stroke_start', 'stroke_points', 'stroke_end', 'stroke_cancel', 'cursor_move', 'cursor_hide', 'video_control', 'camera_move'):
+                if len(raw) > 30000 and event_type != 'html_frame':
+                    await websocket.close(code=1009)
+                    break
+                if event_type not in ('stroke_start', 'stroke_points', 'stroke_end', 'stroke_cancel', 'cursor_move', 'cursor_hide', 'video_control', 'camera_move', 'html_start', 'html_stop', 'html_request', 'html_frame', 'html_input'):
                     continue
                 if not _allowed(board_id, user_id, 'viewer'):
                     await websocket.close(code=1008)
@@ -193,6 +199,10 @@ def attach_live_sync(app, db_connection):
                 if len(traffic) > 120:
                     await websocket.close(code=1008)
                     break
+                if event_type.startswith('html_'):
+                    await html_live.handle(board_id, payload, participant, websocket, db_connection,
+                                           _allowed, _send, _broadcast)
+                    continue
                 if event_type == 'camera_move':
                     center, zoom = _point(payload.get('center')), payload.get('zoom')
                     if (center is None or type(zoom) not in (int, float)
@@ -338,6 +348,7 @@ def attach_live_sync(app, db_connection):
         except Exception:
             pass
         finally:
+            await html_live.disconnect(board_id, participant['client_id'], _broadcast)
             if participant['active']:
                 await _broadcast(board_id, {'type': 'stroke_cancel', 'board_id': board_id,
                     'stroke_id': participant['active'], 'client_id': participant['client_id']}, exclude=websocket)
@@ -348,6 +359,7 @@ def attach_live_sync(app, db_connection):
             _locks.pop(websocket, None)
             if not peers:
                 _clients.pop(board_id, None)
+                html_live.clear(board_id)
             else:
                 await _presence(board_id)
 
