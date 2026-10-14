@@ -16,6 +16,7 @@ export const ACADEMIC_TEMPLATES = [
   {id:'xor',name:'Puerta XOR',category:'Lógica'},
   {id:'matrix',name:'Matriz',category:'Matemática'},
   {id:'vector',name:'Vector',category:'Matemática'},
+  {id:'cartesian',name:'Ejes cartesianos X e Y',category:'Matemática · Cuadrícula'},
   {id:'resistor',name:'Resistencia',category:'Circuitos'},
   {id:'capacitor',name:'Capacitor',category:'Circuitos'},
   {id:'voltage',name:'Fuente de tensión',category:'Circuitos'},
@@ -70,6 +71,7 @@ export function academicTemplate(template:TemplateId,center:Point,id:()=>string,
     const symbol=template as AcademicSymbol
     const shape=node('',0,0,'rectangle',140,90)
     shape.visualType='symbol';shape.symbol=symbol
+    if(symbol==='cartesian'){shape.width=440;shape.height=440;delete shape.groupId;delete shape.label;delete shape.labelFontSize}
     if(['and','or','not','xor'].includes(symbol))shape.label=symbol.toUpperCase()
     if(symbol==='matrix'){shape.width=180;shape.height=130;shape.label='1    0\n0    1';shape.labelFontSize=24;shape.matrix=[['1','0'],['0','1']]}
     if(symbol==='vector'){shape.width=100;shape.height=170;shape.label='x\ny\nz';shape.labelFontSize=25;shape.matrix=[['x'],['y'],['z']]}

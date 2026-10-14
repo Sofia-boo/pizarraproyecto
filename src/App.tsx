@@ -3426,10 +3426,7 @@ function App() {
   }
 
   function insertCartesian() {
-    if(!loadedRef.current)return
-    rememberChange()
-    const center=boardCenter(),item:ShapeItem={id:createId(),kind:'rectangle',visualType:'symbol',symbol:'cartesian',x:center.x-220,y:center.y-220,width:440,height:440,color,strokeWidth:2}
-    shapesRef.current.push(item);selectTool('select');selectElement({kind:'shape',id:item.id});setOpenMenu(null);redraw();scheduleSave()
+    insertAcademic('cartesian')
   }
 
   async function printA4(onlySelected:boolean) {
