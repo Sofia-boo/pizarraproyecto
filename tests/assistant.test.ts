@@ -38,7 +38,17 @@ describe('official ChatGPT browser integration',()=>{
     vi.stubGlobal('navigator',{userAgent:'Desktop Chrome'})
     vi.stubGlobal('screen',{availWidth:1200,availHeight:900})
     vi.stubGlobal('window',{open,screenX:0,screenY:0,outerWidth:1200})
+    vi.stubGlobal('location',{search:''})
+    vi.stubGlobal('sessionStorage',{getItem:()=>null})
     try{expect(openOfficialChatGPT()).toBe(true);expect(open.mock.calls[0][0]).toBe(CHATGPT_URL);expect(popup.opener).toBeNull()}
+    finally{vi.unstubAllGlobals()}
+  })
+  it('keeps the native return controls when Android requests desktop sites',()=>{
+    const values=new Map<string,string>(),assign=vi.fn(),location={search:'?app=1&native=1',assign}
+    vi.stubGlobal('navigator',{userAgent:'Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0.0.0'})
+    vi.stubGlobal('location',location)
+    vi.stubGlobal('sessionStorage',{getItem:(key:string)=>values.get(key),setItem:(key:string,value:string)=>values.set(key,value)})
+    try{expect(nativeAndroid()).toBe(true);location.search='';expect(openOfficialChatGPT()).toBe(true);expect(assign).toHaveBeenCalledWith(CHATGPT_ANDROID_INTENT)}
     finally{vi.unstubAllGlobals()}
   })
   it('uses the native Custom Tabs intent only from the Android wrapper and remembers its mode',()=>{

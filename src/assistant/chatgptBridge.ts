@@ -2,7 +2,8 @@ export const CHATGPT_URL='https://chatgpt.com/'
 export const ANDROID_APK='/downloads/pizarra-chatgpt.apk?v=2'
 export const CHATGPT_ANDROID_INTENT='intent://chatgpt#Intent;scheme=pizarraestudio;package=com.sofic.pizarra;S.browser_fallback_url=https%3A%2F%2Fchatgpt.com%2F;end'
 export function nativeAndroid(){
-  if(!/Android/i.test(navigator.userAgent))return false
+  // Desktop-site mode on Android can advertise a desktop user agent. The
+  // wrapper's explicit launch marker survives that setting and page reloads.
   if(new URLSearchParams(location.search).get('native')==='1')sessionStorage.setItem('pizarra-native-browser','1')
   return sessionStorage.getItem('pizarra-native-browser')==='1'
 }
