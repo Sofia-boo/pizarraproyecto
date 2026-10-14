@@ -10,6 +10,38 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_shared_board_removal_is_personal_for_creator_editor_and_viewer(self):
+        with TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as editor,TestClient(self.app,base_url='https://testserver') as viewer,TestClient(self.app,base_url='https://testserver') as outsider:
+            for client,name in [(owner,'Hidden owner'),(editor,'Hidden editor'),(viewer,'Hidden viewer'),(outsider,'Hidden outsider')]:
+                self.assertEqual(client.post('/api/auth/guest',json={'name':name,'password':'hide-password'}).status_code,200)
+            folder=owner.post('/api/folders',json={'name':'Materia original'}).json()['id']
+            board=owner.post('/api/boards',json={'name':'Apuntes compartidos','folder_id':folder}).json()['id']
+            content={'texts':[{'id':'text-preserved','x':10,'y':20,'text':'Conservar los apuntes','fontSize':22,'color':'#111827'}]}
+            self.assertEqual(owner.put(f'/api/boards/{board}',json={'version':0,'content':content}).status_code,200)
+            code=owner.post(f'/api/share/boards/{board}/code',json={}).json()['code']
+            editor.post('/api/share/join-code',json={'code':code})
+            link=owner.post(f'/api/share/boards/{board}',json={'role':'viewer','days':7}).json()['token']
+            viewer.post('/api/share/join',json={'token':link})
+            placement=editor.get('/api/library').json()['boards'][0]['folder_id']
+            self.assertEqual(outsider.delete(f'/api/boards/{board}').status_code,403)
+            for client in [editor,viewer]:
+                self.assertEqual(client.delete(f'/api/boards/{board}').status_code,200)
+                self.assertEqual(client.delete(f'/api/boards/{board}').status_code,200)
+                self.assertNotIn(board,[b['id'] for b in client.get('/api/library').json()['boards']])
+            self.assertIn(board,[b['id'] for b in owner.get('/api/library').json()['boards']])
+            self.assertEqual(owner.get(f'/api/boards/{board}').json()['content'],content)
+            # The creator can also remove it without deleting it for members.
+            editor.post('/api/share/join-code',json={'code':code})
+            self.assertEqual(editor.get('/api/library').json()['boards'][0]['folder_id'],placement)
+            self.assertEqual(owner.delete(f'/api/boards/{board}').status_code,200)
+            self.assertNotIn(board,[b['id'] for b in owner.get('/api/library').json()['boards']])
+            self.assertEqual(editor.get(f'/api/boards/{board}').json()['content'],content)
+            self.assertEqual(editor.put(f'/api/boards/{board}',json={'version':1,'content':content}).status_code,200)
+            self.assertIn(board,[b['id'] for b in editor.get('/api/library').json()['boards']])
+            owner.post('/api/share/join-code',json={'code':code})
+            self.assertEqual(owner.get('/api/library').json()['boards'][0]['folder_id'],folder)
+            self.assertEqual(owner.get(f'/api/boards/{board}').json()['version'],2)
+
     def test_retired_ocr_routes_are_absent_and_boards_still_load(self):
         paths={route.path for route in self.app.routes if hasattr(route,'path')}
         self.assertFalse(any(path.startswith(('/recognize/','/api/ocr/')) for path in paths))

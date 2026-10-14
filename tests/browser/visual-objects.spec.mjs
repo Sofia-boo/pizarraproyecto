@@ -57,6 +57,38 @@ async function drag(page,x,y,dx,dy) {
   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:10});await page.mouse.up()
 }
 
+test('removing a shared board hides it only for that user and safely switches the active board',async({browser})=>{
+  const owner=await browser.newContext(),editor=await browser.newContext({viewport:{width:800,height:1100},hasTouch:true})
+  try{
+    await signedIn(owner,'Hide board owner');await signedIn(editor,'Hide board editor')
+    const board=(await (await owner.request.post(`${api}/api/boards`,{data:{name:'Apuntes para conservar'}})).json()).id
+    const code=(await (await owner.request.post(`${api}/api/share/boards/${board}/code`,{data:{}})).json()).code
+    await editor.request.post(api+'/api/share/join-code',{data:{code}})
+    const page=await editor.newPage();await page.goto(api)
+    await expect(page.locator('.library-open-button')).toContainText('Apuntes para conservar')
+    await page.locator('.library-open-button').click()
+    await page.getByRole('button',{name:'Eliminar Apuntes para conservar',exact:true}).click()
+    const confirmation=page.getByRole('alertdialog')
+    await expect(confirmation).toContainText('Los demás usuarios conservarán la pizarra y su contenido')
+    await confirmation.getByRole('button',{name:'Sí, quitar',exact:true}).click()
+    await expect.poll(()=>page.evaluate(()=>localStorage.getItem('pizarra_activa'))).not.toBe(board)
+    await expect(page.locator('.toolbar')).toBeVisible()
+    expect((await (await editor.request.get(api+'/api/library')).json()).boards.some(b=>b.id===board)).toBe(false)
+    expect((await (await owner.request.get(api+'/api/library')).json()).boards.some(b=>b.id===board)).toBe(true)
+    expect((await owner.request.get(`${api}/api/boards/${board}`)).status()).toBe(200)
+    // The removed board also stays out of the cached offline library.
+    await page.route('**/api/library',r=>r.fulfill({status:503,body:'offline'}))
+    await page.locator('.library-open-button').click()
+    await expect(page.getByRole('button',{name:'Eliminar Apuntes para conservar',exact:true})).toHaveCount(0)
+    await page.unroute('**/api/library')
+    // Removing it as creator must preserve the member's content and access.
+    expect((await owner.request.delete(`${api}/api/boards/${board}`)).status()).toBe(200)
+    expect((await editor.request.get(`${api}/api/boards/${board}`)).status()).toBe(200)
+    expect((await editor.request.post(api+'/api/share/join-code',{data:{code}})).status()).toBe(200)
+    expect((await (await editor.request.get(api+'/api/library')).json()).boards.filter(b=>b.id===board)).toHaveLength(1)
+  }finally{await owner.close();await editor.close()}
+})
+
 test('four digit join switches boards, keeps pending work and follows a different viewport',async({browser})=>{
   const contexts=await Promise.all([browser.newContext({viewport:{width:1600,height:900}}),browser.newContext({viewport:{width:800,height:1100}})])
   try{

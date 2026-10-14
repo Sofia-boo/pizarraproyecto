@@ -153,7 +153,15 @@ export async function renameBoard(id: string, name: string, folder_id: string | 
   await writeDeviceBoard({ ...board, name, folder_id })
 }
 export async function removeBoard(id: string) {
-  if (!isPrivate(id)) await request(`/api/boards/${id}`, {method:'DELETE'})
+  if (!isPrivate(id)) {
+    await request(`/api/boards/${id}`, {method:'DELETE'})
+    const db=await deviceDB,tx=db.transaction('meta','readwrite'),key=`library:${account}`
+    const library=await tx.store.get(key) as {folders:Folder[];boards:BoardInfo[]}|undefined
+    if(library)await tx.store.put({...library,boards:library.boards.filter(board=>board.id!==id)},key)
+    await tx.done
+    // Preserve pending local work and personal placement for a later rejoin.
+    return
+  }
   await (await deviceDB).delete('boards', cacheKey(id))
 }
 

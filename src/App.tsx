@@ -1266,6 +1266,7 @@ function App() {
         if (folderFilter === target.id) setFolderFilter(null)
         setExpandedFolders(old => old.filter(id => id !== target.id))
       } else {
+        if(target.id===getActiveBoardId())await flushBoardForHistory()
         await removeBoard(target.id)
         if (target.id === getActiveBoardId()) {
           const other = boards.find(b => b.id !== target.id)
@@ -4982,15 +4983,15 @@ function App() {
           {deleteTarget && <div className="library-confirm-backdrop" onPointerDown={e => e.stopPropagation()}>
             <div className="library-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="library-confirm-title" aria-describedby="library-confirm-description" onKeyDown={e => { if (e.key === 'Escape' && !deleting) { e.stopPropagation(); setDeleteTarget(null) } }}>
               <div className="library-confirm-icon" aria-hidden="true">×</div>
-              <h3 id="library-confirm-title">{deleteTarget.kind === 'board' ? '¿Eliminar esta pizarra?' : '¿Eliminar esta carpeta?'}</h3>
+              <h3 id="library-confirm-title">{deleteTarget.kind === 'board' ? privateBoard(deleteTarget.id)?'¿Eliminar esta pizarra?':'¿Quitar esta pizarra de tu biblioteca?' : '¿Eliminar esta carpeta?'}</h3>
               <p id="library-confirm-description">
                 {deleteTarget.kind === 'board'
-                  ? <>Se eliminará <strong>«{deleteTarget.name}»</strong> y todo su contenido. Esta acción no se puede deshacer.</>
+                  ? privateBoard(deleteTarget.id)?<>Se eliminará <strong>«{deleteTarget.name}»</strong> y todo su contenido. Esta acción no se puede deshacer.</>:<>Se quitará <strong>«{deleteTarget.name}»</strong> sólo de tu biblioteca. Los demás usuarios conservarán la pizarra y su contenido. Podés volver a agregarla con su código o invitación.</>
                   : <>Se eliminará la carpeta <strong>«{deleteTarget.name}»</strong>. Las pizarras que contiene se conservarán sin carpeta.</>}
               </p>
               <div className="library-confirm-actions">
                 <button type="button" autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancelar</button>
-                <button type="button" className="library-confirm-danger" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? 'Eliminando…' : 'Sí, eliminar'}</button>
+                <button type="button" className="library-confirm-danger" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? 'Eliminando…' : deleteTarget.kind==='board'&&!privateBoard(deleteTarget.id)?'Sí, quitar':'Sí, eliminar'}</button>
               </div>
             </div>
           </div>}

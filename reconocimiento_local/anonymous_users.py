@@ -172,6 +172,11 @@ def migrate(db_connection, data_dir: Path):
           role TEXT NOT NULL CHECK(role IN ('viewer','editor')),
           PRIMARY KEY (board_id,user_id)
         );
+        CREATE TABLE IF NOT EXISTS hidden_boards (
+          board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES anonymous_users(id) ON DELETE CASCADE,
+          PRIMARY KEY (board_id,user_id)
+        );
         CREATE TABLE IF NOT EXISTS share_links (
           id TEXT PRIMARY KEY, board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
           token_hash TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('viewer','editor')),
@@ -460,6 +465,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
 
     def accept_board(db, uid, board_id, role='editor'):
         # Membership and placement are personal. Rejoining never moves a board.
+        db.execute('DELETE FROM hidden_boards WHERE board_id=? AND user_id=?', (board_id, uid))
         existing = board_role(db, uid, board_id)
         if not existing:
             folder = db.execute('SELECT id FROM folders WHERE owner_user_id=? AND name=? ORDER BY created_at LIMIT 1',
@@ -627,8 +633,10 @@ def attach_anonymous_users(app, db_connection, data_dir):
                     b.version,b.updated_at,
                     CASE WHEN b.owner_user_id=? THEN 'owner' ELSE m.role END AS role
                     FROM boards b LEFT JOIN board_members m ON m.board_id=b.id AND m.user_id=?
-                    WHERE b.owner_user_id=? OR m.user_id=? ORDER BY b.updated_at DESC''',
-                    (uid,uid,uid,uid,uid))]
+                    WHERE (b.owner_user_id=? OR m.user_id=?) AND NOT EXISTS
+                    (SELECT 1 FROM hidden_boards h WHERE h.board_id=b.id AND h.user_id=?)
+                    ORDER BY b.updated_at DESC''',
+                    (uid,uid,uid,uid,uid,uid))]
                 return JSONResponse({'folders': folders, 'boards': boards})
             if path == '/api/folders' and method == 'POST':
                 try:
@@ -672,8 +680,10 @@ def attach_anonymous_users(app, db_connection, data_dir):
                 required = 'viewer'
                 if method in ('PUT','POST','PATCH','DELETE'):
                     required = 'editor'
-                if method == 'DELETE' or '/restore' in subpath:
+                if (method == 'DELETE' and subpath) or '/restore' in subpath:
                     required = 'owner'
+                if not subpath and method == 'DELETE':
+                    required = 'viewer'
                 if subpath == 'info':
                     required = 'viewer'
                 if subpath.startswith('history') and method == 'DELETE':

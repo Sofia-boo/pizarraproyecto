@@ -164,9 +164,15 @@ def update_board_info(board_id: str, item: BoardInput):
     return {'ok': True}
 
 @app.delete('/api/boards/{board_id}')
-def delete_board(board_id: str):
+def delete_board(board_id: str, request: HTTPRequest):
+    from reconocimiento_local.anonymous_users import can_board
     with db_connection() as db:
-        db.execute('DELETE FROM boards WHERE id=?', (board_id,))
+        uid = getattr(request.state, 'user_id', None)
+        if not uid or not can_board(db, uid, board_id):
+            raise HTTPException(403, 'Sin permisos para esta pizarra')
+        # Removing a shared board is personal, even for its creator. Never
+        # delete its content, memberships, assets, history or invitations here.
+        db.execute('INSERT OR IGNORE INTO hidden_boards(board_id,user_id) VALUES(?,?)', (board_id, uid))
     return {'ok': True}
 
 @app.put('/api/assets/{asset_id}')
