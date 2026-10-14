@@ -5,7 +5,7 @@ import {personalStorageScope} from '../biblioteca'
 import {useOnline} from '../connectivity'
 import {plainAssistantText} from '../assistant/messageFormat'
 import {responseImage} from '../assistant/responseImage'
-import {openOfficialChatGPT,downloadStudyFile,CHATGPT_URL} from '../assistant/chatgptBridge'
+import {openOfficialChatGPT,downloadStudyFile,CHATGPT_URL,ANDROID_APK} from '../assistant/chatgptBridge'
 import {transcriptionKey} from '../assistant/transcription'
 import type {TranscriptionTarget,TextInsertion} from '../assistant/transcription'
 import AssistantMessageText from './AssistantMessageText'
@@ -25,6 +25,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   const [target,setTarget]=useState<TranscriptionTarget|null>(transcription??null),[result,setResult]=useState<TranscriptionResult|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attachments,setAttachments]=useState(false),[manualPaste,setManualPaste]=useState(false),[pasted,setPasted]=useState('')
   const [pasteEditable,setPasteEditable]=useState(false)
+  const [confirmDeleteChat,setConfirmDeleteChat]=useState(false)
   const input=useRef<HTMLInputElement>(null),answers=useRef(new Map<string,HTMLDivElement>()),clipboardPreview=useRef<HTMLDivElement>(null),shell=useRef<HTMLDivElement>(null)
   const latest=useRef({question,files,messages,target,result,chats,activeChat}),bottom=useRef<HTMLDivElement>(null)
   useEffect(()=>{latest.current={question,files,messages,target,result,chats,activeChat}},[question,files,messages,target,result,chats,activeChat])
@@ -69,7 +70,8 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
     try{
       const current=latest.current
       const archive=[...current.chats.filter(chat=>chat.id!==current.activeChat),{id:current.activeChat,name:current.chats.find(chat=>chat.id===current.activeChat)?.name??'Chat 1',messages:current.messages,question:current.question,files:current.files}]
-      const nextChat=id?archive.find(chat=>chat.id===id):{id:crypto.randomUUID(),name:`Chat ${archive.length+1}`,messages:[],question:'',files:[]}
+      const ordinal=Math.max(0,...archive.map(chat=>Number(/^Chat (\d+)$/.exec(chat.name)?.[1]??0)))+1
+      const nextChat=id?archive.find(chat=>chat.id===id):{id:crypto.randomUUID(),name:`Chat ${ordinal}`,messages:[],question:'',files:[]}
       if(!nextChat)return
       const nextChats=id?archive:[...archive,nextChat]
       const next={...current,chats:nextChats,activeChat:nextChat.id,messages:nextChat.messages,question:nextChat.question,files:nextChat.files}
@@ -87,6 +89,18 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
     try{opened=openOfficialChatGPT();setOfficialOpened(opened)}catch{/* El enlace directo sigue disponible. */}
     try{await saving;if(!opened)setError('El navegador bloqueó la ventana. Usá el enlace «Abrir directamente».')}
     catch{setError('ChatGPT se abrió, pero no se pudo completar el guardado. Volvé a la pizarra antes de cerrar esta app.')}
+  }
+  async function deleteActiveChat(){
+    if(busy||!loaded)return
+    setBusy(true);setError('')
+    try{
+      const current=latest.current,remaining=current.chats.filter(chat=>chat.id!==current.activeChat)
+      const replacement=remaining.at(-1)??{id:crypto.randomUUID(),name:'Chat 1',messages:[],question:'',files:[]}
+      const next={...current,chats:remaining.length?remaining:[replacement],activeChat:replacement.id,messages:replacement.messages,question:replacement.question,files:replacement.files}
+      await(await deviceDB).put('meta',next,key)
+      latest.current=next;setChats(next.chats);setActiveChat(next.activeChat);setMessages(next.messages);setQuestion(next.question);setFiles(next.files);setPasted('');setManualPaste(false);setAttachments(false);setConfirmDeleteChat(false)
+      setNotice('Chat eliminado del panel. Lo que insertaste en la pizarra se conserva.')
+    }catch{setError('No se pudo eliminar el chat.')}finally{setBusy(false)}
   }
   async function copyQuestion(){
     if(!question.trim())return
@@ -143,7 +157,9 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
     <section className="chatgpt-consultation" role="dialog" aria-modal="true" aria-label="ChatGPT">
       <header><div><h2>{transcribing?'Transcribir con ChatGPT':'ChatGPT'}</h2><small>{online?'Tu cuenta personal · navegador de este dispositivo':'Sin conexión'}</small></div><ChatGPTButton aria-label="Cerrar ChatGPT" disabled={busy} onPress={()=>void close()}>×</ChatGPTButton></header>
       <div className="chatgpt-connect"><ChatGPTButton disabled={!online||!loaded||busy} onPress={()=>void openOnDevice()}>{officialOpened?'Volver a abrir ChatGPT':'Abrir ChatGPT en este dispositivo'}</ChatGPTButton><p>{transcribing?'Compartí el recorte y la instrucción con ChatGPT. Copiá su respuesta y tocá «Pegar transcripción» al volver.':'Consultá allí con tu cuenta. Copiá la respuesta y pegala al volver.'}</p><a href={CHATGPT_URL} target="_blank" rel="noopener noreferrer">Abrir directamente</a></div>
-      {!transcribing&&<div className="chatgpt-conversations"><select aria-label="Conversación de la pizarra" disabled={!loaded||busy} value={activeChat} onChange={e=>void switchChat(e.target.value)}>{[...chats.filter(chat=>chat.id!==activeChat),{id:activeChat,name:chats.find(chat=>chat.id===activeChat)?.name??(activeChat==='initial'?'Chat 1':`Chat ${chats.length+1}`)}].map(chat=><option key={chat.id} value={chat.id}>{chat.name}</option>)}</select><ChatGPTButton disabled={!loaded||busy} onPress={()=>void switchChat()}>Cambiar de chat</ChatGPTButton><small>Si elegís otro chat en ChatGPT, cambialo también acá. El navegador no comunica ese cambio.</small></div>}
+      {/Android/i.test(navigator.userAgent)&&<div className="chatgpt-android-return"><small>La app Android actualizada incluye «Volver a la pizarra» y el cierre ×. Si usás la página web, cerrá la pestaña de ChatGPT para volver.</small><a href={ANDROID_APK} download="pizarra-chatgpt.apk">Actualizar app Android</a></div>}
+      {!transcribing&&<div className="chatgpt-conversations"><select aria-label="Conversación de la pizarra" disabled={!loaded||busy||confirmDeleteChat} value={activeChat} onChange={e=>void switchChat(e.target.value)}>{[...chats.filter(chat=>chat.id!==activeChat),{id:activeChat,name:chats.find(chat=>chat.id===activeChat)?.name??(activeChat==='initial'?'Chat 1':`Chat ${chats.length+1}`)}].map(chat=><option key={chat.id} value={chat.id}>{chat.name}</option>)}</select><ChatGPTButton disabled={!loaded||busy||confirmDeleteChat} onPress={()=>void switchChat()}>Cambiar de chat</ChatGPTButton><ChatGPTButton disabled={!loaded||busy||confirmDeleteChat} onPress={()=>setConfirmDeleteChat(true)}>Eliminar chat</ChatGPTButton><small>Si elegís otro chat en ChatGPT, cambialo también acá. El navegador no comunica ese cambio.</small></div>}
+      {confirmDeleteChat&&<div className="chatgpt-delete-confirm" role="alertdialog" aria-label="Eliminar chat del panel"><p>¿Eliminar este chat del panel? Las conversaciones de tu cuenta de ChatGPT y lo que insertaste en la pizarra se conservan.</p><ChatGPTButton disabled={busy} onPress={()=>setConfirmDeleteChat(false)}>Cancelar</ChatGPTButton><ChatGPTButton disabled={busy} onPress={()=>void deleteActiveChat()}>Sí, eliminar chat</ChatGPTButton></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!messages.length&&<p className="chatgpt-empty">Podés preparar tu pregunta y los archivos acá. La consulta se hace en ChatGPT.</p>}
         {messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}>
