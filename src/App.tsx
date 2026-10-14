@@ -963,7 +963,8 @@ function App() {
   }
 
   function startLiveStroke(stroke: Stroke) {
-    const id = createId().replace(/[^a-zA-Z0-9_-]/g, '')
+    const id = stroke.id ?? createId()
+    stroke.id = id
     liveStrokeProgressRef.current = {id, sent:1, lastSent:performance.now()}
     sendLive({type:'stroke_start',stroke_id:id,point:stroke.points[0],color:stroke.color,width:stroke.width,highlighter:Boolean((stroke as Stroke & {highlighter?: boolean}).highlighter)})
   }
@@ -2109,7 +2110,7 @@ function App() {
         graphsRef.current=merged.graphs as BoardGraphItem[]
         videosRef.current=merged.videos as YouTubeItem[]
         setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1)
-        for(const [key,remote] of remoteStrokesRef.current) if(remote.done) remoteStrokesRef.current.delete(key)
+        retireCommittedPreviews()
         redraw();hydrateMedia(mediaRef.current)
       }
       setSaveStatus(dirtyRef.current ? 'pending' : result.pending ? 'local' : 'saved')
@@ -2237,6 +2238,13 @@ function App() {
   }, [])
 
   /* SYNC_PIZARRA_V1 */
+  function retireCommittedPreviews(){
+    if(!remoteStrokesRef.current.size)return
+    const committed=new Set(strokesRef.current.map(stroke=>stroke.id))
+    for(const [key,remote] of remoteStrokesRef.current)
+      if(remote.stroke.id&&committed.has(remote.stroke.id))remoteStrokesRef.current.delete(key)
+  }
+
   // El servidor notifica las versiones nuevas. HTTP conserva la fuente de verdad.
   // La camara es local durante la sesion: un pellizco en tablet NO mueve la PC.
   useEffect(() => {
@@ -2280,6 +2288,7 @@ function App() {
         setGraphs([...graphsRef.current])
         refreshTables(n => n + 1)
         mediaFailedRef.current.clear()
+        retireCommittedPreviews()
         redraw()
         hydrateMedia(mediaRef.current)
         undoRef.current = []
@@ -2291,9 +2300,8 @@ function App() {
         // start editing while those downloads run; never mark an older scene
         // with a newer version or overwrite their new draft.
         await acceptBoardLiveVersion(boardId, snapshot.version, snapshot.content)
-        // Los trazos terminados ya estan en SQLite; los activos siguen como vista previa.
-        for (const [key, remote] of remoteStrokesRef.current)
-          if (remote.done) remoteStrokesRef.current.delete(key)
+        // Other writers may still be saving their finished live previews.
+        // Only the matching committed stroke can replace a preview.
         setSaveStatus('saved')
         redraw()
         hydrateMedia(mediaRef.current)
@@ -2428,7 +2436,8 @@ function App() {
             } else if (msg.client_id && msg.stroke_id) {
               const key = `${msg.client_id}:${msg.stroke_id}`
               if (msg.type === 'stroke_start' && msg.point && msg.color && msg.width) {
-                remoteStrokesRef.current.set(key, {stroke:{points:[msg.point],color:msg.color,width:msg.width,highlighter:msg.highlighter===true} as Stroke,done:false,updated:Date.now()})
+                if(!strokesRef.current.some(stroke=>stroke.id===msg.stroke_id))
+                  remoteStrokesRef.current.set(key, {stroke:{id:msg.stroke_id,points:[msg.point],color:msg.color,width:msg.width,highlighter:msg.highlighter===true} as Stroke,done:false,updated:Date.now()})
               } else if (msg.type === 'stroke_points' && Array.isArray(msg.points)) {
                 const remote = remoteStrokesRef.current.get(key)
                 if (remote && !remote.done) {
@@ -2451,7 +2460,7 @@ function App() {
             setLiveConnected(false)
             setLiveUsers([])
             setLiveSelf(null)
-            remoteStrokesRef.current.clear()
+            for(const [key,remote] of remoteStrokesRef.current)if(!remote.done)remoteStrokesRef.current.delete(key)
             remoteCursorsRef.current.clear()
             redraw()
             reconnectTimer = setTimeout(connect, 3000)
