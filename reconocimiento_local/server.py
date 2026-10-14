@@ -1859,6 +1859,8 @@ from reconocimiento_local.judge0_api import attach_judge0
 attach_judge0(app, DATA_DIR)
 from reconocimiento_local.datalab_api import attach_datalab
 attach_datalab(app, db_connection, DATA_DIR)
+from reconocimiento_local.chatgpt_browser import attach_chatgpt_browser
+attach_chatgpt_browser(app)
 
 @app.middleware('http')
 async def private_response_cache(request, call_next):

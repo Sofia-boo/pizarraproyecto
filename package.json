@@ -17,6 +17,7 @@
     "katex": "^0.19.0",
     "mathjs": "^15.2.0",
     "pdfjs-dist": "^6.4.299",
+    "playwright": "^1.64.0",
     "plotly.js-dist-min": "^4.1.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

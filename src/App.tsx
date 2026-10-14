@@ -5230,7 +5230,7 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
-            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con ChatGPT ↗</span><small>Abrí la interfaz oficial con tu cuenta y pegá la respuesta en la pizarra.</small></button>
+            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con ChatGPT</span><small>Preguntá desde la pizarra con tu cuenta personal conectada en la PC.</small></button>
             <div className="ai-menu-options">
             <strong>Escanear y transcribir</strong>
             <button role="menuitem" aria-label="OCR Datalab · selección manuscrita o imagen" onClick={()=>void openSelectionOCR('ocr')}><span>Manuscrito o imagen seleccionada</span><small>Convertí la selección en texto editable.</small></button>

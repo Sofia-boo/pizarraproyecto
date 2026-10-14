@@ -1,35 +1,38 @@
-# Consultar con ChatGPT
+# ChatGPT personal dentro de la pizarra
 
-El asistente generativo local fue reemplazado por **IA → Consultar con ChatGPT**. El reconocimiento local de escritura sigue siendo una herramienta independiente y conserva sus datos. Las conversaciones y modelos antiguos no se borran automáticamente, pero el generador local ya no se carga ni se descarga.
+**IA → Consultar con ChatGPT** abre directamente un chat fijo dentro de la app. El servidor de la PC automatiza una ventana real de Chrome con tu cuenta personal de ChatGPT. Funciona desde la PC y desde la tablet con conexión, sin una API de OpenAI, Scrapeless o Scrapingdog y sin claves nuevas.
 
-## Uso
+## Primera conexión
 
-1. Abrí **IA → Consultar con ChatGPT** y pulsá el botón del mismo nombre.
-2. Iniciá sesión con tu cuenta personal en `https://chatgpt.com/`. Las fotos, las preguntas y las respuestas se manejan en la interfaz oficial.
-3. Cerrá la ventana con su botón de cierre o con Atrás para regresar al ejercicio guardado.
-4. Copiá la respuesta desde ChatGPT y pegala en **Respuesta de ChatGPT**. El botón **Pegar respuesta** usa el portapapeles únicamente cuando lo pulsás; también podés mantener pulsado el cuadro y elegir Pegar.
-5. **Insertar en pizarra con formato** coloca una imagen con los títulos y las fórmulas renderizadas. **Insertar como texto** coloca texto editable y convierte la notación matemática básica a texto legible.
+1. Encendé la PC y dejá funcionando el servidor de las pizarras.
+2. Ingresá con tu cuenta de la pizarra y abrí **IA → Consultar con ChatGPT → Conectar mi ChatGPT en la PC**.
+3. En la ventana de Chrome que aparece **en la PC**, iniciá sesión directamente en ChatGPT. Si se solicita una verificación, completala allí. La pizarra no pide tu contraseña ni resuelve verificaciones.
+4. Volvé al chat de la pizarra. Cuando indique **conectado desde la PC**, escribí la pregunta y pulsá **Enviar**. En la tablet usá la misma cuenta de la pizarra para utilizar ese perfil conectado.
 
-Para llevar una parte de un PDF, una imagen o un manuscrito, elegí **Llevar un recorte del ejercicio → Seleccionar área de la pizarra → Descargar recorte**. Adjuntá ese archivo manualmente en ChatGPT. La selección no envía automáticamente el documento completo.
+Chrome conserva su sesión en un perfil dedicado por usuario, fuera del repositorio: `%LOCALAPPDATA%/PizarraChatGPT/ChromeProfiles/`. No se comparte el perfil habitual de Chrome ni el de otros usuarios. La aplicación no lee ni exporta cookies, contraseñas o tokens de ChatGPT. Las credenciales se introducen únicamente en Chrome de la PC, nunca en la tablet a través del servidor. El puerto de control del navegador queda vinculado a `127.0.0.1`; no se publica en Vercel ni en el túnel.
 
-El borrador pegado y el recorte se guardan en este dispositivo, por cuenta y pizarra. No se leen automáticamente las conversaciones de ChatGPT. No hay API de OpenAI, claves, formulario de acceso, iframe de ChatGPT ni acceso a sus cookies desde la aplicación.
+## Ejercicios y respuestas
 
-## Tablet Android
+- **Adjuntar → Selección de la pizarra** permite marcar una parte de un PDF, una imagen o un manuscrito. El recorte queda adjunto a la pregunta; al enviar se sube automáticamente a ChatGPT, sin descargarlo y volverlo a seleccionar.
+- **Adjuntar → Archivo o imagen…** permite elegir hasta tres PNG, JPEG, WebP o PDF, con un máximo total de 20 MB. La disponibilidad final depende de los límites de tu cuenta de ChatGPT.
+- La respuesta aparece en el chat de la app. **Insertar en pizarra** coloca una imagen con fórmulas y títulos legibles. **Texto editable** convierte la notación matemática básica a texto para editarla.
+- **Pegar respuesta en la pizarra** lee el portapapeles cuando lo pulsás y la inserta con formato en un paso. Si el navegador no autoriza leerlo, se muestra un cuadro para pegar manualmente.
+- El chat, los adjuntos pendientes y la referencia a su conversación se guardan localmente por cuenta y pizarra. Una consulta que siga ejecutándose puede recuperarse al cerrar y reabrir el panel. Los trabajos del servidor son temporales y desaparecen al reiniciarlo.
 
-Descargá e instalá **Pizarra + ChatGPT** desde el enlace **Descargar app Android con ventana de ChatGPT** de la pantalla de inicio o desde el panel. Android puede pedir habilitar la instalación desde Chrome. Después abrí esa aplicación.
+El servidor envía cada consulta una vez y no la reintenta automáticamente si el resultado es incierto. Si Chrome ya tiene un borrador o una respuesta en curso, hay que resolverlo allí antes de enviar otra consulta. Cada pizarra conserva la referencia a su conversación para continuarla sin mezclar ejercicios de otras pizarras.
 
-El APK abre la pizarra mediante una Trusted Web Activity de Chrome y abre ChatGPT mediante Chrome Custom Tabs. Usa el almacenamiento del mismo dominio en Chrome; no crea un WebView con otra copia de tus pizarras. Si antes usabas otro navegador o perfil, exportá e importá tus pizarras para trasladarlas.
+## Requisitos y límites
 
-En pantallas compatibles se solicita una ventana lateral de hasta 520 dp; en pantallas pequeñas se solicita una ventana parcial inferior. Chrome decide el tamaño final y puede usar pantalla completa. No es un ChatGPT embebido en el panel HTML. En la PWA y en la PC se abre una ventana o pestaña del navegador.
+El servidor necesita Node.js, `npm install` (incluye Playwright) y Chrome instalado. Debe ejecutarse en la sesión de escritorio de Windows del usuario, no en un servicio sin escritorio. Vercel aloja la página y conecta con ese servidor; no ejecuta Chrome.
 
-La autenticación la gestiona el navegador. El APK no recibe ni almacena credenciales, contraseñas, cookies o respuestas de ChatGPT. ChatGPT requiere conexión; las pizarras preparadas sin conexión y las respuestas ya pegadas siguen disponibles localmente.
+La PC debe permanecer encendida y conectada. ChatGPT no funciona sin internet. Las pizarras preparadas sin conexión y las respuestas ya recibidas sí se pueden usar e insertar localmente. El APK y la PWA existentes sirven para este flujo; no hace falta instalar una extensión en la tablet.
 
-## Compilación y validación
+La interfaz dentro de la pizarra es propia: el navegador oficial se ejecuta en la PC. No es un iframe de ChatGPT ni un chat oficial embebido en Android. La automatización depende de la interfaz web de ChatGPT; cambios de interfaz, límites de cuenta o verificaciones pueden interrumpirla. No se eluden controles de acceso ni desafíos del sitio.
 
-El proyecto Android está en `android/`. `scripts/build-android.ps1` compila, ejecuta Android Lint, verifica la firma y genera `public/downloads/pizarra-chatgpt.apk` y `public/.well-known/assetlinks.json`.
+## Validación
 
-La compilación local utiliza JDK 17, Gradle 8.11.1 y Android SDK 36 en `.android-build/`. Conservar **fuera de Git** `.android-build/pizarra-release.jks` y `.android-build/signing.properties`: hacen falta para firmar futuras actualizaciones del mismo APK. El certificado público de `assetlinks.json` debe corresponder al APK publicado. El APK no se precarga en la caché sin conexión de la página.
+Se probaron el arranque y cierre del Chrome real sin sesión, la autenticación de las rutas, el aislamiento entre usuarios, la ausencia de reenvíos duplicados, el recorte exacto de un PDF rotado, los adjuntos y la inserción de fórmulas. El envío y la lectura se probaron con una página simulada; falta validar una consulta real tras el inicio de sesión del propietario. Las pruebas usan bases de datos y perfiles aislados.
 
-Las pruebas de navegador comprueban apertura de la URL oficial, regreso a la pizarra guardada, recorte de PDF rotado, pegado de Markdown y fórmulas, inserción y borrador tras recargar. Se verificaron compilación, Android Lint y firma; la apertura real del Custom Tab requiere probar el APK en la tablet física.
+Archivos principales: `reconocimiento_local/chatgpt_browser.py`, `scripts/chatgpt-browser.mjs`, `scripts/chatgpt-page.mjs` y `src/components/ChatGPTConsultation.tsx`.
 
-Referencias: [Custom Tabs parciales](https://developer.chrome.com/docs/android/custom-tabs/guide-partial-custom-tabs), [Trusted Web Activity](https://developer.chrome.com/docs/android/trusted-web-activity/quick-start), [interfaz web de ChatGPT](https://learn.chatgpt.com/docs/web).
+Referencias: [Playwright: conexión a Chrome](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-over-cdp), [adjuntar archivos](https://playwright.dev/docs/input#upload-files). Los ejemplos de [Scrapeless](https://docs.scrapeless.com/es/docs/ai-scraper/scrapers/chatgpt/) y [Scrapingdog](https://www.scrapingdog.com/blog/scrape-chatgpt-with-python/) dependen de servicios externos con clave y no se utilizan aquí.

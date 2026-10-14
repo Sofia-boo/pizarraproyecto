@@ -88,32 +88,45 @@ test('four digit join switches boards, keeps pending work and follows a differen
   }finally{await Promise.all(contexts.map(c=>c.close()))}
 })
 
-test('ChatGPT handoff downloads only the marked PDF region without sending document contents',async({browser})=>{
+test('ChatGPT receives only the marked PDF region as an attachment without the full document',async({browser})=>{
   const context=await browser.newContext()
   try{
     await signedIn(context,'Assistant materials')
     const board=(await (await context.request.post(`${api}/api/boards`,{data:{name:'Materiales de estudio'}})).json()).id
     const page=await context.newPage()
+    let uploaded
+    await page.route('**/api/chatgpt/**',async route=>{
+      if(route.request().method()==='POST'){
+        const r=route.request();uploaded=await new Request(r.url(),{method:'POST',headers:r.headers(),body:r.postDataBuffer()}).formData()
+        return route.fulfill({status:202,json:{id:'crop-result',status:'running'}})
+      }
+      return route.fulfill({json:route.request().url().endsWith('/status')?{state:'ready'}:{id:'crop-result',status:'complete',text:'Resultado'}})
+    })
     const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=500;c.height=400;const ctx=c.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,250,400);ctx.fillStyle='blue';ctx.fillRect(250,0,250,400);return c.toDataURL().split(',')[1]}),'base64')
     expect((await context.request.put(`${api}/api/assets/study-page`,{data:png,headers:{'Content-Type':'image/png'}})).status()).toBe(200)
     expect((await context.request.put(`${api}/api/boards/${board}`,{data:{version:0,content:{camera:{x:0,y:0,zoom:.5},media:[{id:'pdf-page',assetId:'study-page',kind:'pdf-page',name:'Bases.pdf',pageNumber:3,pageText:'La tercera forma normal elimina dependencias transitivas.',x:100,y:200,width:500,height:400,rotation:Math.PI/12}]}}})).status()).toBe(200)
     await page.goto(api)
     await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
     await page.getByRole('menuitem',{name:/Consultar con ChatGPT/}).click()
-    const dialog=page.getByRole('dialog',{name:'Consultar con ChatGPT',exact:true})
-    await dialog.getByText('Llevar un recorte del ejercicio',{exact:true}).click()
-    await dialog.getByRole('button',{name:'Seleccionar área de la pizarra',exact:true}).click()
+    const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+    await dialog.getByRole('button',{name:'Adjuntar ▾',exact:true}).click()
+    await dialog.getByRole('menuitem',{name:'Selección de la pizarra',exact:true}).click()
     await expect(page.locator('.ocr-selection-instruction')).toBeVisible()
     await page.mouse.move(100,200);await page.mouse.down();await page.mouse.move(160,240,{steps:8});await page.mouse.up()
-    await expect(dialog.getByRole('img',{name:'Recorte del ejercicio',exact:true})).toBeVisible()
-    const crop=await dialog.getByRole('img',{name:'Recorte del ejercicio',exact:true}).evaluate(image=>{
-      const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(image,0,0)
+    await expect(dialog.locator('.chatgpt-files')).toContainText('recorte-de-la-pizarra.png')
+    await dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true}).fill('Explicá solamente el recorte')
+    await dialog.getByRole('button',{name:'Enviar',exact:true}).click()
+    await expect.poll(()=>Boolean(uploaded)).toBe(true)
+    const bytes=Buffer.from(await uploaded.get('files').arrayBuffer())
+    const crop=await page.evaluate(async data=>{
+      const image=await createImageBitmap(new Blob([Uint8Array.from(atob(data),c=>c.charCodeAt(0))],{type:'image/png'}))
+      const c=document.createElement('canvas');c.width=image.width;c.height=image.height;const ctx=c.getContext('2d');ctx.drawImage(image,0,0)
       return {width:c.width,height:c.height,pixel:Array.from(ctx.getImageData(c.width/2,c.height/2,1,1).data)}
-    })
+    },bytes.toString('base64'))
     expect(crop.width).toBe(240);expect(crop.height).toBe(160);expect(crop.pixel[0]).toBeGreaterThan(245);expect(crop.pixel[2]).toBeLessThan(10)
-    const downloading=page.waitForEvent('download');await dialog.getByRole('button',{name:'Descargar recorte',exact:true}).click()
-    const download=await downloading;expect(download.suggestedFilename()).toBe('ejercicio-pizarra.png')
-    const bytes=await readFile(await download.path());expect(bytes.readUInt32BE(16)).toBe(240);expect(bytes.readUInt32BE(20)).toBe(160)
+    expect(uploaded.getAll('files')).toHaveLength(1)
+    expect(uploaded.get('prompt')).toBe('Explicá solamente el recorte')
+    expect(bytes.readUInt32BE(16)).toBe(240);expect(bytes.readUInt32BE(20)).toBe(160)
     expect(((await (await context.request.get(`${api}/api/boards/${board}`)).json()).content.media??[]).length).toBe(1)
   }finally{await context.close()}
 })

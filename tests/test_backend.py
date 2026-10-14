@@ -10,6 +10,51 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_chatgpt_jobs_are_private_idempotent_and_upload_only_explicit_files(self):
+        import time
+        from unittest.mock import patch
+        from reconocimiento_local.chatgpt_browser import BrowserService
+        class Bridge:
+            def __init__(self, uid):
+                self.state={'state':'closed'};self.updated=0;self.process=None;self.calls=[]
+            def call(self, action, **payload):
+                self.updated=time.time()
+                if action=='open':self.state={'state':'ready'}
+                if action=='ask':self.calls.append(payload);return {'text':'## Solución\n$\\frac{1}{2}$'}
+                return self.state
+            def close(self):pass
+        service=BrowserService(Bridge)
+        with patch('reconocimiento_local.chatgpt_browser.service',service),TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as other:
+            self.assertEqual(owner.get('/api/chatgpt/status').status_code,401)
+            uid=owner.post('/api/auth/guest',json={'name':'Browser owner','password':'browser-pass'}).json()['id']
+            other.post('/api/auth/guest',json={'name':'Browser other','password':'browser-pass'})
+            opened=owner.post('/api/chatgpt/open')
+            self.assertEqual(opened.status_code,200,opened.text)
+            self.assertEqual(opened.json()['state'],'ready')
+            self.assertEqual(other.get('/api/chatgpt/status').json()['state'],'closed')
+            body={'request_id':'personal-query-0000000001','prompt':'Resolvé el recorte'}
+            files=[('files',('private-name.png',b'PNG owned crop','image/png'))]
+            posted=owner.post('/api/chatgpt/consult',data=body,files=files)
+            self.assertEqual(posted.status_code,202,posted.text)
+            job=posted.json()['id']
+            for _ in range(100):
+                result=owner.get('/api/chatgpt/consult/'+job).json()
+                if result['status']!='running':break
+                time.sleep(.01)
+            self.assertEqual(result['status'],'complete')
+            self.assertIn('\\frac',result['text'])
+            self.assertEqual(other.get('/api/chatgpt/consult/'+job).status_code,404)
+            self.assertEqual(other.post('/api/chatgpt/consult',data=body,files=files).status_code,409)
+            self.assertEqual(owner.post('/api/chatgpt/consult',data=body,files=files).json()['id'],job)
+            self.assertEqual(len(service.bridges[uid].calls),1)
+            sent=service.bridges[uid].calls[0]
+            self.assertEqual(sent['prompt'],'Resolvé el recorte')
+            self.assertEqual(sent['files'][0]['name'],'ejercicio-1.png')
+            import base64
+            self.assertEqual(base64.b64decode(sent['files'][0]['data']),b'PNG owned crop')
+            self.assertEqual(owner.post('/api/chatgpt/consult',data=body,files=[('files',('bad.svg',b'<svg/>','image/svg+xml'))]).status_code,422)
+            self.assertEqual(owner.post('/api/chatgpt/consult',data=body,files=files*4).status_code,422)
+
     def setUp(self):
         # Each test is an independent session in the isolated temporary server.
         from reconocimiento_local.anonymous_users import _rate

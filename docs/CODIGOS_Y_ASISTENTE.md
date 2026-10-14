@@ -10,7 +10,7 @@ El seguimiento transmite centro, zoom y tamaño de pantalla para encuadrar la vi
 
 ## Asistente de estudio
 
-El asistente generativo local fue reemplazado por **Consultar con ChatGPT**. El flujo vigente, la instalación Android y el pegado de respuestas con formato están en [Consultar con ChatGPT](ASISTENTE_LOCAL.md). ChatGPT requiere conexión y usa su interfaz oficial; no se ejecuta el modelo local descrito en versiones anteriores.
+El asistente generativo local fue reemplazado por **Consultar con ChatGPT**. El chat utiliza tu cuenta personal a través de Chrome de la PC y admite consultas desde la PC o la tablet. El flujo vigente está en [ChatGPT personal](ASISTENTE_LOCAL.md). Requiere conexión y la PC encendida; no se ejecuta el modelo local descrito en versiones anteriores.
 
 ### Comportamiento histórico del asistente local
 
