@@ -87,3 +87,35 @@ test('Google login stays in normal Chrome until the user explicitly activates au
   await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeEnabled()
   expect(steps).toEqual(['manual','activate'])
 })
+
+test('verification recovery keeps the exercise and attachments, and never automatically reactivates',async({page})=>{
+  let state='verification';const steps=[]
+  await page.route('**/api/**',route=>{
+    const path=new URL(route.request().url()).pathname
+    if(path==='/api/chatgpt/status')return route.fulfill({json:{state}})
+    if(path==='/api/chatgpt/open'){steps.push('manual');state='manual_login';return route.fulfill({json:{state}})}
+    if(path==='/api/chatgpt/activate'){steps.push('activate');state='verification';return route.fulfill({json:{state}})}
+    if(path==='/api/chatgpt/consult')steps.push('sent')
+    return route.fulfill({status:503,body:'offline'})
+  })
+  await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
+  await expect(page.locator('.library-open-button')).toContainText('privada')
+  let dialog=await open(page)
+  await expect(dialog.getByRole('button',{name:'Completar verificación en Chrome normal',exact:true})).toBeVisible()
+  const question=dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true})
+  await question.fill('Resolver la integral del ejercicio')
+  await dialog.locator('input[type=file]').setInputFiles({name:'ejercicio.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=','base64')})
+  await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeDisabled()
+  await dialog.getByRole('button',{name:'Completar verificación en Chrome normal',exact:true}).click()
+  await expect(dialog.getByRole('button',{name:'Ya inicié sesión · activar',exact:true})).toBeVisible()
+  await expect(dialog.getByText(/No toques Activar/)).toBeVisible()
+  expect(steps).toEqual(['manual'])
+  await dialog.getByRole('button',{name:'Ya inicié sesión · activar',exact:true}).click()
+  await expect(dialog.getByRole('button',{name:'Completar verificación en Chrome normal',exact:true})).toBeVisible()
+  await dialog.getByRole('button',{name:'Cerrar ChatGPT',exact:true}).click()
+  await page.reload();dialog=await open(page)
+  await expect(dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true})).toHaveValue('Resolver la integral del ejercicio')
+  await expect(dialog.getByRole('button',{name:'Quitar ejercicio.png',exact:true})).toBeVisible()
+  await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeDisabled()
+  expect(steps).toEqual(['manual','activate'])
+})

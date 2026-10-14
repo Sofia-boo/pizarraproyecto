@@ -41,3 +41,26 @@ test('automation stops at login without touching credential fields or submitting
   await expect(page.locator('input[type=password]')).toHaveValue('untouched')
   await expect(page.locator('#prompt-textarea')).toBeEmpty()
 })
+
+test('full-page human verification pauses automation without clicks, reloads or uploads',async({page})=>{
+  let navigations=0
+  await page.route('https://chatgpt.com/**',r=>{navigations++;return r.fulfill({status:403,contentType:'text/html',body:'<title>Just a moment…</title><button onclick="window.clicked=true">Verify you are human</button><input type=file><div id=prompt-textarea contenteditable></div>'})})
+  await page.goto('https://chatgpt.com/')
+  for(let i=0;i<3;i++)expect(await pageStatus(page)).toEqual({state:'verification'})
+  await expect(consultPage(page,{prompt:'Resolvé mi ejercicio',files:[{name:'ejercicio.png',type:'image/png',data:'AA=='}]})).rejects.toThrow('Completá la verificación')
+  expect(navigations).toBe(1)
+  expect(await page.evaluate(()=>Boolean(window.clicked))).toBe(false)
+  expect(await page.locator('input[type=file]').evaluate(input=>input.files.length)).toBe(0)
+  await expect(page.locator('#prompt-textarea')).toBeEmpty()
+})
+
+test('the loading logo is not a login failure and status recovers without navigating',async({page})=>{
+  let navigations=0
+  await page.route('https://chatgpt.com/**',r=>{navigations++;return r.fulfill({contentType:'text/html',body:'<title>ChatGPT</title><main aria-label="Cargando"></main>'})})
+  await page.goto('https://chatgpt.com/')
+  expect(await pageStatus(page)).toEqual({state:'loading'})
+  await expect(consultPage(page,{prompt:'2+2'})).rejects.toThrow('ChatGPT todavía está cargando')
+  await page.evaluate(()=>document.querySelector('main').innerHTML='<button data-testid="profile-button">Perfil</button><div id="prompt-textarea" contenteditable></div>')
+  expect(await pageStatus(page)).toEqual({state:'ready'})
+  expect(navigations).toBe(1)
+})

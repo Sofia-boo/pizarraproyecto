@@ -47,7 +47,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   async function save(){if(loaded)await(await deviceDB).put('meta',latest.current,key)}
   useEffect(()=>{if(!loaded)return;const timer=setTimeout(()=>{void save().catch(()=>setError('No se pudo guardar el chat en este dispositivo.'))},200);return()=>clearTimeout(timer)})
   useEffect(()=>{
-    if(!online)return
+    if(!online||busy)return
     let stopped=false,timer:ReturnType<typeof setTimeout>
     async function refresh(){
       try{const next=await api<State>('status');if(!stopped){setState(next);if(next.state!=='closed')timer=setTimeout(()=>void refresh(),4000)}}catch(cause){if(!stopped)setError(cause instanceof Error?cause.message:String(cause))}
@@ -79,7 +79,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   useEffect(()=>{bottom.current?.scrollIntoView({block:'end'})},[messages,job])
   async function connect(){
     setBusy(true);setError('')
-    try{await beforeOpen();setState(await api<State>(state.state==='manual_login'?'activate':'open',{method:'POST'}))}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
+    try{await beforeOpen();await save();setState(await api<State>(state.state==='manual_login'?'activate':'open',{method:'POST'}))}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function send(){
     if(job||busy||!question.trim()||!online||state.state!=='ready')return
@@ -122,7 +122,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   return <div className="chatgpt-backdrop" onPointerDown={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
     <section className="chatgpt-consultation" role="dialog" aria-modal="true" aria-label="ChatGPT">
       <header><div><h2>ChatGPT</h2><small>{!online?'Sin conexión':state.state==='ready'?'Tu cuenta · conectado desde la PC':job?'Consultando…':'Tu cuenta personal · navegador de la PC'}</small></div><button aria-label="Cerrar ChatGPT" disabled={busy} onClick={()=>void close()}>×</button></header>
-      {online&&state.state!=='ready'&&!job&&<div className="chatgpt-connect"><button disabled={busy} onClick={()=>void connect()}>{busy?'Conectando…':state.state==='manual_login'?'Ya inicié sesión · activar':['login','verification','attention'].includes(state.state)?'Iniciar sesión en Chrome normal':'Conectar mi ChatGPT en la PC'}</button><p>{state.state==='manual_login'?'Iniciá sesión en ChatGPT desde el Chrome normal de la PC. Cuando veas tu chat, volvé acá y tocá «Ya inicié sesión · activar».':state.state==='login'?'Google puede rechazar un navegador automatizado. Abrí Chrome normal para iniciar sesión antes de activar la conexión.':state.state==='verification'?'Completá la verificación en Chrome de la PC o iniciá sesión en Chrome normal.':'La primera vez se abre Chrome normal en la PC. Iniciá sesión allí y luego activá la conexión.'}</p></div>}
+      {online&&state.state!=='ready'&&!job&&<div className="chatgpt-connect"><button disabled={busy} onClick={()=>void connect()}>{busy?'Conectando…':state.state==='manual_login'?'Ya inicié sesión · activar':state.state==='verification'?'Completar verificación en Chrome normal':state.state==='loading'?'Abrir Chrome normal':['login','attention'].includes(state.state)?'Iniciar sesión en Chrome normal':'Conectar mi ChatGPT en la PC'}</button><p>{state.state==='manual_login'?'Completá el acceso y cualquier verificación en el Chrome normal de la PC. No toques Activar mientras veas «Verificá que sos humano» o el logo cargando. Activá únicamente cuando aparezca tu chat y puedas escribir allí.':state.state==='login'?'Google puede rechazar un navegador automatizado. Abrí Chrome normal para iniciar sesión antes de activar la conexión.':state.state==='verification'?'ChatGPT está pidiendo una verificación humana. Las consultas están pausadas. Completala en Chrome de la PC; si no avanza, el botón vuelve a abrir ese perfil sin automatización.':state.state==='loading'?'ChatGPT todavía está cargando en la PC. La app espera sin recargarlo. Si no avanza, abrí Chrome normal para revisar el acceso.':'La primera vez se abre Chrome normal en la PC. Iniciá sesión allí y luego activá la conexión.'}</p></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!messages.length&&<p className="chatgpt-empty">Preguntá sobre tu ejercicio o adjuntá una selección de la pizarra.</p>}
         {messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}>

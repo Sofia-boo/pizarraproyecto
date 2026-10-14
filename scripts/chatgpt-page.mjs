@@ -3,11 +3,19 @@
 export async function pageStatus(page){
   if(!page||page.isClosed())return {state:'closed'}
   if(new URL(page.url()).hostname!=='chatgpt.com')return {state:'login'}
-  if(await page.locator('#challenge-running,#challenge-stage,iframe[src*="challenges.cloudflare.com"]').count())return {state:'verification'}
+  // A challenge can be served as the whole document, without an iframe or the
+  // usual challenge IDs. Inspect only fixed public indicators; never interact
+  // with the verification or reload it automatically.
+  const challengeTitle=/^(just a moment|un momento|verificando|verifying)(?:\b|…)/i.test((await page.title()).trim())
+  const challenge=page.locator('#challenge-running,#challenge-stage,#challenge-form,iframe[src*="challenges.cloudflare.com"]')
+  const challengeText=page.getByText(/^(verify you are human|verifica que eres humano|verificá que sos humano|verifique que es humano|verificando que eres humano|verifying you are human)[.…!\s]*$/i)
+  if(challengeTitle||await challenge.count()||await challengeText.first().isVisible().catch(()=>false))return {state:'verification'}
   const profile=page.locator('[data-testid="profile-button"],[data-testid="accounts-profile-button"],[data-testid="user-menu-button"],button[aria-label*="perfil" i],button[aria-label*="profile" i]')
-  const login=page.getByRole('button',{name:/^(log in|sign in|iniciar sesión|inicia sesión|ingresar)$/i})
-  if(await login.count()||!await profile.count())return {state:'login'}
-  return {state:await page.locator('#prompt-textarea').isVisible().catch(()=>false)?'ready':'loading'}
+  const login=page.getByRole('button',{name:/^(log in|sign in|iniciar sesión|inicia sesión|ingresar)$/i}).or(page.getByRole('link',{name:/^(log in|sign in|iniciar sesión|inicia sesión|ingresar)$/i}))
+  if(await login.first().isVisible().catch(()=>false))return {state:'login'}
+  const composer=await page.locator('#prompt-textarea').isVisible().catch(()=>false)
+  if(composer&&await profile.count())return {state:'ready'}
+  return {state:'loading'}
 }
 
 export async function readAnswer(element){
@@ -58,7 +66,7 @@ export async function consultPage(page,{prompt,files=[],conversation},{timeout=1
   const target=conversation||'https://chatgpt.com/'
   if(target!=='https://chatgpt.com/'&&!/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9-]{16,80}$/.test(target))throw new Error('Acción no válida.')
   const state=await pageStatus(page)
-  if(state.state!=='ready')throw new Error(state.state==='verification'?'Completá la verificación en Chrome de la PC.':'Iniciá sesión en ChatGPT desde la ventana de Chrome de la PC.')
+  if(state.state!=='ready')throw new Error(state.state==='verification'?'Completá la verificación en Chrome de la PC. Si se traba, elegí «Completar verificación en Chrome normal» en la pizarra.':state.state==='loading'?'ChatGPT todavía está cargando. Esperá a que aparezca el chat en Chrome de la PC.':'Iniciá sesión en ChatGPT desde la ventana de Chrome de la PC.')
   if(await page.locator('[data-testid="stop-button"]:visible').count())throw new Error('ChatGPT ya está respondiendo. Esperá a que termine.')
   if((await page.locator('#prompt-textarea').innerText()).trim())throw new Error('Hay un borrador en ChatGPT. Envialo o borralo desde Chrome antes de consultar desde la pizarra.')
   if(new URL(page.url()).pathname!==new URL(target).pathname){
@@ -89,7 +97,8 @@ export async function consultPage(page,{prompt,files=[],conversation},{timeout=1
   const started=Date.now();let stableSince=0,last=''
   while(Date.now()-started<timeout){
     const current=await pageStatus(page)
-    if(['login','verification','closed'].includes(current.state))throw new Error('Revisá la ventana de ChatGPT en la PC antes de continuar.')
+    if(current.state==='verification')throw new Error('Completá la verificación en Chrome de la PC. La consulta no se reenviará automáticamente.')
+    if(['login','closed'].includes(current.state))throw new Error('Revisá la ventana de ChatGPT en la PC antes de continuar.')
     if(await assistants.count()>previous){
       const message=assistants.last(),markdown=message.locator('.markdown').last()
       const answer=await readAnswer(await markdown.count()?markdown:message)
