@@ -6,8 +6,11 @@
 
 1. Encendé la PC y dejá funcionando el servidor de las pizarras.
 2. Ingresá con tu cuenta de la pizarra y abrí **IA → Consultar con ChatGPT → Conectar mi ChatGPT en la PC**.
-3. En la ventana de Chrome que aparece **en la PC**, iniciá sesión directamente en ChatGPT. Si se solicita una verificación, completala allí. La pizarra no pide tu contraseña ni resuelve verificaciones.
-4. Volvé al chat de la pizarra. Cuando indique **conectado desde la PC**, escribí la pregunta y pulsá **Enviar**. En la tablet usá la misma cuenta de la pizarra para utilizar ese perfil conectado.
+3. En la ventana de Chrome normal que aparece **en la PC**, iniciá sesión directamente en ChatGPT. Durante este paso no se activa CDP, Playwright ni control de automatización. Si se solicita una verificación, completala allí. La pizarra no pide tu contraseña ni resuelve verificaciones.
+4. Cuando veas tu chat, volvé a la pizarra y tocá **Ya inicié sesión · activar**. La conexión pide cerrar normalmente esa ventana del perfil dedicado y vuelve a abrir el mismo perfil para automatizar las consultas. No cierra tu Chrome habitual ni copia cookies.
+5. Cuando indique **conectado desde la PC**, escribí la pregunta y pulsá **Enviar**. En la tablet usá la misma cuenta de la pizarra para utilizar ese perfil conectado.
+
+Si Google muestra «Es posible que el navegador o la aplicación no sean seguros», elegí **Iniciar sesión en Chrome normal** para volver al paso de acceso sin automatización. Si Chrome sigue abierto en varias ventanas del perfil dedicado, cerralas antes de pulsar Activar. Google puede rechazar navegadores controlados por software; esta separación evita conectar el controlador durante el inicio de sesión, pero el acceso final depende de Google y de tu cuenta. [Ayuda de Google](https://support.google.com/accounts/answer/7675428).
 
 Chrome conserva su sesión en un perfil dedicado por usuario, fuera del repositorio: `%LOCALAPPDATA%/PizarraChatGPT/ChromeProfiles/`. No se comparte el perfil habitual de Chrome ni el de otros usuarios. La aplicación no lee ni exporta cookies, contraseñas o tokens de ChatGPT. Las credenciales se introducen únicamente en Chrome de la PC, nunca en la tablet a través del servidor. El puerto de control del navegador queda vinculado a `127.0.0.1`; no se publica en Vercel ni en el túnel.
 
@@ -20,6 +23,12 @@ Chrome conserva su sesión en un perfil dedicado por usuario, fuera del reposito
 - El chat, los adjuntos pendientes y la referencia a su conversación se guardan localmente por cuenta y pizarra. Una consulta que siga ejecutándose puede recuperarse al cerrar y reabrir el panel. Los trabajos del servidor son temporales y desaparecen al reiniciarlo.
 
 El servidor envía cada consulta una vez y no la reintenta automáticamente si el resultado es incierto. Si Chrome ya tiene un borrador o una respuesta en curso, hay que resolverlo allí antes de enviar otra consulta. Cada pizarra conserva la referencia a su conversación para continuarla sin mezclar ejercicios de otras pizarras.
+
+## Scrapling
+
+Se usa Scrapling 0.4.15 para extraer y estructurar únicamente el fragmento de la nueva respuesta del asistente. Se preservan las anotaciones LaTeX originales de KaTeX, los títulos, las listas y el código. El fragmento se limpia de formularios, controles y atributos ajenos al contenido antes de procesarlo. La navegación y los adjuntos se mantienen en Chrome con Playwright; Scrapling no reemplaza el inicio de sesión ni se usa para eludirlo.
+
+El parser funciona en memoria con `adaptive=False`: no guarda muestras de la página, no recibe páginas de acceso y no usa fetchers, proxies, resolución de CAPTCHA ni exportación de cookies. Instalación: `python -m pip install -r requirements.txt`. [Parser de Scrapling](https://scrapling.readthedocs.io/en/latest/parsing/main_classes.html).
 
 ## Requisitos y límites
 

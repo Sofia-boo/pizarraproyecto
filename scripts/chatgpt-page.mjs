@@ -42,6 +42,18 @@ export async function readAnswer(element){
   })
 }
 
+export async function answerFragment(element){
+  return element.evaluate(root=>{
+    const copy=root.cloneNode(true)
+    copy.querySelectorAll('script,style,button,input,textarea,form,iframe,svg,noscript,template').forEach(node=>node.remove())
+    for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of [...node.attributes]){
+      if(!['class','encoding','alt'].includes(attribute.name))node.removeAttribute(attribute.name)
+    }
+    const html=copy.outerHTML
+    return html.length<=1000000?html:undefined
+  })
+}
+
 export async function consultPage(page,{prompt,files=[],conversation},{timeout=180000}={}){
   const target=conversation||'https://chatgpt.com/'
   if(target!=='https://chatgpt.com/'&&!/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9-]{16,80}$/.test(target))throw new Error('Acción no válida.')
@@ -83,7 +95,7 @@ export async function consultPage(page,{prompt,files=[],conversation},{timeout=1
       const answer=await readAnswer(await markdown.count()?markdown:message)
       if(answer!==last){last=answer;stableSince=Date.now()}
       const streaming=await page.locator('[data-testid="stop-button"]:visible,button[aria-label*="Stop generating" i]:visible,button[aria-label*="Detener" i]:visible').count()>0
-      if(last&&!streaming&&Date.now()-stableSince>2500)return {text:last,...(/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9-]{16,80}$/.test(page.url())?{conversation:page.url()}:{})}
+      if(last&&!streaming&&Date.now()-stableSince>2500)return {text:last,html:await answerFragment(await markdown.count()?markdown:message),...(/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9-]{16,80}$/.test(page.url())?{conversation:page.url()}:{})}
     }
     await page.waitForTimeout(400)
   }

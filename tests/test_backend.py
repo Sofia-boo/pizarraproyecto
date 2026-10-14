@@ -19,8 +19,9 @@ class BackendTest(unittest.TestCase):
                 self.state={'state':'closed'};self.updated=0;self.process=None;self.calls=[]
             def call(self, action, **payload):
                 self.updated=time.time()
+                if action=='login':self.state={'state':'manual_login'}
                 if action=='open':self.state={'state':'ready'}
-                if action=='ask':self.calls.append(payload);return {'text':'## Solución\n$\\frac{1}{2}$'}
+                if action=='ask':self.calls.append(payload);return {'text':'browser fallback','html':'<h2>Solución</h2><span class="katex"><math><annotation encoding="application/x-tex">\\frac{1}{2}</annotation></math></span>'}
                 return self.state
             def close(self):pass
         service=BrowserService(Bridge)
@@ -30,7 +31,9 @@ class BackendTest(unittest.TestCase):
             other.post('/api/auth/guest',json={'name':'Browser other','password':'browser-pass'})
             opened=owner.post('/api/chatgpt/open')
             self.assertEqual(opened.status_code,200,opened.text)
-            self.assertEqual(opened.json()['state'],'ready')
+            self.assertEqual(opened.json()['state'],'manual_login')
+            self.assertEqual(owner.post('/api/chatgpt/consult',data={'request_id':'manual-login-000000','prompt':'2+2'}).status_code,409)
+            self.assertEqual(owner.post('/api/chatgpt/activate').json()['state'],'ready')
             self.assertEqual(other.get('/api/chatgpt/status').json()['state'],'closed')
             body={'request_id':'personal-query-0000000001','prompt':'Resolvé el recorte'}
             files=[('files',('private-name.png',b'PNG owned crop','image/png'))]
@@ -43,6 +46,7 @@ class BackendTest(unittest.TestCase):
                 time.sleep(.01)
             self.assertEqual(result['status'],'complete')
             self.assertIn('\\frac',result['text'])
+            self.assertNotIn('browser fallback',result['text'])
             self.assertEqual(other.get('/api/chatgpt/consult/'+job).status_code,404)
             self.assertEqual(other.post('/api/chatgpt/consult',data=body,files=files).status_code,409)
             self.assertEqual(owner.post('/api/chatgpt/consult',data=body,files=files).json()['id'],job)

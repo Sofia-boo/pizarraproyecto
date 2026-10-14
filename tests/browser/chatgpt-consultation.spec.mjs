@@ -64,3 +64,26 @@ test('paste response inserts directly without an intermediate preview or insert 
   await expect.poll(async()=>(await board(page)).media.length).toBe(1)
   await expect(dialog.getByRole('textbox',{name:'Respuesta para pegar en la pizarra'})).toHaveCount(0)
 })
+
+test('Google login stays in normal Chrome until the user explicitly activates automation',async({page})=>{
+  let state='closed';const steps=[]
+  await page.route('**/api/**',route=>{
+    const path=new URL(route.request().url()).pathname
+    if(path==='/api/chatgpt/status')return route.fulfill({json:{state}})
+    if(path==='/api/chatgpt/open'){steps.push('manual');state='manual_login';return route.fulfill({json:{state}})}
+    if(path==='/api/chatgpt/activate'){steps.push('activate');state='ready';return route.fulfill({json:{state}})}
+    return route.fulfill({status:503,body:'offline'})
+  })
+  await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
+  await expect(page.locator('.library-open-button')).toContainText('privada')
+  const dialog=await open(page)
+  await dialog.getByRole('button',{name:'Conectar mi ChatGPT en la PC',exact:true}).click()
+  await expect(dialog.getByRole('button',{name:'Ya inicié sesión · activar',exact:true})).toBeVisible()
+  expect(steps).toEqual(['manual'])
+  await dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true}).fill('2+2')
+  await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeDisabled()
+  await expect(dialog.locator('input[type=password],iframe')).toHaveCount(0)
+  await dialog.getByRole('button',{name:'Ya inicié sesión · activar',exact:true}).click()
+  await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeEnabled()
+  expect(steps).toEqual(['manual','activate'])
+})

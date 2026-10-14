@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import File, Form, HTTPException, Request, UploadFile
 from starlette.concurrency import run_in_threadpool
+from reconocimiento_local.chatgpt_extract import extract_answer_html
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_FILES = 3
@@ -73,7 +74,7 @@ class BrowserBridge:
     def call(self, action, **payload):
         with self.lock:
             if self.process is None or self.process.poll() is not None:
-                if action != 'open':
+                if action not in ('open', 'login'):
                     self.state = {'state': 'closed'}
                     self.updated = time.time()
                     return self.state
@@ -133,7 +134,7 @@ class BrowserService:
             bridge.call('status')
         return {**bridge.state, 'busy': False}
 
-    def open(self, uid):
+    def open(self, uid, action='login'):
         with self.lock:
             if self.active(uid): raise HTTPException(409, 'Esperá a que termine tu consulta actual.')
             # Limit simultaneous interactive Chrome profiles on the shared PC.
@@ -142,7 +143,7 @@ class BrowserService:
             if others >= 3: raise HTTPException(429, 'El servidor ya tiene tres navegadores activos. Reintentá más tarde.')
             bridge = self.bridge(uid)
             self.opening.add(uid)
-        try: return bridge.call('open')
+        try: return bridge.call(action)
         finally:
             with self.lock: self.opening.discard(uid)
 
@@ -167,8 +168,11 @@ class BrowserService:
             try:
                 result = bridge.call('ask', prompt=prompt, files=files, conversation=conversation)
                 if not result.get('text'): raise HTTPException(409, 'ChatGPT no devolvió texto. Revisá su ventana en la PC.')
+                text = result['text']
+                if result.get('html'):
+                    text = extract_answer_html(result['html']) or text
                 with self.lock:
-                    self.jobs[identifier].update(status='complete', text=result['text'][:60000])
+                    self.jobs[identifier].update(status='complete', text=text[:60000])
                     if result.get('conversation'): self.jobs[identifier]['conversation'] = result['conversation']
             except Exception as error:
                 message = error.detail if isinstance(error, HTTPException) else 'No se pudo consultar ChatGPT. Revisá Chrome en la PC.'
@@ -204,6 +208,10 @@ def attach_chatgpt_browser(app):
     @app.post('/api/chatgpt/open')
     async def open_browser(request: Request):
         return await run_in_threadpool(service.open, user(request))
+
+    @app.post('/api/chatgpt/activate')
+    async def activate_browser(request: Request):
+        return await run_in_threadpool(service.open, user(request), 'open')
 
     @app.post('/api/chatgpt/close')
     async def close_browser(request: Request):

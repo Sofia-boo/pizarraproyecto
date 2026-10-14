@@ -10,7 +10,7 @@ import './chatgptConsultation.css'
 
 const API=import.meta.env.DEV?`${location.protocol}//${location.hostname}:8765`:location.origin
 type Message={id:string;role:'user'|'assistant';text:string;files?:string[]}
-type State={state:'closed'|'login'|'verification'|'loading'|'ready'|'attention';busy?:boolean}
+type State={state:'closed'|'manual_login'|'login'|'verification'|'loading'|'ready'|'attention';busy?:boolean}
 type Job={id:string;status:'running'|'complete'|'error';text?:string;error?:string;conversation?:string}
 class ChatGPTError extends Error{status:number;constructor(message:string,status:number){super(message);this.status=status}}
 async function api<T>(path:string,init?:RequestInit):Promise<T>{
@@ -79,7 +79,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   useEffect(()=>{bottom.current?.scrollIntoView({block:'end'})},[messages,job])
   async function connect(){
     setBusy(true);setError('')
-    try{await beforeOpen();setState(await api<State>('open',{method:'POST'}))}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
+    try{await beforeOpen();setState(await api<State>(state.state==='manual_login'?'activate':'open',{method:'POST'}))}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function send(){
     if(job||busy||!question.trim()||!online||state.state!=='ready')return
@@ -122,7 +122,7 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   return <div className="chatgpt-backdrop" onPointerDown={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
     <section className="chatgpt-consultation" role="dialog" aria-modal="true" aria-label="ChatGPT">
       <header><div><h2>ChatGPT</h2><small>{!online?'Sin conexión':state.state==='ready'?'Tu cuenta · conectado desde la PC':job?'Consultando…':'Tu cuenta personal · navegador de la PC'}</small></div><button aria-label="Cerrar ChatGPT" disabled={busy} onClick={()=>void close()}>×</button></header>
-      {online&&state.state!=='ready'&&!job&&<div className="chatgpt-connect"><button disabled={busy} onClick={()=>void connect()}>{busy?'Conectando…':'Conectar mi ChatGPT en la PC'}</button><p>{state.state==='login'?'Iniciá sesión directamente en la ventana de Chrome que se abrió en la PC.':state.state==='verification'?'Completá la verificación en Chrome de la PC.':'La PC debe estar encendida. La primera vez, ingresá a ChatGPT en su ventana de Chrome.'}</p></div>}
+      {online&&state.state!=='ready'&&!job&&<div className="chatgpt-connect"><button disabled={busy} onClick={()=>void connect()}>{busy?'Conectando…':state.state==='manual_login'?'Ya inicié sesión · activar':['login','verification','attention'].includes(state.state)?'Iniciar sesión en Chrome normal':'Conectar mi ChatGPT en la PC'}</button><p>{state.state==='manual_login'?'Iniciá sesión en ChatGPT desde el Chrome normal de la PC. Cuando veas tu chat, volvé acá y tocá «Ya inicié sesión · activar».':state.state==='login'?'Google puede rechazar un navegador automatizado. Abrí Chrome normal para iniciar sesión antes de activar la conexión.':state.state==='verification'?'Completá la verificación en Chrome de la PC o iniciá sesión en Chrome normal.':'La primera vez se abre Chrome normal en la PC. Iniciá sesión allí y luego activá la conexión.'}</p></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!messages.length&&<p className="chatgpt-empty">Preguntá sobre tu ejercicio o adjuntá una selección de la pizarra.</p>}
         {messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}>

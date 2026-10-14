@@ -1,5 +1,15 @@
 import {test,expect} from '@playwright/test'
 import {consultPage,pageStatus} from '../../scripts/chatgpt-page.mjs'
+import {chromeArguments} from '../../scripts/chatgpt-chrome.mjs'
+
+test('manual sign-in uses normal Chrome and automation is a separate explicit phase',()=>{
+  const manual=chromeArguments('isolated-profile')
+  expect(manual).toContain('--user-data-dir=isolated-profile')
+  expect(manual.some(arg=>/debugging|automation|headless|disable-web-security|stealth/.test(arg))).toBe(false)
+  const connected=chromeArguments('isolated-profile',{automated:true})
+  expect(connected).toContain('--remote-debugging-address=127.0.0.1')
+  expect(connected).toContain('--remote-debugging-port=0')
+})
 
 test('browser automation attaches the exact file, sends once and preserves mathematical notation',async({page})=>{
   await page.route('https://chatgpt.com/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:`
@@ -20,6 +30,8 @@ test('browser automation attaches the exact file, sends once and preserves mathe
   expect(await page.evaluate(()=>window.question)).toContain('<script>wrong()</script>')
   expect(await page.locator('input[type=file]').evaluate(async input=>Array.from(new Uint8Array(await input.files[0].arrayBuffer())))).toEqual([...png])
   expect(result.text).toContain('## Solución');expect(result.text).toContain('$\\frac{1}{2}$');expect(result.text).toContain('$$\nx=\\frac{1}{2}\n$$');expect(result.text).toContain('```\nSELECT 1;\n```')
+  expect(result.html).toContain('annotation encoding="application/x-tex"')
+  expect(result.html).not.toContain('data-testid')
 })
 test('automation stops at login without touching credential fields or submitting a question',async({page})=>{
   await page.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:'<button>Log in</button><input type=password value="untouched"><div id=prompt-textarea contenteditable></div>'}))
