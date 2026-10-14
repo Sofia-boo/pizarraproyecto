@@ -15,7 +15,7 @@ import uuid
 import os
 import secrets
 from urllib.parse import urlsplit, quote
-from collections import deque
+from collections import deque, OrderedDict
 from fastapi import WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import JSONResponse
 from reconocimiento_local import html_live
@@ -27,6 +27,34 @@ _permission_db = None
 _tickets: dict[str, tuple[str, str, float]] = {}
 # Estado efímero de reproducción por pizarra/video (no se guarda en SQLite).
 _video_states: dict[str, dict[str, dict]] = {}
+# Recent acknowledgements survive socket reconnects, without storing geometry.
+# Bounded to 64 boards and 4096 stroke identifiers per board.
+_ink_resolutions = OrderedDict()
+
+
+def _remember_ink(board_id, version, saved, removed):
+    cache = _ink_resolutions.setdefault(board_id, {})
+    _ink_resolutions.move_to_end(board_id)
+    for identifiers, deleted in ((saved, False), (removed, True)):
+        for identifier in identifiers:
+            old = cache.get(identifier)
+            if old and old[0] > version:
+                continue
+            cache.pop(identifier, None)
+            cache[identifier] = (version, deleted)
+    while len(cache) > 4096:
+        cache.pop(next(iter(cache)))
+    while len(_ink_resolutions) > 64:
+        _ink_resolutions.popitem(last=False)
+
+
+def _ink_events(board_id):
+    grouped = {}
+    for identifier, (version, deleted) in _ink_resolutions.get(board_id, {}).items():
+        event = grouped.setdefault(version, {'type': 'ink_settled', 'board_id': board_id,
+                                            'version': version, 'saved': [], 'removed': []})
+        event['removed' if deleted else 'saved'].append(identifier)
+    return list(grouped.values())
 
 
 def _allowed(board_id: str, user_id: str, level: str = 'viewer') -> bool:
@@ -171,6 +199,8 @@ def attach_live_sync(app, db_connection):
                 await _send(websocket, state)
             for state in html_live.states(board_id):
                 await _send(websocket, html_live.public(state))
+            for state in _ink_events(board_id):
+                await _send(websocket, state)
             while True:
                 raw = await websocket.receive_text()
                 if len(raw) > 600000:
@@ -323,11 +353,11 @@ def attach_live_sync(app, db_connection):
                     # Un mismo cliente solamente puede mantener un trazo abierto.
                     previous = participant['active']
                     if previous:
-                        await _broadcast(board_id, {'type': 'stroke_cancel', 'board_id': board_id,
+                        await _broadcast(board_id, {'type': 'stroke_interrupted', 'board_id': board_id,
                             'stroke_id': previous, 'client_id': participant['client_id']}, exclude=websocket)
                     participant['active'] = stroke_id
                     participant['points'] = 1
-                    forwarded.update(point=start, color=color, width=width)
+                    forwarded.update(point=start, color=color, width=width, highlighter=payload.get('highlighter') is True)
                 elif participant['active'] != stroke_id:
                     continue
                 elif event_type == 'stroke_points':
@@ -342,6 +372,11 @@ def attach_live_sync(app, db_connection):
                 else:
                     participant['active'] = None
                     participant['points'] = 0
+                    if event_type == 'stroke_cancel':
+                        with db_connection() as db:
+                            current = db.execute('SELECT version FROM boards WHERE id=?', (board_id,)).fetchone()
+                        if current:
+                            _remember_ink(board_id, current['version'], [], [stroke_id])
                 await _broadcast(board_id, forwarded, exclude=websocket)
         except WebSocketDisconnect:
             pass
@@ -350,7 +385,7 @@ def attach_live_sync(app, db_connection):
         finally:
             await html_live.disconnect(board_id, participant['client_id'], _broadcast)
             if participant['active']:
-                await _broadcast(board_id, {'type': 'stroke_cancel', 'board_id': board_id,
+                await _broadcast(board_id, {'type': 'stroke_interrupted', 'board_id': board_id,
                     'stroke_id': participant['active'], 'client_id': participant['client_id']}, exclude=websocket)
             if participant['client_id']:
                 await _broadcast(board_id, {'type':'cursor_hide', 'board_id':board_id,
@@ -447,14 +482,27 @@ def scene_patch(before: dict, after: dict):
 
 
 async def notify_board_saved(board_id: str, version: int, before=None, after=None):
-    if board_id not in _clients:
+    if board_id not in _clients and board_id not in _ink_resolutions:
         return
     event = {'type': 'board_version', 'board_id': board_id, 'version': version}
+    settled = None
     if isinstance(before, dict) and isinstance(after, dict):
+        old = {stroke['id']: stroke for stroke in before.get('strokes', [])
+               if isinstance(stroke, dict) and isinstance(stroke.get('id'), str)}
+        new = {stroke['id']: stroke for stroke in after.get('strokes', [])
+               if isinstance(stroke, dict) and isinstance(stroke.get('id'), str)}
+        saved = [identifier for identifier, stroke in new.items() if old.get(identifier) != stroke]
+        removed = [identifier for identifier in old if identifier not in new]
+        if saved or removed:
+            _remember_ink(board_id, version, saved, removed)
+            settled = {'type': 'ink_settled', 'board_id': board_id, 'version': version,
+                       'saved': saved, 'removed': removed}
         patch = scene_patch(before, after)
         if patch is not None:
             event.update(base_version=version-1, patch=patch)
     await _broadcast(board_id, event)
+    if settled:
+        await _broadcast(board_id, settled)
     await _presence(board_id)  # Retira participantes cuya invitación fue revocada.
 
 

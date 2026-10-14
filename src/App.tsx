@@ -1,5 +1,7 @@
 import { mergeBoard } from './storage/merge'
 import { applyScenePatch } from './storage/livePatch'
+import {retireLiveInk,resolveLiveInk,resolvedLiveInk} from './storage/liveInk'
+import type {RemoteLiveStroke,InkResolution} from './storage/liveInk'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { LuHand, LuStickyNote, LuWorkflow, LuBookOpen, LuCalendarDays } from 'react-icons/lu'
 import { createNote, defaultConnector, findAnchor, hitsConnector, isConnector, materializeConnector, mergeVisual,
@@ -165,7 +167,6 @@ type Tool = 'pen' | 'eraser' | 'pan' | 'text' | 'select' | 'shape' | 'connector'
 type LiveUser = {id:string;name:string;color:string;emoji?:string;view?:CameraView;client_ids?:string[]}
 type LiveCursor = {clientId:string;userId:string;name:string;color:string;emoji:string;point:Point;updated:number;htmlId?:string;htmlPresenceAt?:number;clickedAt?:number}
 // PERFILES_Y_CURSORES_V1
-type RemoteLiveStroke = {stroke:Stroke;done:boolean;updated:number}
 // TRAZOS_Y_PRESENCIA_V2
 type SaveStatus = 'loading' | 'saved' | 'pending' | 'error' | 'local' | 'copy'
 type Camera = { x: number; y: number; zoom: number }
@@ -906,6 +907,8 @@ function App() {
   const [liveConnected, setLiveConnected] = useState(false)
   const liveSocketRef = useRef<WebSocket | null>(null)
   const remoteStrokesRef = useRef<Map<string, RemoteLiveStroke>>(new Map())
+  const inkResolutionsRef=useRef<Map<string,InkResolution>>(new Map())
+  const displayedVersionRef=useRef(0)
   const remoteCursorsRef = useRef<Map<string, LiveCursor>>(new Map())
   const lastCursorSentRef = useRef(0)
   const lastHtmlActivityRef=useRef(0)
@@ -2141,9 +2144,10 @@ function App() {
         graphsRef.current=merged.graphs as BoardGraphItem[]
         videosRef.current=merged.videos as YouTubeItem[]
         setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1)
-        retireCommittedPreviews()
         redraw();hydrateMedia(mediaRef.current)
       }
+      if(!result.pending)displayedVersionRef.current=getActiveBoardVersion()
+      if(retireCommittedPreviews())redraw()
       setSaveStatus(dirtyRef.current ? 'pending' : result.pending ? 'local' : 'saved')
     } catch (error) {
       dirtyRef.current = true
@@ -2243,6 +2247,7 @@ function App() {
           }
         }
         pendingReplicaRef.current = await hasPendingShared()
+        displayedVersionRef.current=getActiveBoardVersion()
         loadedRef.current = true
         setLiveBoardId(getActiveBoardId())
         void refreshLibrary().catch(console.error)
@@ -2271,11 +2276,8 @@ function App() {
   }, [])
 
   /* SYNC_PIZARRA_V1 */
-  function retireCommittedPreviews(){
-    if(!remoteStrokesRef.current.size)return
-    const committed=new Set(strokesRef.current.map(stroke=>stroke.id))
-    for(const [key,remote] of remoteStrokesRef.current)
-      if(remote.stroke.id&&committed.has(remote.stroke.id))remoteStrokesRef.current.delete(key)
+  function retireCommittedPreviews(version=displayedVersionRef.current){
+    return retireLiveInk(remoteStrokesRef.current,strokesRef.current,version,inkResolutionsRef.current)
   }
 
   // El servidor notifica las versiones nuevas. HTTP conserva la fuente de verdad.
@@ -2321,7 +2323,8 @@ function App() {
         setGraphs([...graphsRef.current])
         refreshTables(n => n + 1)
         mediaFailedRef.current.clear()
-        retireCommittedPreviews()
+        displayedVersionRef.current=snapshot.version
+        retireCommittedPreviews(snapshot.version)
         redraw()
         hydrateMedia(mediaRef.current)
         undoRef.current = []
@@ -2335,7 +2338,7 @@ function App() {
         await acceptBoardLiveVersion(boardId, snapshot.version, snapshot.content)
         // Other writers may still be saving their finished live previews.
         // Only the matching committed stroke can replace a preview.
-        setSaveStatus('saved')
+        if(!dirtyRef.current&&!savingRef.current)setSaveStatus('saved')
         redraw()
         hydrateMedia(mediaRef.current)
     }
@@ -2345,10 +2348,13 @@ function App() {
       if (localIsBusy()) { retryApply(80); return }
       fetching = true
       try {
+        // Capture the required version before requesting. Later events can
+        // keep arriving while this valid snapshot is in flight.
+        const requestedVersion=Math.max(getActiveBoardVersion(),newestSeen)
         const snapshot = await fetchBoardForLiveSync(boardId)
         // El usuario pudo empezar a dibujar mientras llegaba la respuesta.
         if (stopped || boardId !== getActiveBoardId() || localIsBusy() || applying) return
-        if (snapshot.version < getActiveBoardVersion()) return
+        if (snapshot.version < Math.max(getActiveBoardVersion(),requestedVersion)) return
         // A matching version alone cannot prove that both screens contain the
         // same objects (old clients and interrupted saves may have diverged).
         const current={strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
@@ -2407,10 +2413,18 @@ function App() {
               users?:LiveUser[];client_id?:string;stroke_id?:string;user_id?:string;
               name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;html_id?:string;html_action?:string;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
+              saved?:unknown;removed?:unknown
             }
             if (msg.board_id !== boardId) return
             if(msg.type?.startsWith('html_')){
               if(!receiveHtmlSignal(msg as HtmlSignal)&&msg.html_id)sendLive({type:'html_request',html_id:msg.html_id})
+              return
+            }
+            if(msg.type==='ink_settled'&&typeof msg.version==='number'){
+              resolveLiveInk(inkResolutionsRef.current,msg.saved,msg.version,false)
+              resolveLiveInk(inkResolutionsRef.current,msg.removed,msg.version,true)
+              receivedVersion(msg.version)
+              if(retireCommittedPreviews())redraw()
               return
             }
             if (msg.type === 'board_version' && typeof msg.version === 'number') {
@@ -2478,7 +2492,7 @@ function App() {
             } else if (msg.client_id && msg.stroke_id) {
               const key = `${msg.client_id}:${msg.stroke_id}`
               if (msg.type === 'stroke_start' && msg.point && msg.color && msg.width) {
-                if(!strokesRef.current.some(stroke=>stroke.id===msg.stroke_id))
+                if(!strokesRef.current.some(stroke=>stroke.id===msg.stroke_id)&&!resolvedLiveInk(msg.stroke_id,displayedVersionRef.current,inkResolutionsRef.current))
                   remoteStrokesRef.current.set(key, {stroke:{id:msg.stroke_id,points:[msg.point],color:msg.color,width:msg.width,highlighter:msg.highlighter===true} as Stroke,done:false,updated:Date.now()})
               } else if (msg.type === 'stroke_points' && Array.isArray(msg.points)) {
                 const remote = remoteStrokesRef.current.get(key)
@@ -2486,11 +2500,12 @@ function App() {
                   remote.stroke.points.push(...msg.points)
                   remote.updated=Date.now()
                 }
-              } else if (msg.type === 'stroke_end') {
+              } else if (msg.type === 'stroke_end'||msg.type==='stroke_interrupted') {
                 const remote=remoteStrokesRef.current.get(key)
                 if (remote) {remote.done=true;remote.updated=Date.now()}
               } else if (msg.type === 'stroke_cancel') {
                 remoteStrokesRef.current.delete(key)
+                resolveLiveInk(inkResolutionsRef.current,[msg.stroke_id],getActiveBoardVersion(),true)
               }
               redraw()
             }
@@ -2502,7 +2517,8 @@ function App() {
             setLiveConnected(false)
             setLiveUsers([])
             setLiveSelf(null)
-            for(const [key,remote] of remoteStrokesRef.current)if(!remote.done)remoteStrokesRef.current.delete(key)
+            // A transport failure is not a cancellation. Keep visible ink
+            // until the canonical scene or an explicit resolution replaces it.
             remoteCursorsRef.current.clear()
             redraw()
             reconnectTimer = setTimeout(connect, 3000)
@@ -2518,16 +2534,8 @@ function App() {
     connect()
     polling = setInterval(() => {
       void checkMissedEvents()
-      // No dejar trazos fantasma si se interrumpe un mensaje o falla el guardado.
-      const now=Date.now()
-      let removed=false
-      for (const [key, remote] of remoteStrokesRef.current) {
-        if (now-remote.updated > (remote.done?20000:30000)) {
-          remoteStrokesRef.current.delete(key)
-          removed=true
-        }
-      }
-      if (removed) redraw()
+      // Reconcile delayed previews without hiding them on a time limit.
+      if(remoteStrokesRef.current.size&&Date.now()-lastVerified>=10000){verifyScene=true;retryApply(0)}
     }, 3000)
     window.addEventListener('focus', onFocus)
     window.addEventListener('online', onFocus)
@@ -2545,6 +2553,7 @@ function App() {
       liveStrokeProgressRef.current = null
       clearHtmlViews()
       remoteStrokesRef.current.clear()
+      inkResolutionsRef.current.clear()
       remoteCursorsRef.current.clear()
       viewsRef.current.clear()
       stopFollowing()

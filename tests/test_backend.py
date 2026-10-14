@@ -542,6 +542,35 @@ class BackendTest(unittest.TestCase):
             bad=copy.deepcopy(content);bad['shapes'][1]['code']['source']='x'*100001
             self.assertEqual(client.put('/api/boards/'+bid,json={'version':1,'content':bad}).status_code,422)
 
+    def test_ink_commit_and_deletion_acknowledgements_survive_reconnect(self):
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Ink acknowledgements','password':'ink-password'})
+            board=client.post('/api/boards',json={'name':'Ink acknowledgements'}).json()['id']
+            stroke={'id':'ack-ink','points':[{'x':1,'y':2},{'x':3,'y':4}],'color':'#000000','width':3,'highlighter':True}
+            with client.websocket_connect(f'wss://testserver/api/live/{board}') as a:
+                a.receive_json();a.receive_json()
+                with client.websocket_connect(f'wss://testserver/api/live/{board}') as b:
+                    b.receive_json();b.receive_json();a.receive_json()
+                    a.send_json({'type':'stroke_start','stroke_id':stroke['id'],'point':stroke['points'][0],'color':stroke['color'],'width':3,'highlighter':True})
+                    self.assertTrue(b.receive_json()['highlighter'])
+                    a.send_json({'type':'stroke_end','stroke_id':stroke['id']})
+                    self.assertEqual(b.receive_json()['type'],'stroke_end')
+                    self.assertEqual(client.put(f'/api/boards/{board}',json={'version':0,'content':{'strokes':[stroke]}}).status_code,200)
+                    for peer in (a,b):
+                        self.assertEqual(peer.receive_json()['type'],'board_version')
+                        settled=peer.receive_json();self.assertEqual(settled['saved'],['ack-ink']);self.assertEqual(settled['version'],1)
+                        peer.receive_json() # presence
+                    self.assertEqual(client.put(f'/api/boards/{board}',json={'version':1,'content':{'strokes':[]}}).status_code,200)
+                    for peer in (a,b):
+                        peer.receive_json()
+                        settled=peer.receive_json();self.assertEqual(settled['removed'],['ack-ink']);self.assertEqual(settled['version'],2)
+                        peer.receive_json()
+                with client.websocket_connect(f'wss://testserver/api/live/{board}') as reconnected:
+                    reconnected.receive_json();reconnected.receive_json()
+                    settled=reconnected.receive_json()
+                    self.assertEqual(settled['type'],'ink_settled');self.assertEqual(settled['version'],2)
+                    self.assertEqual(settled['removed'],['ack-ink']);self.assertEqual(settled['saved'],[])
+
     def test_contributor_edits_and_camera_presence(self):
         with TestClient(self.app, base_url='https://testserver') as client:
             owner = client.post('/api/auth/guest', json={
