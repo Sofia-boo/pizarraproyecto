@@ -4,7 +4,7 @@ export async function pageStatus(page){
   if(!page||page.isClosed())return {state:'closed'}
   if(new URL(page.url()).hostname!=='chatgpt.com')return {state:'login'}
   if(await page.locator('#challenge-running,#challenge-stage,iframe[src*="challenges.cloudflare.com"]').count())return {state:'verification'}
-  const profile=page.locator('[data-testid="profile-button"],[data-testid="user-menu-button"],button[aria-label*="perfil" i],button[aria-label*="profile" i]')
+  const profile=page.locator('[data-testid="profile-button"],[data-testid="accounts-profile-button"],[data-testid="user-menu-button"],button[aria-label*="perfil" i],button[aria-label*="profile" i]')
   const login=page.getByRole('button',{name:/^(log in|sign in|iniciar sesión|inicia sesión|ingresar)$/i})
   if(await login.count()||!await profile.count())return {state:'login'}
   return {state:await page.locator('#prompt-textarea').isVisible().catch(()=>false)?'ready':'loading'}
