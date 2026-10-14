@@ -46,6 +46,7 @@ test('HTML shares actual controls, canvas, timers and scroll without executing s
     const owner=a.frameLocator('.board-html-widget iframe'),mirror=b.frameLocator('.board-html-widget iframe')
     await owner.locator('#count').click()
     await expect(mirror.locator('#count')).toHaveText('Contador 1')
+    await expect(mirror.locator('html')).toHaveAttribute('data-counter','1')
     await expect(b.getByRole('status')).toContainText('Ana está usando este HTML')
     await owner.getByLabel('Nombre',{exact:true}).fill('Matemática 🙂')
     await expect(mirror.locator('#result')).toHaveText('Matemática 🙂')

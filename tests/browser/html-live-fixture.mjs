@@ -1,5 +1,5 @@
 export const source=`<!doctype html><html><head><style>body{font:16px system-ui;margin:8px}button,input,select{display:block;margin:4px}#scroll{height:60px;overflow:auto}@keyframes motion{from{transform:translateX(0)}to{transform:translateX(80px)}}#animated{display:inline-block;animation:motion 2s linear infinite}</style></head><body>
-<button id="count" onclick="this.textContent='Contador '+(++window.count);draw()">Contador 0</button>
+<button id="count" onclick="this.textContent='Contador '+(++window.count);document.documentElement.dataset.counter=window.count;draw()">Contador 0</button>
 <input aria-label="Nombre" oninput="document.querySelector('#result').textContent=this.value">
 <output id="result"></output><input type="checkbox" aria-label="Activar" onchange="document.querySelector('#check').textContent=this.checked?'Sí':'No'"><output id="check">No</output>
 <select aria-label="Opción"><option>Uno</option><option>Dos</option></select>

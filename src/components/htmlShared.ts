@@ -87,7 +87,7 @@ const runtime=String.raw`
    const parsed=new DOMParser().parseFromString(html,'text/html');
    parsed.querySelectorAll(forbidden).forEach(element=>element.remove());
    parsed.querySelectorAll('*').forEach(element=>{for(const attribute of [...element.attributes])if(/^on/i.test(attribute.name)||['srcdoc','nonce','autofocus'].includes(attribute.name))element.removeAttribute(attribute.name)});
-   morph(document.head,parsed.head);morph(document.body,parsed.body);
+   morph(document.documentElement,parsed.documentElement);
    const rootScroll=JSON.parse(parsed.documentElement.getAttribute('data-pizarra-scroll')||'[0,0]');document.documentElement.scrollLeft=rootScroll[0];document.documentElement.scrollTop=rootScroll[1];document.documentElement.setAttribute('data-pizarra-scroll',JSON.stringify(rootScroll));document.documentElement.setAttribute('data-pizarra-node',parsed.documentElement.getAttribute('data-pizarra-node')||'1');
    document.querySelectorAll('[data-pizarra-scroll]').forEach(element=>{try{const [x,y]=JSON.parse(element.getAttribute('data-pizarra-scroll'));element.scrollLeft=x;element.scrollTop=y}catch{}});
   }finally{applying=false}
