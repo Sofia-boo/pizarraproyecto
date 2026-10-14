@@ -2,6 +2,7 @@ import { connectorPath, pathMidpoint } from './visualObjects'
 import type { ConnectorCap, ResolveObject, ShapeItem } from './visualObjects'
 import type { Point } from '../storage/database'
 import { matrixCells } from '../study/matrices'
+import { cartesianGrid } from './cartesianResize'
 import { CODE_COLORS, cppTokens } from './cppHighlight'
 
 function wrapped(ctx:CanvasRenderingContext2D,text:string,width:number,limit=10000):string[] {
@@ -67,16 +68,20 @@ export function paintVisual(ctx:CanvasRenderingContext2D,item:ShapeItem,resolve:
     ctx.restore();return true
   }
   if(item.symbol==='cartesian') {
-    const {x,y,width:w,height:h}=item,stepX=w/20,stepY=h/20
+    const {x,y,width:w,height:h}=item,{step,center,xLimit,yLimit,xLabelLimit,yLabelLimit}=cartesianGrid(item)
     ctx.save();ctx.fillStyle=dark?'#151a23':'#fff';ctx.fillRect(x,y,w,h)
-    ctx.strokeStyle=dark?'#384454':'#d8e0eb';ctx.lineWidth=Math.max(.5,w/800);ctx.beginPath()
-    for(let i=0;i<=20;i++){ctx.moveTo(x+i*stepX,y);ctx.lineTo(x+i*stepX,y+h);ctx.moveTo(x,y+i*stepY);ctx.lineTo(x+w,y+i*stepY)}ctx.stroke()
-    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=Math.max(1,w/240);ctx.beginPath()
+    ctx.strokeStyle=dark?'#384454':'#d8e0eb';ctx.lineWidth=.55;ctx.beginPath()
+    for(let i=-xLimit;i<=xLimit;i++){ctx.moveTo(center.x+i*step,y);ctx.lineTo(center.x+i*step,y+h)}
+    for(let i=-yLimit;i<=yLimit;i++){ctx.moveTo(x,center.y+i*step);ctx.lineTo(x+w,center.y+i*step)}ctx.stroke()
+    ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.8;ctx.beginPath()
     ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.moveTo(x+w/2,y+h);ctx.lineTo(x+w/2,y);ctx.stroke()
-    cap(ctx,{x:x+w,y:y+h/2},{x,y:y+h/2},'arrow',w/35)
-    cap(ctx,{x:x+w/2,y},{x:x+w/2,y:y+h},'arrow',h/35)
-    ctx.font=`${Math.max(6,Math.min(w,h)/28)}px system-ui`;ctx.textAlign='center';ctx.textBaseline='top'
-    for(let i=-8;i<=8;i+=2){if(!i)continue;ctx.fillText(String(i),x+w/2+i*stepX,y+h/2+4);ctx.fillText(String(i),x+w/2-14,y+h/2-i*stepY+3)}
+    cap(ctx,{x:x+w,y:y+h/2},{x,y:y+h/2},'arrow',12)
+    cap(ctx,{x:x+w/2,y},{x:x+w/2,y:y+h},'arrow',12)
+    ctx.font='15px system-ui';ctx.textAlign='center';ctx.textBaseline='top'
+    for(let i=-xLabelLimit;i<=xLabelLimit;i+=2){if(i)ctx.fillText(String(i),center.x+i*step,center.y+4)}
+    ctx.textAlign='right'
+    for(let i=-yLabelLimit;i<=yLabelLimit;i+=2){if(i)ctx.fillText(String(i),center.x-6,center.y-i*step+3)}
+    ctx.textAlign='center'
     ctx.fillText('0',x+w/2-12,y+h/2+4);ctx.fillText('x',x+w-12,y+h/2+10);ctx.fillText('y',x+w/2+12,y+6)
     ctx.restore();return true
   }

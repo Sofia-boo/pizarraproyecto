@@ -4,6 +4,15 @@ import type {Point} from '../storage/database'
 
 export type CartesianHandle={axis:'x'|'y';direction:1|-1}
 type Plane=Bounds&{rotation?:number}
+// One unit always occupies the same board distance. Resizing changes the
+// visible range, while camera zoom continues to magnify the entire board.
+export const CARTESIAN_UNIT=22
+export function cartesianGrid(item:Bounds){
+  return {step:CARTESIAN_UNIT,center:{x:item.x+item.width/2,y:item.y+item.height/2},
+    xLimit:Math.floor(item.width/(2*CARTESIAN_UNIT)),yLimit:Math.floor(item.height/(2*CARTESIAN_UNIT)),
+    xLabelLimit:Math.max(0,Math.floor((item.width/2-18)/(2*CARTESIAN_UNIT))*2),
+    yLabelLimit:Math.max(0,Math.floor((item.height/2-18)/(2*CARTESIAN_UNIT))*2)}
+}
 export function cartesianHandles(item:Plane){
   const center={x:item.x+item.width/2,y:item.y+item.height/2}
   return ([{axis:'x',direction:1,x:item.x+item.width,y:center.y},{axis:'x',direction:-1,x:item.x,y:center.y},
