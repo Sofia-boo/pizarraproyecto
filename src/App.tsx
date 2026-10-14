@@ -12,6 +12,7 @@ import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
+import HtmlWidget from './components/HtmlWidget'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
 import ImageCropDialog from './components/ImageCropDialog'
 import TouchButton from './components/TouchButton'
@@ -860,6 +861,8 @@ function App() {
   const viewportFrameRef = useRef<number | null>(null)
   const [, setVisibleTableIds] = useState<string[]>([])
   const [visibleGraphIds, setVisibleGraphIds] = useState<string[]>([])
+  const [htmlItems,setHtmlItems]=useState<ShapeItem[]>([])
+  const htmlInputRef=useRef<HTMLInputElement>(null)
   // Evita inserciones dobles mientras React monta el gráfico.
   const lastGraphInsertAtRef = useRef<number>(-Infinity)
 
@@ -1523,6 +1526,10 @@ function App() {
       const graphIds = graphsRef.current.filter(item => rectsIntersect(view, rotatedRect(item,item.rotation))).map(item => item.id)
       setVisibleTableIds(previous => sameVisibleIds(previous, tableIds) ? previous : tableIds)
       setVisibleGraphIds(previous => sameVisibleIds(previous, graphIds) ? previous : graphIds)
+      const html=shapesRef.current.filter(item=>item.visualType==='html'&&item.html)
+      setHtmlItems(previous=>previous.length===html.length&&previous.every((item,index)=>{
+        const next=html[index];return item.id===next.id&&item.x===next.x&&item.y===next.y&&item.width===next.width&&item.height===next.height&&item.rotation===next.rotation&&item.zIndex===next.zIndex&&item.html===next.html
+      })?previous:html.map(item=>({...item})))
     })
   }
 
@@ -1687,8 +1694,9 @@ function App() {
       ...tablesRef.current.map(t=>(t as GroupedItem).zIndex??100000),
       ...graphsRef.current.map(g=>(g as GroupedItem).zIndex??200000),
       ...videosRef.current.map(v=>v.zIndex??-150000),
+      ...shapesRef.current.filter(item=>item.visualType==='html').map(item=>item.zIndex??150000),
     ])].sort((a,b)=>a-b)
-    const hasDomObjects=!!(tablesRef.current.length||graphsRef.current.length||videosRef.current.length)
+    const hasDomObjects=!!(tablesRef.current.length||graphsRef.current.length||videosRef.current.length||shapesRef.current.some(item=>item.visualType==='html'))
     const renderables:{z:number;index:number;bounds?:Bounds;paint:(surface:CanvasRenderingContext2D)=>void}[]= []
     let renderIndex=0
     for(const item of visibleMedia){
@@ -1705,6 +1713,7 @@ function App() {
       }})
     }
     for(const item of shapesRef.current){
+      if(item.visualType==='html')continue
       const bounds=rotatedRect(visualBounds(item,resolveObject),item.rotation)
       if(rectsIntersect(view,bounds))
         renderables.push({z:(item as GroupedItem).zIndex??(item.visualType==='page'?-400000:-200000),index:renderIndex++,bounds,paint:surface=>drawShape(surface,item)})
@@ -2755,6 +2764,8 @@ function App() {
     if(!scene&&!navigation)return
     const control=target.closest('button,input,textarea,select,[contenteditable]')
     const hit=hitSelectionAt(toWorld(e.clientX,e.clientY))
+    const html=target.closest<HTMLElement>('[data-html-id]')
+    if(!navigation&&!selectionPicking&&hit?.kind==='shape'&&html?.dataset.htmlId===hit.id)return
     const visibleControl=control&&((hit?.kind==='graph'&&target.closest<HTMLElement>('[data-graph-id]')?.dataset.graphId===hit.id)||
       (hit?.kind==='video'&&target.closest<HTMLElement>('[data-video-id]')?.dataset.videoId===hit.id))
     if(!navigation&&(tool!=='select'||(visibleControl&&!selectionPicking)))return
@@ -4050,6 +4061,35 @@ function App() {
     }
   }
 
+  async function onHtmlFiles(event:ChangeEvent<HTMLInputElement>){
+    const files=Array.from(event.target.files??[]);event.target.value=''
+    if(!loadedRef.current)return
+    const boardId=getActiveBoardId()
+    try{
+      const items:ShapeItem[]=[]
+      const center=boardCenter()
+      for(const [index,file] of files.entries()){
+        if(!/\.html?$/i.test(file.name)||file.size>1_000_000)throw new Error('Elegí archivos .html o .htm de hasta 1 MB, con sus recursos incluidos.')
+        const source=await file.text()
+        if(!source.trim())throw new Error('El archivo HTML está vacío.')
+        items.push({id:createId(),kind:'rectangle',visualType:'html',html:{name:file.name.slice(0,200),source},x:center.x-320+index*30,y:center.y-220+index*30,width:640,height:440,color:'#64748b',strokeWidth:1,zIndex:150000})
+      }
+      if(boardId!==getActiveBoardId()||!items.length)return
+      rememberChange();shapesRef.current.push(...items);selectTool('select');selectElement({kind:'shape',id:items.at(-1)!.id});setSelectionError('');redraw();scheduleSave()
+    }catch(error){setSelectionError(error instanceof Error?error.message:'No se pudo insertar el HTML.')}
+  }
+
+  function updateHtml(id:string,patch:Partial<ShapeItem>){
+    shapesRef.current=shapesRef.current.map(item=>item.id===id?{...item,...patch}:item)
+    redraw();scheduleSave()
+  }
+  function deleteHtml(id:string){
+    rememberChange()
+    const next=detachTargets(shapesRef.current,new Set([`shape:${id}`]),resolveObject)
+    shapesRef.current=next.filter(item=>item.id!==id)
+    selectElement(null);redraw();scheduleSave()
+  }
+
   async function onImages(e: ChangeEvent<HTMLInputElement>) {
     const files = [...(e.target.files ?? [])]
     e.target.value = ''
@@ -4663,6 +4703,7 @@ function App() {
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{deleteSelected();setContextMenu(null)}}>Eliminar selección <small>Supr</small></button>
         </div></>}
       <div className="board-scene" ref={sceneRef} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
+      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>selectElement({kind:'shape',id:item.id})} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu}/>)}
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>
@@ -5075,12 +5116,14 @@ function App() {
             <button onClick={() => { setOpenMenu(null); imageInputRef.current?.click() }}>▧ Imagen / SVG</button>
             <button onClick={() => { setOpenMenu(null); pdfInputRef.current?.click() }}>▤ PDF</button>
             <button onClick={() => { setOpenMenu(null); excelInputRef.current?.click() }}>▦ Excel / CSV</button>
+            <button onClick={() => { setOpenMenu(null); htmlInputRef.current?.click() }}>HTML interactivo</button>
             <button onClick={() => { setOpenMenu(null); setVideoError(''); setVideoDialogOpen(true) }}>▶ Video de YouTube</button>
           </div>}
         </div>
         <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple hidden onChange={onImages} />
         <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" multiple hidden onChange={onPDF} />
         <input ref={excelInputRef} type="file" accept=".xlsx,.xlsm,.csv" multiple hidden onChange={onExcelFiles} />
+        <input ref={htmlInputRef} type="file" accept="text/html,.html,.htm" multiple hidden onChange={onHtmlFiles}/>
         <span className="separator" />
         <div className="toolbar-history">
           <button onClick={undo} title="Deshacer (Ctrl + Z)" aria-label="Deshacer">↶</button>
@@ -5183,7 +5226,7 @@ function App() {
       {treePanel&&<BinaryTreePanel initial={treePanel.initial} onTree={insertTree} onExpression={insertTreeExpression} onClose={()=>setTreePanel(null)}/>}
       {!visualEditor && !treePanel && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
-        return item && item.visualType!=='page' && item.symbol!=='cartesian' && (item.visualType || item.label!==undefined)
+        return item && item.visualType!=='page' && item.visualType!=='html' && item.symbol!=='cartesian' && (item.visualType || item.label!==undefined)
           ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.code?'Editar código C++':item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
             {item.note?.study&&!item.note.study.cards&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
               rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()
@@ -5198,7 +5241,7 @@ function App() {
       })()}
       {visualEditor && (()=>{
         const item=shapesRef.current.find(item=>item.id===visualEditor)
-        return item?.code?<CodeWorkspace key={item.id} item={item} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:item&&item.symbol!=='cartesian'?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
+        return item?.code?<CodeWorkspace key={item.id} item={item} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:item&&item.visualType!=='html'&&item.symbol!=='cartesian'?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
       })()}
       <div className="zoom-controls">
         <button onClick={() => changeZoom(2 / 3, window.innerWidth / 2, window.innerHeight / 2)}>−</button>

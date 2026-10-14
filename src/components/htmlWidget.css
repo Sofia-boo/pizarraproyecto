@@ -1,0 +1,9 @@
+.board-html-widget {position:absolute;pointer-events:auto;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid #aebbd0;border-radius:10px;overflow:hidden;background:white;color:#243047;box-shadow:0 6px 20px #14233928;transform-origin:center;}
+.board-html-widget header {display:flex;align-items:center;gap:8px;flex:0 0 36px;background:#eef2ff;padding:0 10px;font:14px system-ui;cursor:grab;touch-action:none;user-select:none;}
+.board-html-widget header span {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.board-html-widget header button {border:0;background:transparent;color:#b91c1c;cursor:pointer;font:24px system-ui;padding:0 7px;}
+.board-html-widget iframe {width:100%;flex:1;min-height:0;border:0;background:white;}
+.html-resize {position:absolute;bottom:0;right:0;display:grid;place-items:center;width:28px;height:28px;border-radius:8px 0 0;background:#e0e7ff;color:#3730a3;cursor:nwse-resize;touch-action:none;}
+.app:is([data-tool='pen'],[data-tool='eraser'],[data-tool='text'],[data-tool='pan'],[data-tool='shape'],[data-tool='connector']) .board-html-widget,
+.app:is([data-tool='pen'],[data-tool='eraser'],[data-tool='text'],[data-tool='pan'],[data-tool='shape'],[data-tool='connector']) .board-html-widget *,
+.app[data-control-navigation='true'] .board-html-widget iframe {pointer-events:none!important;}

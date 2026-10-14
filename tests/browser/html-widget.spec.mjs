@@ -1,0 +1,63 @@
+import {test,expect} from '@playwright/test'
+
+const source=`<!doctype html><html><body><label>Nombre <input aria-label="Nombre"></label><button onclick="document.querySelector('output').textContent=++window.count">Sumar</button><output>0</output><script>window.count=0;try{parent.document.body.dataset.htmlEscaped='yes';document.body.dataset.isolated='no'}catch{document.body.dataset.isolated='yes'}</script></body></html>`
+async function content(page){return page.evaluate(async()=>{
+  const db=await new Promise(resolve=>{const request=indexedDB.open('pizarra-dispositivo',1);request.onsuccess=()=>resolve(request.result)})
+  const rows=await new Promise(resolve=>{const request=db.transaction('boards').objectStore('boards').getAll();request.onsuccess=()=>resolve(request.result)})
+  db.close();const row=rows.find(item=>item.id===localStorage.getItem('pizarra_activa'));return row?.draft??row?.content
+})}
+async function insert(page){
+  await page.route('**/api/**',route=>route.fulfill({status:503,body:'isolated offline board'}))
+  await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
+  await expect.poll(async()=>(await content(page))?.camera).toBeDefined()
+  await page.getByRole('button',{name:'Agregar imagen o PDF',exact:true}).click()
+  const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'HTML interactivo',exact:true}).click()
+  await(await chooser).setFiles({name:'ejercicio.html',mimeType:'text/html',buffer:Buffer.from(source)})
+  await expect(page.locator('.board-html-widget')).toBeVisible()
+  await expect.poll(async()=>(await content(page))?.shapes?.filter(item=>item.visualType==='html').length).toBe(1)
+  return page.frameLocator('iframe[title="HTML: ejercicio.html"]')
+}
+test('HTML scripts and forms work in isolation, survive movement and are saved with the board',async({page,context})=>{
+  let frame=await insert(page)
+  await frame.getByRole('button',{name:'Sumar',exact:true}).click();await expect(frame.locator('output')).toHaveText('1')
+  await frame.getByRole('textbox',{name:'Nombre'}).fill('Ejercicio')
+  await expect(frame.locator('body')).toHaveAttribute('data-isolated','yes')
+  expect(await page.evaluate(()=>document.body.dataset.htmlEscaped)).toBeUndefined()
+  const header=page.getByLabel('Mover HTML ejercicio.html'),box=await header.boundingBox()
+  const before=(await content(page)).shapes.find(item=>item.visualType==='html')
+  await page.mouse.move(box.x+70,box.y+18);await page.mouse.down();await page.mouse.move(box.x+110,box.y+48,{steps:5});await page.mouse.up()
+  await expect.poll(async()=>(await content(page)).shapes[0].x).toBeCloseTo(before.x+40)
+  await expect(frame.locator('output')).toHaveText('1');await expect(frame.getByRole('textbox',{name:'Nombre'})).toHaveValue('Ejercicio')
+  const handle=page.getByRole('button',{name:'Cambiar tamaño HTML ejercicio.html'}),size=await handle.boundingBox()
+  await page.mouse.move(size.x+14,size.y+14);await page.mouse.down();await page.mouse.move(size.x+74,size.y+54,{steps:5});await page.mouse.up()
+  await expect.poll(async()=>(await content(page)).shapes[0].width).toBeCloseTo(700)
+  await expect(frame.locator('output')).toHaveText('1')
+  const movedHeader=await header.boundingBox()
+  await page.mouse.click(movedHeader.x+70,movedHeader.y+18,{button:'right'})
+  await page.getByRole('menuitem',{name:'Traer al frente',exact:true}).click()
+  await expect(frame.locator('output')).toHaveText('1')
+  await page.reload();frame=page.frameLocator('iframe[title="HTML: ejercicio.html"]')
+  await page.getByRole('button',{name:'Seleccionar área',exact:true}).click()
+  await expect(frame.getByRole('button',{name:'Sumar',exact:true})).toBeVisible()
+  expect((await content(page)).shapes[0].html.source).toBe(source)
+  await context.setOffline(true)
+  await frame.getByRole('button',{name:'Sumar',exact:true}).click();await expect(frame.locator('output')).toHaveText('1')
+  await context.setOffline(false)
+  await page.getByRole('button',{name:'Eliminar HTML ejercicio.html',exact:true}).click()
+  await expect(page.locator('.board-html-widget')).toHaveCount(0)
+  await page.keyboard.press('Control+z');await expect(page.locator('.board-html-widget')).toHaveCount(1)
+})
+
+test.describe('tablet',()=>{
+  test.use({viewport:{width:800,height:1280},hasTouch:true,isMobile:true})
+  test('touch interacts with HTML and the eraser preserves it',async({page})=>{
+    const frame=await insert(page)
+    await frame.getByRole('button',{name:'Sumar',exact:true}).tap();await expect(frame.locator('output')).toHaveText('1')
+    const box=await page.locator('.board-html-widget').boundingBox()
+    await page.getByRole('button',{name:'Borrador',exact:true}).tap()
+    await page.mouse.click(box.x+40,box.y+80)
+    expect((await content(page)).shapes.filter(item=>item.visualType==='html')).toHaveLength(1)
+    await page.getByRole('button',{name:'Seleccionar área',exact:true}).tap()
+    await frame.getByRole('button',{name:'Sumar',exact:true}).tap();await expect(frame.locator('output')).toHaveText('2')
+  })
+})

@@ -439,6 +439,26 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(result.status_code,503,result.text)
             self.assertIn('instalado',result.json()['detail'])
 
+    def test_html_content_is_shared_editable_and_validated(self):
+        import copy
+        with TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as member:
+            for client,name in [(owner,'HTML owner'),(member,'HTML member')]:
+                self.assertEqual(client.post('/api/auth/guest',json={'name':name,'password':'html-password'}).status_code,200)
+            bid=owner.post('/api/boards',json={'name':'HTML compartido'}).json()['id']
+            code=owner.post(f'/api/share/boards/{bid}/code',json={}).json()['code']
+            self.assertEqual(member.post('/api/share/join-code',json={'code':code}).status_code,200)
+            html={'id':'html-example','kind':'rectangle','visualType':'html','x':20,'y':30,'width':640,'height':440,'color':'#64748b','strokeWidth':1,'html':{'name':'ejercicio.html','source':'<button onclick="this.textContent=2">1</button>'}}
+            content={'shapes':[html]}
+            result=owner.put(f'/api/boards/{bid}',json={'version':0,'content':content})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(member.get(f'/api/boards/{bid}').json()['content'],content)
+            html['x']=100
+            self.assertEqual(member.put(f'/api/boards/{bid}',json={'version':1,'content':content}).status_code,200)
+            self.assertEqual(owner.get(f'/api/boards/{bid}').json()['content'],content)
+            for field,value in [('source','x'*1_000_001),('name','')]:
+                bad=copy.deepcopy(content);bad['shapes'][0]['html'][field]=value
+                self.assertEqual(owner.put(f'/api/boards/{bid}',json={'version':2,'content':bad}).status_code,422)
+
     def test_printable_pages_cartesian_and_code_save_with_validation(self):
         import copy
         with TestClient(self.app,base_url='https://testserver') as client:

@@ -23,7 +23,8 @@ export function studyNoteText(study:StudyNote):string {
 }
 export type ShapeItem = Bounds & {
   id:string;kind:ShapeKind;color:string;strokeWidth:number;reverse?:boolean;backwards?:boolean;rotation?:number;
-  groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol'|'page'|'code';code?:CodeData;
+  groupId?:string;zIndex?:number;visualType?:'sticky'|'connector'|'symbol'|'page'|'code'|'html';code?:CodeData;
+  html?:{name:string;source:string};
   note?:NoteData;connector?:Connector;symbol?:AcademicSymbol;label?:string;labelFontSize?:number;matrix?:string[][]
 }
 export type TargetGeometry = Bounds & {rotation?:number;shapeKind?:ShapeKind}

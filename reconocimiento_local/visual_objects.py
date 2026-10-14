@@ -41,7 +41,7 @@ def validate_visual_content(content: dict):
         if not isinstance(item, dict) or not item.get('visualType'):
             continue
         kind = item['visualType']
-        require(kind in ('sticky', 'connector', 'symbol', 'page', 'code'), 'Tipo de objeto visual desconocido.')
+        require(kind in ('sticky', 'connector', 'symbol', 'page', 'code', 'html'), 'Tipo de objeto visual desconocido.')
         require(isinstance(item.get('id'), str) and 1 <= len(item['id']) <= 150 and counts[item['id']] == 1,
                 'El objeto visual necesita un identificador único.')
         require(number(item.get('x')) and number(item.get('y')) and number(item.get('width'), .001, 1_000_000)
@@ -53,6 +53,11 @@ def validate_visual_content(content: dict):
             require(text(item['label'], 2000), 'El texto del elemento es demasiado largo.')
         if kind == 'page':
             require(abs(item['width'] / item['height'] - 210 / 297) < .002, 'La hoja debe mantener la proporción A4.')
+        elif kind == 'html':
+            html = item.get('html')
+            require(isinstance(html, dict) and text(html.get('name'), 200)
+                    and bool(html['name'].strip()) and text(html.get('source'), 1_000_000)
+                    and bool(html['source'].strip()), 'El archivo HTML no es válido (máximo 1 MB de texto).')
         elif kind == 'code':
             code = item.get('code')
             require(isinstance(code, dict) and text(code.get('source'), 100000)
