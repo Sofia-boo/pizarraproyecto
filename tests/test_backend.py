@@ -10,6 +10,29 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_chatgpt_restart_only_resumes_the_requesting_users_activated_browser(self):
+        import time
+        from unittest.mock import patch
+        from reconocimiento_local.chatgpt_browser import BrowserService
+        class Process:
+            def poll(self):return None
+        class Bridge:
+            def __init__(self, uid):self.uid=uid;self.process=None;self.updated=0;self.state={'state':'closed'};self.calls=[]
+            def call(self, action):
+                self.calls.append(action);self.updated=time.time();self.process=Process();self.state={'state':'ready'};return self.state
+            def close(self, keep_browser=False):self.calls.append('detach' if keep_browser else 'close')
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'owner').mkdir();(root/'owner'/'DevToolsActivePort').write_text('12345\n/devtools/browser/fixture')
+            with patch('reconocimiento_local.chatgpt_browser.profile_directory',lambda uid:root/uid):
+                service=BrowserService(Bridge)
+                self.assertEqual(service.status('other'),{'state':'closed','busy':False})
+                self.assertEqual(service.bridges,{})
+                self.assertEqual(service.status('owner'),{'state':'ready','busy':False})
+                self.assertEqual(service.bridges['owner'].calls,['attach'])
+                self.assertEqual(service.status('owner'),{'state':'ready','busy':False})
+                service.close_all()
+                self.assertEqual(service.bridges['owner'].calls,['attach','detach'])
+
     def test_chatgpt_jobs_are_private_idempotent_and_upload_only_explicit_files(self):
         import time
         from unittest.mock import patch
@@ -23,7 +46,7 @@ class BackendTest(unittest.TestCase):
                 if action=='open':self.state={'state':'ready'}
                 if action=='ask':self.calls.append(payload);return {'text':'browser fallback','html':'<h2>Solución</h2><span class="katex"><math><annotation encoding="application/x-tex">\\frac{1}{2}</annotation></math></span>'}
                 return self.state
-            def close(self):pass
+            def close(self, **kwargs):pass
         service=BrowserService(Bridge)
         with patch('reconocimiento_local.chatgpt_browser.service',service),TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as other:
             self.assertEqual(owner.get('/api/chatgpt/status').status_code,401)

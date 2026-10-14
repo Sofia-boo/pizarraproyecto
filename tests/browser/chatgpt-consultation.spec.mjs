@@ -119,3 +119,23 @@ test('verification recovery keeps the exercise and attachments, and never automa
   await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeDisabled()
   expect(steps).toEqual(['manual','activate'])
 })
+
+test('a server restart reconnects status automatically and preserves the question',async({page})=>{
+  let attempts=0
+  await page.route('**/api/**',route=>{
+    if(new URL(route.request().url()).pathname==='/api/chatgpt/status'){
+      attempts++
+      return attempts===1?route.fulfill({status:503,json:{detail:'Reiniciando conexión de prueba'}}):route.fulfill({json:{state:'ready'}})
+    }
+    return route.fulfill({status:503,body:'offline'})
+  })
+  await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo'}).click()
+  await expect(page.locator('.library-open-button')).toContainText('privada')
+  const dialog=await open(page)
+  await expect(dialog.getByText('Reiniciando conexión de prueba',{exact:true})).toBeVisible()
+  await dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true}).fill('Conservar mi pregunta')
+  await expect(dialog.getByRole('button',{name:'Enviar',exact:true})).toBeEnabled({timeout:10000})
+  await expect(dialog.getByText('Reiniciando conexión de prueba',{exact:true})).toHaveCount(0)
+  await expect(dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true})).toHaveValue('Conservar mi pregunta')
+  expect(attempts).toBeGreaterThanOrEqual(2)
+})

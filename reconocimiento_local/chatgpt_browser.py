@@ -38,6 +38,11 @@ def chrome_path():
     return shutil.which('google-chrome') or shutil.which('chromium')
 
 
+def profile_directory(user_id):
+    root = Path(os.environ.get('LOCALAPPDATA') or Path.home() / '.local/share') / 'PizarraChatGPT/ChromeProfiles'
+    return root / hashlib.sha256(user_id.encode()).hexdigest()
+
+
 class BrowserBridge:
     def __init__(self, user_id):
         self.user_id = user_id
@@ -51,8 +56,7 @@ class BrowserBridge:
         node, chrome = shutil.which('node'), chrome_path()
         if not node or not chrome or not (ROOT / 'node_modules/playwright').is_dir():
             raise HTTPException(503, 'El servidor necesita Chrome y npm install para conectar tu ChatGPT.')
-        browser_root = Path(os.environ.get('LOCALAPPDATA') or Path.home() / '.local/share') / 'PizarraChatGPT/ChromeProfiles'
-        profile = browser_root / hashlib.sha256(self.user_id.encode()).hexdigest()
+        profile = profile_directory(self.user_id)
         self.responses = queue.Queue()
         self.process = subprocess.Popen(
             [node, str(ROOT / 'scripts/chatgpt-browser.mjs'), str(profile), chrome],
@@ -74,7 +78,7 @@ class BrowserBridge:
     def call(self, action, **payload):
         with self.lock:
             if self.process is None or self.process.poll() is not None:
-                if action not in ('open', 'login'):
+                if action not in ('open', 'login', 'attach'):
                     self.state = {'state': 'closed'}
                     self.updated = time.time()
                     return self.state
@@ -98,9 +102,9 @@ class BrowserBridge:
             if 'state' in result: self.state = {'state': result['state']}
             return {key: value for key, value in result.items() if key not in ('id', 'ok')}
 
-    def close(self):
+    def close(self, keep_browser=False):
         if self.process is not None and self.process.poll() is None:
-            try: self.call('close')
+            try: self.call('detach' if keep_browser else 'close')
             except Exception: pass
             try: self.process.stdin.close()
             except OSError: pass
@@ -127,11 +131,14 @@ class BrowserService:
     def status(self, uid):
         with self.lock:
             bridge = self.bridges.get(uid)
-            if bridge is None: return {'state': 'closed', 'busy': False}
+            if bridge is None:
+                if not (profile_directory(uid) / 'DevToolsActivePort').is_file():
+                    return {'state': 'closed', 'busy': False}
+                bridge = self.bridge(uid)
             busy = self.active(uid)
             if busy: return {**bridge.state, 'busy': True}
         if time.time() - bridge.updated > 3:
-            bridge.call('status')
+            bridge.call('attach' if bridge.process is None or bridge.process.poll() is not None else 'status')
         return {**bridge.state, 'busy': False}
 
     def open(self, uid, action='login'):
@@ -187,7 +194,7 @@ class BrowserService:
             return {'id': identifier, **{key: job[key] for key in ('status', 'text', 'error', 'conversation') if key in job}}
 
     def close_all(self):
-        for bridge in list(self.bridges.values()): bridge.close()
+        for bridge in list(self.bridges.values()): bridge.close(keep_browser=True)
 
 
 service = BrowserService()

@@ -8,6 +8,13 @@ export function chromeArguments(profile,{automated=false,headless=false}={}){
 
 export class ChromeProfile {
   constructor(profile,chrome,{headless=false}={}){this.profile=resolve(profile);this.chrome=chrome;this.headless=headless;this.child=null;this.manual=false}
+  async debugAddress(){
+    try{
+      const [port,path]=(await readFile(resolve(this.profile,'DevToolsActivePort'),'utf8')).trim().split(/\r?\n/)
+      if(/^\d+$/.test(port)&&Number(port)>0&&Number(port)<=65535&&/^\/devtools\/browser\/[a-zA-Z0-9-]+$/.test(path))return 'ws://127.0.0.1:'+port+path
+    }catch{}
+    return null
+  }
   async launch(automated){
     await mkdir(this.profile,{recursive:true})
     const portFile=resolve(this.profile,'DevToolsActivePort')

@@ -26,6 +26,8 @@ Chrome conserva su sesión en un perfil dedicado por usuario, fuera del reposito
 
 El servidor envía cada consulta una vez y no la reintenta automáticamente si el resultado es incierto. Si Chrome ya tiene un borrador o una respuesta en curso, hay que resolverlo allí antes de enviar otra consulta. Cada pizarra conserva la referencia a su conversación para continuarla sin mezclar ejercicios de otras pizarras.
 
+La conexión admite tanto los controles anteriores como el editor actual con nombre accesible «Pregunta a ChatGPT». Los adjuntos se cargan en el selector de archivos general, no en la entrada de cámara ni en la de fotos. La lectura reconoce los nuevos bloques de respuesta y conserva las fórmulas. Al reiniciar el servidor se desconecta el controlador sin cerrar Chrome; el usuario autenticado puede recuperar únicamente su perfil dedicado que ya tenía activada la conexión. La recuperación no abre nuevos navegadores, no activa el control durante el acceso manual y no exporta la sesión.
+
 ## Scrapling
 
 Se usa Scrapling 0.4.15 para extraer y estructurar únicamente el fragmento de la nueva respuesta del asistente. Se preservan las anotaciones LaTeX originales de KaTeX, los títulos, las listas y el código. El fragmento se limpia de formularios, controles y atributos ajenos al contenido antes de procesarlo. La navegación y los adjuntos se mantienen en Chrome con Playwright; Scrapling no reemplaza el inicio de sesión ni se usa para eludirlo.
@@ -42,7 +44,7 @@ La interfaz dentro de la pizarra es propia: el navegador oficial se ejecuta en l
 
 ## Validación
 
-Se probaron el arranque y cierre del Chrome real sin sesión, la autenticación de las rutas, el aislamiento entre usuarios, la ausencia de reenvíos duplicados, el recorte exacto de un PDF rotado, los adjuntos y la inserción de fórmulas. El envío y la lectura se probaron con una página simulada; falta validar una consulta real tras el inicio de sesión del propietario. Las pruebas usan bases de datos y perfiles aislados.
+Se probaron el arranque y cierre de Chrome, la autenticación de las rutas, el aislamiento entre usuarios, la reconexión sin cerrar la ventana ni perder borradores, la ausencia de reenvíos duplicados, el recorte exacto de un PDF rotado, los adjuntos y la inserción de fórmulas. También se envió una consulta real simple «2 + 2» en la sesión del propietario y se comprobó la lectura de su respuesta «4» con los nuevos controles; no se reenvió la pregunta después del cambio del lector. Los adjuntos PDF y las fórmulas se validaron con páginas simuladas que reproducen ambas interfaces. Las pruebas automatizadas usan bases de datos y perfiles aislados.
 
 Archivos principales: `reconocimiento_local/chatgpt_browser.py`, `scripts/chatgpt-browser.mjs`, `scripts/chatgpt-page.mjs` y `src/components/ChatGPTConsultation.tsx`.
 

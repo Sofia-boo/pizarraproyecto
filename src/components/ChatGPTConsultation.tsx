@@ -48,9 +48,15 @@ export default function ChatGPTConsultation({boardId,initialImage,initialQuestio
   useEffect(()=>{if(!loaded)return;const timer=setTimeout(()=>{void save().catch(()=>setError('No se pudo guardar el chat en este dispositivo.'))},200);return()=>clearTimeout(timer)})
   useEffect(()=>{
     if(!online||busy)return
-    let stopped=false,timer:ReturnType<typeof setTimeout>
+    let stopped=false,timer:ReturnType<typeof setTimeout>,connectionError=''
     async function refresh(){
-      try{const next=await api<State>('status');if(!stopped){setState(next);if(next.state!=='closed')timer=setTimeout(()=>void refresh(),4000)}}catch(cause){if(!stopped)setError(cause instanceof Error?cause.message:String(cause))}
+      try{const next=await api<State>('status');if(!stopped){
+        setState(next);if(connectionError)setError(current=>current===connectionError?'':current)
+        if(next.state!=='closed')timer=setTimeout(()=>void refresh(),4000)
+      }}catch(cause){if(!stopped){
+        connectionError=cause instanceof Error?cause.message:String(cause);setError(connectionError)
+        if(!(cause instanceof ChatGPTError&&[401,403].includes(cause.status)))timer=setTimeout(()=>void refresh(),4000)
+      }}
     }
     void refresh();return()=>{stopped=true;clearTimeout(timer)}
   },[online,busy,job])

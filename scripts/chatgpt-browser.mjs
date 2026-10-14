@@ -9,24 +9,45 @@ const chromeProfile=new ChromeProfile(profile,chrome,{headless:process.argv.incl
 let browser,context,page
 async function login(){
   if(chromeProfile.manual&&chromeProfile.child?.exitCode===null)return {state:'manual_login'}
+  // Recover only an already activated, dedicated browser after a server
+  // restart. This never launches or controls a normal manual-login window.
+  if(!browser&&!chromeProfile.child){const resumed=await open(true);if(resumed.state==='ready')return resumed}
   await close()
   if(chromeProfile.child?.exitCode===null)throw new Error('Cerrá la ventana anterior de Chrome de la conexión antes de iniciar sesión en Chrome normal.')
   await chromeProfile.launch(false)
   return {state:'manual_login'}
 }
-async function open(){
+async function open(resumeOnly=false){
   if(browser?.isConnected()){
-    if(!page||page.isClosed()){page=await context.newPage();await page.goto('https://chatgpt.com/',{waitUntil:'domcontentloaded',timeout:30000})}
-    await page.bringToFront();return pageStatus(page)
+    if(!page||page.isClosed()){
+      if(resumeOnly)return {state:'closed'}
+      page=await context.newPage();await page.goto('https://chatgpt.com/',{waitUntil:'domcontentloaded',timeout:30000})
+    }
+    if(!resumeOnly)await page.bringToFront();return pageStatus(page)
   }
-  await chromeProfile.finishManual()
-  const address=await chromeProfile.launch(true)
-  browser=await chromium.connectOverCDP(address,{timeout:10000})
+  if(resumeOnly&&chromeProfile.manual)return {state:chromeProfile.child?.exitCode===null?'manual_login':'closed'}
+  const existing=await chromeProfile.debugAddress()
+  if(existing)try{browser=await chromium.connectOverCDP(existing,{timeout:3000})}catch{}
+  if(!browser){
+    if(resumeOnly)return {state:'closed'}
+    await chromeProfile.finishManual()
+    const address=await chromeProfile.launch(true)
+    browser=await chromium.connectOverCDP(address,{timeout:10000})
+  }
   context=browser.contexts()[0]
-  page=context.pages().filter(p=>p.url().startsWith('https://chatgpt.com/')).at(-1)??context.pages()[0]??await context.newPage()
+  const candidates=context.pages().filter(p=>p.url().startsWith('https://chatgpt.com/')).reverse()
+  page=candidates[0]
+  for(const candidate of candidates)if((await pageStatus(candidate)).state==='ready'){page=candidate;break}
+  if(!page&&resumeOnly){await detach();return {state:'closed'}}
+  page??=context.pages()[0]??await context.newPage()
   if(!page.url().startsWith('https://chatgpt.com/'))await page.goto('https://chatgpt.com/',{waitUntil:'domcontentloaded',timeout:30000})
   page.setDefaultTimeout(10000)
   return pageStatus(page)
+}
+async function detach(){
+  // Disconnect the controller while leaving Chrome's window and session open.
+  await browser?.close().catch(()=>{})
+  browser=null;context=null;page=null;chromeProfile.child?.unref()
 }
 async function close(){
   if(browser?.isConnected()){
@@ -45,11 +66,13 @@ for await(const line of input){
     let result
     if(request.action==='login')result=await login()
     else if(request.action==='open')result=await open()
+    else if(request.action==='attach')result=await open(true)
     else if(request.action==='status')result=chromeProfile.manual?{state:chromeProfile.child?.exitCode===null?'manual_login':'closed'}:await pageStatus(page)
     else if(request.action==='ask'){
       if(!browser?.isConnected())throw new Error('Abrí primero ChatGPT en la PC e iniciá sesión.')
       result=await consultPage(page,request)
     }else if(request.action==='close'){await close();result={state:'closed'}}
+    else if(request.action==='detach'){await detach();result={state:'closed'}}
     else throw new Error('Acción no válida.')
     process.stdout.write(JSON.stringify({id:request.id,ok:true,...result})+'\n')
   }catch(error){
@@ -60,4 +83,4 @@ for await(const line of input){
     process.stdout.write(JSON.stringify({id:request?.id,ok:false,error:safe})+'\n')
   }
 }
-await close().catch(()=>{})
+await detach().catch(()=>{})
