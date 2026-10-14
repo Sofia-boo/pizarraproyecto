@@ -5,10 +5,10 @@ import { GraphPlot } from './GraphPlot'
 import type { BoardGraphItem, GraphViewport } from './GraphPlot'
 import './BoardGraphWidget.css'
 
-export default function BoardGraphWidget({item,getZoom,activeTool,selected,onSelect,onErase,onBegin,onChange,onEnd,onDelete}: {
+export default function BoardGraphWidget({item,getZoom,activeTool,selected,onSelect,onBegin,onChange,onEnd,onDelete}: {
   item:BoardGraphItem;getZoom:()=>number;boardZoom:number;
   activeTool:string;selected:boolean;
-  onSelect:(id:string)=>void;onErase:(id:string)=>void;
+  onSelect:(id:string)=>void;
   onBegin:()=>void;
   onChange:(id:string,update:Partial<BoardGraphItem>)=>void;
   onEnd:()=>void;
@@ -50,14 +50,12 @@ export default function BoardGraphWidget({item,getZoom,activeTool,selected,onSel
   function insertPiecewise(){if(item.formulas.length>=12)return
     onChange(item.id,{formulas:[...item.formulas,{id:`formula-${Date.now()}-${Math.random()}`,expr:'{x<0:-x; x>=0:x}',color:palette[item.formulas.length%palette.length],enabled:true}]})}
   
-  return <div className={`board-live-graph${selected?' board-live-graph-selected':''}${activeTool==='eraser'?' board-live-graph-eraser':''}`}
+  return <div className={`board-live-graph${selected?' board-live-graph-selected':''}`}
     data-graph-id={item.id}
     style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:((item as {zIndex?:number}).zIndex??200000)*2,transform:`rotate(${item.rotation||0}rad)`,transformOrigin:'center center'}}
     onPointerDownCapture={e=>{
       if(e.button!==0)return
-      if(activeTool==='eraser'){
-        e.preventDefault();e.stopPropagation();onErase(item.id)
-      }else if(activeTool==='select'){
+      if(activeTool==='select'){
         // Captura también los clics sobre Plotly, que vive fuera del canvas.
         onSelect(item.id)
       }

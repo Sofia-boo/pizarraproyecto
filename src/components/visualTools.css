@@ -36,7 +36,7 @@ body:has(.visual-inspector) .anon-profile {display:none!important;}
 .study-deck-controls {top:134px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;max-width:330px;}
 .study-deck-controls button {font:inherit;color:inherit;border:1px solid var(--ui-border,#d9dfeb);background:var(--ui-subtle,#f8fafc);border-radius:7px;padding:7px;cursor:pointer;}
 .connector-instruction {position:fixed;z-index:11;left:50%;bottom:24px;transform:translateX(-50%);max-width:calc(100vw - 170px);padding:8px 12px;border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#243047);border:1px solid var(--ui-border,#d9dfeb);box-shadow:0 4px 14px #0001;font:12px system-ui;pointer-events:none;}
-.app[data-tool='connector'] :is(.board-video-layer,.board-graph-layer,.sheet-static-layer) * {pointer-events:none!important;}
+.app:is([data-tool='connector'],[data-tool='eraser']) :is(.board-video-layer,.board-graph-layer,.sheet-static-layer) * {pointer-events:none!important;}
 @media(max-width:1000px) {
   .app .toolbar {top:68px;}
   .app .theme-switcher {top:12px;right:12px;}

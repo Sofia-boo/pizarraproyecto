@@ -2633,52 +2633,13 @@ function App() {
       }
       return true
     })
-    const ctx = canvasRef.current?.getContext('2d')
-    const nextTexts = textsRef.current.filter(item => {
-      const lines = item.text.split('\n')
-      if (ctx) ctx.font = `${item.fontSize}px system-ui, sans-serif`
-      const textWidth = Math.max(item.fontSize, ...(ctx ? lines.map(line => ctx.measureText(line).width) : []))
-      const textHeight = lines.length * item.fontSize * 1.2
-      return !(point.x >= item.x - radius && point.x <= item.x + textWidth + radius && point.y >= item.y - radius && point.y <= item.y + textHeight + radius)
-    })
-    const nextShapes = shapesRef.current.filter(shape => !shapeTouchesEraser(shape,point,radius))
-    // La goma elimina una tabla completa al tocar cualquiera de sus celdas o su borde.
-    const nextTables = tablesRef.current.filter(table => {
-      const area=rotatedRect(tableSize(table),table.rotation)
-      return point.x < area.x-radius || point.x > area.x+area.width+radius ||
-             point.y < area.y-radius || point.y > area.y+area.height+radius
-    })
-    // Los gráficos son objetos DOM sobre el canvas. También se borran si la goma
-    // se arrastra desde el lienzo hacia el área que ocupan.
-    const nextGraphs = graphsRef.current.filter(graph => !(
-      point.x>=graph.x-radius&&point.x<=graph.x+graph.width+radius&&
-      point.y>=graph.y-radius&&point.y<=graph.y+graph.height+radius
-    ))
-    if (nextStrokes.length !== strokesRef.current.length || nextTexts.length !== textsRef.current.length ||
-        nextShapes.length !== shapesRef.current.length || nextGraphs.length !== graphsRef.current.length ||
-        nextTables.length !== tablesRef.current.length) {
+    if (nextStrokes.length !== strokesRef.current.length) {
       rememberChange()
       const removed=new Set<string>()
-      for(const item of shapesRef.current)if(!nextShapes.includes(item))removed.add(`shape:${item.id}`)
-      for(const item of textsRef.current)if(!nextTexts.includes(item))removed.add(`text:${item.id}`)
-      for(const item of tablesRef.current)if(!nextTables.includes(item))removed.add(`table:${item.id}`)
-      for(const item of graphsRef.current)if(!nextGraphs.includes(item))removed.add(`graph:${item.id}`)
-      // Capture fallback coordinates before removing their targets.
       for(const item of strokesRef.current)if(item.id&&!nextStrokes.includes(item))removed.add(`stroke:${item.id}`)
-      shapesRef.current = detachTargets(nextShapes,removed,resolveObject)
-      if(visualEditorRef.current && !shapesRef.current.some(item=>item.id===visualEditorRef.current))setVisualEditor(null)
+      // Preserve connectors and freeze endpoints attached to erased ink.
+      shapesRef.current = detachTargets(shapesRef.current,removed,resolveObject)
       strokesRef.current = nextStrokes
-      textsRef.current = nextTexts
-      if(nextTables.length !== tablesRef.current.length){
-        tablesRef.current = nextTables
-        setTableEditorId(null)
-        setHoveredTableId(null)
-        refreshTables(value=>value+1)
-      }
-      if(nextGraphs.length !== graphsRef.current.length){
-        graphsRef.current = nextGraphs
-        setGraphs([...nextGraphs])
-      }
       // Tras borrar se descarta cualquier selección con índices obsoletos.
       groupRef.current=[];selectedRef.current=null;setSelection(null)
       redraw()
@@ -4714,7 +4675,6 @@ function App() {
           activeTool={tool}
           selected={groupRef.current.some(s=>s.kind==='graph'&&s.id===item.id)}
           onSelect={selectBoardGraph}
-          onErase={deleteBoardGraph}
           onBegin={rememberChange}
           onChange={updateBoardGraph}
           onEnd={()=>{selectElement(null);scheduleSave()}}

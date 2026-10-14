@@ -37,6 +37,34 @@ async function pixel(page,x,y){
   },{data:png.toString('base64'),x,y})
 }
 
+test('the eraser removes only ink, including ink over interactive graphs, and preserves board objects',async({page})=>{
+  await openLocal(page)
+  await page.locator('input[type="file"][accept*="image/svg+xml"]').setInputFiles({name:'picture.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path fill="red" d="M0 0H100V100H0Z"/></svg>')})
+  await expect.poll(async()=>(await content(page)).media.length).toBe(1)
+  const image=(await content(page)).media[0]
+  const points=[{x:100,y:300},{x:250,y:360},{x:350,y:450},{x:250,y:520},{x:700,y:430},{x:250,y:650},{x:950,y:650}]
+  await seed(page,{
+    strokes:points.map((point,index)=>({id:`ink-${index}`,points:[point,{x:point.x+30,y:point.y}],width:4,color:'#000000'})),
+    shapes:[{id:'page',kind:'rectangle',visualType:'page',x:100,y:200,width:500,height:650,color:'#64748b',strokeWidth:1},{id:'figure',kind:'rectangle',x:350,y:400,width:150,height:100,color:'#000000',strokeWidth:2}],
+    texts:[{id:'text',x:230,y:350,text:'Texto protegido',fontSize:28,color:'#000000'}],
+    media:[{...image,x:200,y:600,width:150,height:150}],
+    tables:[{id:'table',name:'Tabla',x:200,y:500,cells:[[{input:'Celda'}]],cellWidth:180,cellHeight:45}],
+    graphs:[{id:'graph',x:650,y:300,width:300,height:240,formulas:[{id:'f',expr:'x^2',enabled:true,color:'#6366f1'}]}],
+    videos:[{id:'video',videoId:'dQw4w9WgXcQ',x:900,y:600,width:320,height:220}]
+  })
+  await expect(page.locator('.board-live-graph')).toBeVisible()
+  await page.keyboard.press('e')
+  for(const [index,point] of points.entries()){
+    await page.mouse.click(point.x,point.y)
+    await expect.poll(async()=>(await content(page)).strokes.map(stroke=>stroke.id)).not.toContain(`ink-${index}`)
+  }
+  await expect.poll(async()=>(await content(page)).strokes.length).toBe(0)
+  for(const [kind,count] of Object.entries({shapes:2,texts:1,media:1,tables:1,graphs:1,videos:1}))expect((await content(page))[kind]).toHaveLength(count)
+  await page.keyboard.press('Control+z')
+  await expect.poll(async()=>(await content(page)).strokes.length).toBe(1)
+  expect((await content(page)).graphs).toHaveLength(1)
+})
+
 test('A4 borders select the page while clicks and partial rectangles inside select its text and ink',async({page})=>{
   await openLocal(page)
   await seed(page,{shapes:[{id:'paper',kind:'rectangle',visualType:'page',x:150,y:180,width:594,height:700,color:'#64748b',strokeWidth:1}],

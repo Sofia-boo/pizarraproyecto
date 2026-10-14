@@ -16,5 +16,3 @@
 
 /* Los gráficos son seleccionables como cualquier otro objeto de la pizarra. */
 .board-live-graph-selected { border:2px solid #6366f1; box-shadow:0 0 0 3px #6366f12b,0 7px 22px #14233928; }
-.board-live-graph-eraser { cursor:crosshair; }
-.board-live-graph-eraser * { cursor:crosshair !important; }
