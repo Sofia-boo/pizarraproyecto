@@ -20,7 +20,7 @@ export class ChromeProfile {
     const portFile=resolve(this.profile,'DevToolsActivePort')
     await unlink(portFile).catch(()=>{})
     if(!automated)this.manual=true
-    this.child=spawn(this.chrome,chromeArguments(this.profile,{automated,headless:this.headless}),{stdio:'ignore',windowsHide:this.headless})
+    this.child=spawn(this.chrome,chromeArguments(this.profile,{automated,headless:this.headless}),{stdio:'ignore',windowsHide:this.headless,detached:true})
     let failed=false
     this.child.on('error',()=>{failed=true})
     if(!automated){
