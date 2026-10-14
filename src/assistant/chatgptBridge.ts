@@ -14,3 +14,9 @@ export function openOfficialChatGPT(){
   popup.opener=null
   return true
 }
+
+export function downloadStudyFile(file:File){
+  const url=URL.createObjectURL(file),link=document.createElement('a')
+  link.href=url;link.download=file.name||'ejercicio.png';document.body.append(link)
+  link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)
+}

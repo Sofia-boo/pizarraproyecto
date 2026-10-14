@@ -18,6 +18,9 @@ async function login(){
   return {state:'manual_login'}
 }
 async function open(resumeOnly=false){
+  // A closed Chrome leaves a disconnected Browser object behind. Release it
+  // and wait for the owned process to finish before reusing the same profile.
+  if(browser&&!browser.isConnected())await close()
   if(browser?.isConnected()){
     if(!page||page.isClosed()){
       if(resumeOnly)return {state:'closed'}
@@ -53,10 +56,10 @@ async function close(){
   if(browser?.isConnected()){
     try{await(await browser.newBrowserCDPSession()).send('Browser.close')}catch{}
     await browser.close().catch(()=>{})
-    const started=Date.now()
-    while(chromeProfile.child?.exitCode===null&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,100))
   }
   browser=null;context=null;page=null
+  const started=Date.now()
+  while(chromeProfile.child?.exitCode===null&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,100))
 }
 const input=createInterface({input:process.stdin,crlfDelay:Infinity})
 for await(const line of input){

@@ -3,7 +3,9 @@ const answer='## Solución\n**Resultado:** $\\frac{1}{2}$.\n\n$$\\frac{1}{2} \\c
 async function open(page){
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   await page.getByRole('menuitem',{name:/Consultar con ChatGPT/}).click()
-  return page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  await dialog.getByRole('button',{name:'Con PC',exact:true}).click()
+  return dialog
 }
 async function board(page){return page.evaluate(async()=>{
   const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})

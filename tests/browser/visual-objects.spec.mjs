@@ -109,6 +109,7 @@ test('ChatGPT receives only the marked PDF region as an attachment without the f
     await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
     await page.getByRole('menuitem',{name:/Consultar con ChatGPT/}).click()
     const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+    await dialog.getByRole('button',{name:'Con PC',exact:true}).click()
     await dialog.getByRole('button',{name:'Adjuntar ▾',exact:true}).click()
     await dialog.getByRole('menuitem',{name:'Selección de la pizarra',exact:true}).click()
     await expect(page.locator('.ocr-selection-instruction')).toBeVisible()

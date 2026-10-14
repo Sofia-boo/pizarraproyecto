@@ -5,7 +5,9 @@ test.use({viewport:{width:800,height:1280},hasTouch:true,isMobile:true,userAgent
 async function open(page){
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).tap()
   await page.getByRole('menuitem',{name:/Consultar con ChatGPT/}).tap()
-  return page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  await dialog.getByRole('button',{name:'Con PC',exact:true}).tap()
+  return dialog
 }
 
 async function prepare(page){
@@ -84,6 +86,7 @@ test('a finger can mark a board region and the crop returns attached to the tabl
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:260,y:450,id:1}]})
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
   dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
+  await dialog.getByRole('button',{name:'Con PC',exact:true}).tap()
   await expect(dialog.getByRole('button',{name:'Quitar recorte-de-la-pizarra.png',exact:true})).toBeVisible()
   await expect(dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true})).toHaveValue('Explicá estos trazos')
   await expect(dialog.getByText('Tu cuenta · conectado desde la PC',{exact:true})).toBeVisible()

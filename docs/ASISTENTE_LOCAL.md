@@ -1,59 +1,50 @@
-# ChatGPT personal dentro de la pizarra
+# ChatGPT desde la pizarra
 
-**IA → Consultar con ChatGPT** abre directamente un chat fijo dentro de la app. El servidor de la PC automatiza una ventana real de Chrome con tu cuenta personal de ChatGPT. Funciona desde la PC y desde la tablet con conexión, sin una API de OpenAI, Scrapeless o Scrapingdog y sin claves nuevas.
+**IA → Consultar con ChatGPT** usa por defecto **En este dispositivo**. Abre la interfaz oficial de ChatGPT en la tablet o PC, con la cuenta personal del usuario y sin depender del servidor de la computadora. Este modo no usa la API de OpenAI, claves, Scrapling ni automatización del navegador. La app no recibe credenciales ni cookies de ChatGPT.
 
-## Primera conexión
+## Usar la tablet sin la PC
 
-1. Encendé la PC y dejá funcionando el servidor de las pizarras.
-2. Ingresá con tu cuenta de la pizarra y abrí **IA → Consultar con ChatGPT → Conectar mi ChatGPT en la PC**.
-3. En la ventana de Chrome normal que aparece **en la PC**, iniciá sesión directamente en ChatGPT. Durante este paso no se activa CDP, Playwright ni control de automatización. Si se solicita una verificación, completala allí. La pizarra no pide tu contraseña ni resuelve verificaciones.
-4. Cuando veas tu chat, volvé a la pizarra y tocá **Ya inicié sesión · activar**. La conexión pide cerrar normalmente esa ventana del perfil dedicado y vuelve a abrir el mismo perfil para automatizar las consultas. No cierra tu Chrome habitual ni copia cookies.
-5. Cuando indique **conectado desde la PC**, escribí la pregunta y pulsá **Enviar**. En la tablet usá la misma cuenta de la pizarra para utilizar ese perfil conectado.
+1. Abrí la app Android, la PWA o `https://pizarraproyecto.vercel.app`. Si el servidor de las compartidas está apagado, usá **Abrir privadas y copias de este dispositivo**. Las compartidas necesitan una copia previamente guardada para trabajar sobre ellas sin ese servidor.
+2. Entrá a **IA → Consultar con ChatGPT → En este dispositivo**.
+3. Prepará la pregunta y usá **Copiar pregunta**. **Adjuntar → Selección de la pizarra** permite marcar un recorte con el dedo o lápiz; **Archivo o imagen…** elige fotos o PDFs del dispositivo.
+4. Podés **Descargar** cada archivo para adjuntarlo en ChatGPT. Cuando el navegador lo admite, **Compartir consulta…** abre el menú del sistema con la pregunta y los archivos elegidos. Elegí ChatGPT si aparece entre las aplicaciones; su disponibilidad depende de lo que tengas instalado. La pizarra no elige un destinatario ni envía la consulta por su cuenta.
+5. Pulsá **Abrir ChatGPT en este dispositivo**. Iniciá sesión directamente en ChatGPT y hacé la consulta allí. Si cerrás su ventana, **Volver a abrir ChatGPT** abre otra. El enlace **Abrir directamente** sirve también si el navegador bloquea ventanas emergentes.
+6. Copiá la respuesta desde ChatGPT, volvé a la pizarra y pulsá **Pegar respuesta en la pizarra**. Se inserta con formato y fórmulas. Si Chrome no permite leer el portapapeles, se muestra un cuadro para pegar manualmente.
 
-## Uso desde la Lenovo Tab M11
+El ejercicio y el borrador permanecen en el dispositivo. La consulta y la respuesta se gestionan en la interfaz oficial; la pizarra no lee el chat oficial ni recoge sus respuestas automáticamente. Las respuestas anteriores del modo con PC se conservan.
 
-Abrí la app Android, la PWA instalada o `https://pizarraproyecto.vercel.app` en Chrome e ingresá con la misma cuenta **de la pizarra** que usaste en la PC. En **IA → Consultar con ChatGPT** podés adjuntar fotos y PDFs, marcar una selección con el dedo o el lápiz y enviar consultas desde la tablet. Las respuestas se muestran allí y **Insertar en pizarra** conserva las fórmulas. No hace falta actualizar el APK; la página recibe la actualización web.
+El APK existente abre ChatGPT mediante Android Chrome Custom Tabs, con panel lateral cuando Chrome lo admite. En la PWA o navegador se abre una ventana o pestaña aparte. No hace falta reinstalar el APK para estos cambios web. Chrome gestiona el acceso a la cuenta; no se utiliza un WebView que almacene las credenciales en la app.
 
-Los botones tienen al menos 44 px en pantallas táctiles. El panel se adapta al área visible cuando abre el teclado Android y al rotar la tablet. Si Chrome pide iniciar sesión o verificar el acceso a ChatGPT, ese paso se completa en la PC. La PC y su servidor deben permanecer encendidos y con internet, y la tablet también necesita conexión; pueden estar en redes distintas. No es una ejecución autónoma de ChatGPT en Android. Las respuestas ya guardadas se pueden consultar e insertar sin conexión.
+ChatGPT necesita internet, aunque la PC puede estar apagada y la tablet puede usar otra red. Copiar preguntas, consultar lo guardado e insertar respuestas copiadas funcionan sobre las pizarras locales. Las pizarras compartidas se sincronizan cuando vuelve su servidor; este cambio no sustituye ese servidor.
 
-La compatibilidad se comprobó con Chrome en emulación Android, interacción táctil, selección de trazos y simulación del teclado; falta validación física en la Lenovo del usuario. Los envíos de estas pruebas usan respuestas simuladas y no consumen consultas de su cuenta.
+## Conexión con PC opcional
 
-Si Google muestra «Es posible que el navegador o la aplicación no sean seguros», elegí **Iniciar sesión en Chrome normal** para volver al paso de acceso sin automatización. Si Chrome sigue abierto en varias ventanas del perfil dedicado, cerralas antes de pulsar Activar. Google puede rechazar navegadores controlados por software; esta separación evita conectar el controlador durante el inicio de sesión, pero el acceso final depende de Google y de tu cuenta. [Ayuda de Google](https://support.google.com/accounts/answer/7675428).
+**Con PC** conserva la integración anterior, con consultas y lectura de respuestas automatizadas. Debe elegirse expresamente; la elección se recuerda durante esa pestaña y se mantiene al recortar un ejercicio. Este modo necesita el servidor de la PC encendido, Chrome y la misma cuenta **de la pizarra** en ambos dispositivos.
 
-Si ChatGPT pide verificar que sos humano, la app pausa las consultas y muestra **Completar verificación en Chrome normal**. Ese botón vuelve a abrir el perfil dedicado sin conectar el controlador. Completá el acceso en la PC y activá únicamente cuando veas el chat y puedas escribir. La app no pulsa verificaciones, no recarga desafíos ni activa de nuevo la automatización por su cuenta. El ejercicio y los adjuntos pendientes se conservan. Si solo aparece el logo de ChatGPT, se indica **cargando** en vez de asumir que falta iniciar sesión; el estado se comprueba sin recargar. Si vuelve a bloquearse incluso en Chrome normal, no puede garantizarse el acceso automatizado: se puede continuar en el navegador y usar **Pegar respuesta en la pizarra**.
+1. Elegí **Con PC → Conectar mi ChatGPT en la PC**.
+2. En Chrome normal de la PC, iniciá sesión y completá cualquier verificación. Durante este paso no se conecta el controlador. La pizarra no pide contraseñas ni resuelve verificaciones.
+3. Cuando aparezca el chat y puedas escribir, tocá **Ya inicié sesión · activar**. El perfil se cierra normalmente y se vuelve a abrir para automatizar las consultas. No actives mientras solo aparezca el logo cargando o un desafío de verificación.
+4. Cuando indique **conectado desde la PC**, escribí y pulsá **Enviar**. Las respuestas aparecen en el panel; **Insertar en pizarra** conserva las fórmulas y **Texto editable** permite editar la notación básica.
 
-Chrome conserva su sesión en un perfil dedicado por usuario, fuera del repositorio: `%LOCALAPPDATA%/PizarraChatGPT/ChromeProfiles/`. No se comparte el perfil habitual de Chrome ni el de otros usuarios. La aplicación no lee ni exporta cookies, contraseñas o tokens de ChatGPT. Las credenciales se introducen únicamente en Chrome de la PC, nunca en la tablet a través del servidor. El puerto de control del navegador queda vinculado a `127.0.0.1`; no se publica en Vercel ni en el túnel.
+Si Chrome se cierra, la conexión descarta la referencia al navegador desconectado y espera el cierre del proceso propio antes de reabrir ese perfil. Al reiniciar el servidor, se puede recuperar únicamente el perfil dedicado ya activado de ese usuario. No se abre ni controla una ventana de acceso manual como parte de esa recuperación.
 
-## Ejercicios y respuestas
+Google o ChatGPT pueden bloquear esta automatización. La extracción automática de respuestas puede incumplir los [términos de OpenAI](https://openai.com/policies/row-terms-of-use/); el modo **En este dispositivo** utiliza la interfaz oficial y transferencia manual. No se eluden verificaciones, límites ni restricciones.
 
-- **Adjuntar → Selección de la pizarra** permite marcar una parte de un PDF, una imagen o un manuscrito. El recorte queda adjunto a la pregunta; al enviar se sube automáticamente a ChatGPT, sin descargarlo y volverlo a seleccionar.
-- **Adjuntar → Archivo o imagen…** permite elegir hasta tres PNG, JPEG, WebP o PDF, con un máximo total de 20 MB. La disponibilidad final depende de los límites de tu cuenta de ChatGPT.
-- La respuesta aparece en el chat de la app. **Insertar en pizarra** coloca una imagen con fórmulas y títulos legibles. **Texto editable** convierte la notación matemática básica a texto para editarla.
-- **Pegar respuesta en la pizarra** lee el portapapeles cuando lo pulsás y la inserta con formato en un paso. Si el navegador no autoriza leerlo, se muestra un cuadro para pegar manualmente.
-- El chat, los adjuntos pendientes y la referencia a su conversación se guardan localmente por cuenta y pizarra. Una consulta que siga ejecutándose puede recuperarse al cerrar y reabrir el panel. Los trabajos del servidor son temporales y desaparecen al reiniciarlo.
+## Guardado y límites
 
-El servidor envía cada consulta una vez y no la reintenta automáticamente si el resultado es incierto. Si Chrome ya tiene un borrador o una respuesta en curso, hay que resolverlo allí antes de enviar otra consulta. Cada pizarra conserva la referencia a su conversación para continuarla sin mezclar ejercicios de otras pizarras.
+- El borrador, adjuntos y respuestas anteriores se guardan localmente por cuenta y pizarra. Cambiar de modo no los elimina. Una consulta pendiente en la PC queda conservada para retomarla en **Con PC**; el modo independiente no la reenvía ni consulta al servidor.
+- Se admiten hasta tres PNG, JPEG, WebP o PDF, con un máximo de 20 MB en el panel. Los límites efectivos de subida a ChatGPT dependen de la cuenta y su interfaz.
+- Los controles admiten toque, lápiz, mouse y teclado. Los botones táctiles tienen al menos 44 px. El panel se ajusta al área visible cuando abre el teclado Android; con poco espacio, oculta temporalmente el selector de modo y las instrucciones adicionales.
+- En modo con PC, cada consulta se envía una vez. Si ya hay un borrador o una respuesta en curso en Chrome, debe resolverse allí. Los trabajos del servidor son temporales y no se reenvían automáticamente tras un reinicio.
 
-La conexión admite tanto los controles anteriores como el editor actual con nombre accesible «Pregunta a ChatGPT». Los adjuntos se cargan en el selector de archivos general, no en la entrada de cámara ni en la de fotos. La lectura reconoce los nuevos bloques de respuesta y conserva las fórmulas. Al reiniciar el servidor se desconecta el controlador sin cerrar Chrome; el usuario autenticado puede recuperar únicamente su perfil dedicado que ya tenía activada la conexión. La recuperación no abre nuevos navegadores, no activa el control durante el acceso manual y no exporta la sesión.
+## Implementación de la conexión opcional
 
-## Scrapling
+Chrome conserva su perfil por usuario fuera del repositorio, en `%LOCALAPPDATA%/PizarraChatGPT/ChromeProfiles/`. La app no lee ni exporta cookies, contraseñas o tokens. El control CDP solo escucha en `127.0.0.1`, nunca en Vercel ni en el túnel. Vercel aloja la página; el servidor de la PC ejecuta Chrome.
 
-Se usa Scrapling 0.4.15 para extraer y estructurar únicamente el fragmento de la nueva respuesta del asistente. Se preservan las anotaciones LaTeX originales de KaTeX, los títulos, las listas y el código. El fragmento se limpia de formularios, controles y atributos ajenos al contenido antes de procesarlo. La navegación y los adjuntos se mantienen en Chrome con Playwright; Scrapling no reemplaza el inicio de sesión ni se usa para eludirlo.
-
-El parser funciona en memoria con `adaptive=False`: no guarda muestras de la página, no recibe páginas de acceso y no usa fetchers, proxies, resolución de CAPTCHA ni exportación de cookies. Instalación: `python -m pip install -r requirements.txt`. [Parser de Scrapling](https://scrapling.readthedocs.io/en/latest/parsing/main_classes.html).
-
-## Requisitos y límites
-
-El servidor necesita Node.js, `npm install` (incluye Playwright) y Chrome instalado. Debe ejecutarse en la sesión de escritorio de Windows del usuario, no en un servicio sin escritorio. Vercel aloja la página y conecta con ese servidor; no ejecuta Chrome.
-
-La PC debe permanecer encendida y conectada. ChatGPT no funciona sin internet. Las pizarras preparadas sin conexión y las respuestas ya recibidas sí se pueden usar e insertar localmente. El APK y la PWA existentes sirven para este flujo; no hace falta instalar una extensión en la tablet.
-
-La interfaz dentro de la pizarra es propia: el navegador oficial se ejecuta en la PC. No es un iframe de ChatGPT ni un chat oficial embebido en Android. La automatización depende de la interfaz web de ChatGPT; cambios de interfaz, límites de cuenta o verificaciones pueden interrumpirla. No se eluden controles de acceso ni desafíos del sitio.
+Scrapling 0.4.15 procesa únicamente el fragmento limpio de una nueva respuesta automatizada, preservando LaTeX, títulos, listas y código. Usa `adaptive=False`, no persiste muestras y no recibe páginas de acceso. La navegación y los adjuntos usan Playwright. Estos componentes no intervienen en el modo independiente.
 
 ## Validación
 
-Se probaron el arranque y cierre de Chrome, la autenticación de las rutas, el aislamiento entre usuarios, la reconexión sin cerrar la ventana ni perder borradores, la ausencia de reenvíos duplicados, el recorte exacto de un PDF rotado, los adjuntos y la inserción de fórmulas. También se envió una consulta real simple «2 + 2» en la sesión del propietario y se comprobó la lectura de su respuesta «4» con los nuevos controles; no se reenvió la pregunta después del cambio del lector. Los adjuntos PDF y las fórmulas se validaron con páginas simuladas que reproducen ambas interfaces. Las pruebas automatizadas usan bases de datos y perfiles aislados.
+Las pruebas usan cuentas, bases de datos y perfiles temporales o servicios simulados; nunca reemplazan las pizarras reales. Se comprueban la ausencia de llamadas a `/api/chatgpt/` en modo independiente con la PC indisponible, apertura y reapertura del chat oficial simulado, descarga de recortes, menú de compartir, portapapeles, fórmulas, teclado y gestos en emulación Android. Falta la comprobación física de Custom Tabs y el menú de compartir en la Lenovo Tab M11.
 
-Archivos principales: `reconocimiento_local/chatgpt_browser.py`, `scripts/chatgpt-browser.mjs`, `scripts/chatgpt-page.mjs` y `src/components/ChatGPTConsultation.tsx`.
-
-Referencias: [Playwright: conexión a Chrome](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-over-cdp), [adjuntar archivos](https://playwright.dev/docs/input#upload-files). Los ejemplos de [Scrapeless](https://docs.scrapeless.com/es/docs/ai-scraper/scrapers/chatgpt/) y [Scrapingdog](https://www.scrapingdog.com/blog/scrape-chatgpt-with-python/) dependen de servicios externos con clave y no se utilizan aquí.
+La conexión opcional se prueba con Chrome real sin sesión, incluyendo cierre externo y reapertura del navegador en el mismo controlador. Una consulta simple real «2 + 2 → 4» se verificó durante el desarrollo previo; no se realizan nuevas consultas con la cuenta del usuario para estas pruebas.

@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {spawn} from 'node:child_process'
 import {createInterface} from 'node:readline'
+import {ChromeProfile} from '../../scripts/chatgpt-chrome.mjs'
 
 function worker(profile,chrome='unused',headless=false){
   const child=spawn(process.execPath,['scripts/chatgpt-browser.mjs',profile,chrome,...(headless?['--headless']:[])],{stdio:['pipe','pipe','ignore'],windowsHide:true})
@@ -54,5 +55,25 @@ test('Chrome started by a controller survives that controller exiting',async()=>
   }finally{
     if(second){await second.call('close');await second.end()}
     if(first.child.exitCode===null)first.child.kill()
+  }
+})
+
+test('the same controller can reopen Chrome after its window was closed externally',async()=>{
+  test.setTimeout(60000)
+  const profile=await mkdtemp(join(tmpdir(),'pizarra-chatgpt-reopen-'))
+  const chrome=join(process.env.PROGRAMFILES,'Google/Chrome/Application/chrome.exe')
+  const instance=worker(profile,chrome,true)
+  let browser
+  try{
+    expect((await instance.call('open')).ok).toBe(true)
+    const address=await new ChromeProfile(profile,chrome).debugAddress()
+    browser=await chromium.connectOverCDP(address)
+    await(await browser.newBrowserCDPSession()).send('Browser.close').catch(()=>{})
+    await expect.poll(()=>browser.isConnected()).toBe(false)
+    const reopened=await instance.call('open')
+    expect(reopened.ok).toBe(true);expect(reopened.state).not.toBe('closed')
+  }finally{
+    await browser?.close().catch(()=>{})
+    if(instance.child.exitCode===null){await instance.call('close');await instance.end()}
   }
 })
