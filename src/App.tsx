@@ -16,6 +16,8 @@ import ImageCropDialog from './components/ImageCropDialog'
 import TouchButton from './components/TouchButton'
 import {croppedGeometry} from './canvas/imageCrop'
 import type {ImageCrop} from './canvas/imageCrop'
+import {cartesianHandles,resizeCartesian} from './canvas/cartesianResize'
+import type {CartesianHandle} from './canvas/cartesianResize'
 import {TRANSCRIPTION_PROMPT,transcriptionKey} from './assistant/transcription'
 import {deviceDB} from './storage/device'
 import {beforeAppUpdate} from './pwa'
@@ -885,6 +887,7 @@ function App() {
   const [screenMarquee, setScreenMarquee] = useState<ScreenMarquee | null>(null)
   const groupRef = useRef<Selection[]>([])
   const transformRef = useRef<Transform | null>(null)
+  const cartesianDragRef=useRef<{boardId:string;item:ShapeItem;handle:CartesianHandle;start:Point;capture:HTMLElement;changed:boolean}|null>(null)
   const loadedRef = useRef(false)
   const dirtyRef = useRef(false)
   const syncConflictRef = useRef(false)
@@ -1315,6 +1318,7 @@ function App() {
 
 
   function selectElement(value: Selection | null) {
+    if(value?.kind==='shape'&&shapesRef.current.some(item=>item.id===value.id&&item.symbol==='cartesian'))setVisualEditor(null)
     refreshSelection(n=>n+1)
     selectedRef.current = value
     const id=value?groupIdFor(value):undefined
@@ -1766,6 +1770,12 @@ function App() {
         uiCtx.setLineDash([])
         uiCtx.fillStyle = '#6366f1'
         uiCtx.fillRect(bounds.x + bounds.width - handle / 2, bounds.y + bounds.height - handle / 2, handle, handle)
+        const plane=selectedCartesian()
+        if(plane){
+          uiCtx.save();uiCtx.fillStyle='#6366f122';uiCtx.strokeStyle='#6366f1';uiCtx.lineWidth=2/cam.zoom
+          for(const tip of cartesianHandles(plane)){uiCtx.beginPath();uiCtx.arc(tip.x,tip.y,9/cam.zoom,0,Math.PI*2);uiCtx.fill();uiCtx.stroke()}
+          uiCtx.restore()
+        }
         // Los iframes de YouTube no se rotan: no mostrar un tirador que no funciona.
         if (!groupRef.current.some(sel=>sel.kind==='video')) {
         const cx = bounds.x + bounds.width / 2
@@ -2730,6 +2740,50 @@ function App() {
     })?.sel
   }
 
+  function selectedCartesian(){
+    const only=groupRef.current.length===1?groupRef.current[0]:null
+    return only?.kind==='shape'?shapesRef.current.find(item=>item.id===only.id&&item.symbol==='cartesian'&&!item.groupId):undefined
+  }
+
+  function cartesianTipAt(point:Point,tolerance:number){
+    const nearby=shapesRef.current.filter(item=>item.symbol==='cartesian'&&!item.groupId).flatMap(item=>cartesianHandles(item)
+      .filter(tip=>Math.hypot(tip.x-point.x,tip.y-point.y)<=tolerance).map(handle=>({item,handle})))
+    if(!nearby.length)return null
+    const selected=nearby.find(tip=>tip.item.id===selectedCartesian()?.id)
+    if(selected)return selected
+    const hit=hitSelectionAt(point)
+    return hit?.kind==='shape'?nearby.find(tip=>tip.item.id===hit.id)??null:!hit?nearby.sort((a,b)=>(b.item.zIndex??0)-(a.item.zIndex??0))[0]:null
+  }
+
+  function beginCartesianResize(e:ReactPointerEvent<HTMLCanvasElement>){
+    if(!loadedRef.current||tool!=='select'||selectionPicking||pointerRef.current!==null||activeStroke.current||touchPointersRef.current.size||e.button!==0||e.ctrlKey||e.metaKey)return false
+    const point=toWorld(e.clientX,e.clientY),tip=cartesianTipAt(point,(e.pointerType==='touch'?24:14)/cameraRef.current.zoom)
+    if(!tip)return false
+    e.preventDefault();stopFollowing();rememberChange();selectElement({kind:'shape',id:tip.item.id})
+    cartesianDragRef.current={boardId:getActiveBoardId(),item:structuredClone(tip.item),handle:tip.handle,start:point,capture:e.currentTarget,changed:false}
+    pointerRef.current=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId)
+    return true
+  }
+
+  function moveCartesianResize(point:Point){
+    const drag=cartesianDragRef.current
+    if(!drag||drag.boardId!==getActiveBoardId())return
+    const geometry=resizeCartesian(drag.item,drag.handle,{x:point.x-drag.start.x,y:point.y-drag.start.y})
+    const changed=geometry.width!==drag.item.width||geometry.height!==drag.item.height
+    shapesRef.current=shapesRef.current.map(item=>item.id===drag.item.id?{...item,...geometry}:item)
+    drag.changed=drag.changed||changed;redraw();if(drag.changed)scheduleSave()
+  }
+
+  function finishCartesianResize(cancel=false){
+    const drag=cartesianDragRef.current;if(!drag)return false
+    const pointerId=pointerRef.current
+    cartesianDragRef.current=null;pointerRef.current=null
+    if(cancel&&drag.boardId===getActiveBoardId())shapesRef.current=shapesRef.current.map(item=>item.id===drag.item.id?{...item,x:drag.item.x,y:drag.item.y,width:drag.item.width,height:drag.item.height}:item)
+    if(pointerId!==null&&drag.capture.hasPointerCapture(pointerId))drag.capture.releasePointerCapture(pointerId)
+    canvasRef.current?.style.removeProperty('cursor');redraw();if(drag.changed)scheduleSave()
+    return true
+  }
+
   function captureScenePointerDown(e:ReactPointerEvent<HTMLDivElement>) {
     const target=e.target as HTMLElement
     const scene=target.closest('.board-scene')
@@ -2883,6 +2937,7 @@ function App() {
 
   function pointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if(contextMenu) setContextMenu(null)
+    if(beginCartesianResize(e))return
     if (e.pointerType === 'touch' && !selectionPicking) {
       e.preventDefault()
       // Rechazar la palma mientras se escribe con el lápiz activo.
@@ -3013,6 +3068,14 @@ function App() {
   }
 
   function pointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if(cartesianDragRef.current&&e.pointerId===pointerRef.current){e.preventDefault();sendCursorPosition(e.clientX,e.clientY);moveCartesianResize(toWorld(e.clientX,e.clientY));return}
+    if(e.pointerType==='mouse'&&pointerRef.current===null&&canvasRef.current){
+      const tip=tool==='select'&&!selectionPicking&&selectedCartesian()?cartesianTipAt(toWorld(e.clientX,e.clientY),14/cameraRef.current.zoom):null
+      if(tip){
+        const angle=(tip.item.rotation??0)+(tip.handle.axis==='y'?Math.PI/2:0)
+        canvasRef.current.style.cursor=Math.abs(Math.cos(angle))>=Math.abs(Math.sin(angle))?'ew-resize':'ns-resize'
+      }else canvasRef.current.style.removeProperty('cursor')
+    }
     if (e.pointerType === 'touch' && !selectionPicking) {
       const fingers = touchPointersRef.current
       if (!fingers.has(e.pointerId)) return
@@ -3120,6 +3183,7 @@ function App() {
   }
 
   function pointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if(cartesianDragRef.current&&e.pointerId===pointerRef.current){moveCartesianResize(toWorld(e.clientX,e.clientY));finishCartesianResize();return}
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
     if(navigationPointerRef.current===e.pointerId){
@@ -3177,6 +3241,7 @@ function App() {
   }
 
   function pointerCancel(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if(cartesianDragRef.current&&e.pointerId===pointerRef.current){finishCartesianResize(true);return}
     if (endTouchPointer(e)) return
     if (e.pointerId !== pointerRef.current) return
     if(navigationPointerRef.current===e.pointerId)navigationPointerRef.current=null
@@ -3604,7 +3669,7 @@ function App() {
     const point=toWorld(e.clientX,e.clientY)
     const visual=hitShapeAt(point)
     if(visual && (visual.visualType || visual.label!==undefined)) {
-      selectElement({kind:'shape',id:visual.id});setVisualEditor(visual.id);return
+      selectElement({kind:'shape',id:visual.id});setVisualEditor(visual.symbol==='cartesian'?null:visual.id);return
     }
     const table=[...tablesRef.current].reverse().find(item=>overlaps({x:point.x,y:point.y,width:0,height:0},tableSize(item)))
     if(table){selectElement({kind:'table',id:table.id});setTableEditorId(table.id);setExcelNotice('')}
@@ -4525,7 +4590,7 @@ function App() {
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!libraryOpen){e.preventDefault();setBoardSearchOpen(true);return}
-      if(e.key==='Escape'){setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setSelectionPicking(false)}
+      if(e.key==='Escape'){finishCartesianResize(true);setBoardSearchOpen(false);setContextMenu(null);setTreePanel(null);setSelectionPicking(false)}
       if (editingRef.current || imageCrop || studyAssistant || treePanel || libraryOpen || selectionError || handwrittenEvent || handwrittenError || openMenu || importStatus || recognizing) return
       if (!loadedRef.current || e.altKey || e.repeat) return
       const key = e.key.toLowerCase()
@@ -5148,7 +5213,7 @@ function App() {
       {treePanel&&<BinaryTreePanel initial={treePanel.initial} onTree={insertTree} onExpression={insertTreeExpression} onClose={()=>setTreePanel(null)}/>}
       {!visualEditor && !treePanel && !openMenu && selectedRef.current?.kind==='shape' && (()=>{
         const item=shapesRef.current.find(item=>item.id===selectedRef.current?.id)
-        return item && item.visualType!=='page' && (item.visualType || item.label!==undefined)
+        return item && item.visualType!=='page' && item.symbol!=='cartesian' && (item.visualType || item.label!==undefined)
           ?<><button type="button" className="visual-edit-button" onClick={()=>setVisualEditor(item.id)}>{item.code?'Editar código C++':item.note?.study?'Editar tarjeta adhesiva':item.note?'Editar nota':item.connector?'Editar conector':'Editar elemento'}</button>
             {item.note?.study&&!item.note.study.cards&&<button type="button" className="visual-edit-button study-flip-button" onClick={()=>{
               rememberChange();item.note=updateStudyNote(item.note!,{face:item.note!.study!.face==='question'?'answer':'question'});redraw();scheduleSave()
@@ -5163,7 +5228,7 @@ function App() {
       })()}
       {visualEditor && (()=>{
         const item=shapesRef.current.find(item=>item.id===visualEditor)
-        return item?.code?<CodeWorkspace key={item.id} item={item} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:item?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
+        return item?.code?<CodeWorkspace key={item.id} item={item} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:item&&item.symbol!=='cartesian'?<VisualObjectInspector key={item.id} item={materializeConnector(item,resolveObject)} onApply={applyVisualEdit} onClose={()=>setVisualEditor(null)}/>:null
       })()}
       <div className="zoom-controls">
         <button onClick={() => changeZoom(2 / 3, window.innerWidth / 2, window.innerHeight / 2)}>−</button>

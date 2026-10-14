@@ -168,6 +168,31 @@ test('a contributor can crop a rotated shared image and the owner sees the new a
   }finally{await Promise.all(contexts.map(c=>c.close()))}
 })
 
+test('a pen extends a rotated Cartesian axis and collaborators receive the new geometry without ink or a text editor',async({browser})=>{
+  const contexts=await Promise.all([browser.newContext(),browser.newContext()])
+  try{
+    await Promise.all(contexts.map((c,i)=>signedIn(c,`Axis contributor ${i}`)))
+    const owner=contexts[0].request,editor=contexts[1].request
+    const board=(await(await owner.post(api+'/api/boards',{data:{name:'Ejes compartidos'}})).json()).id
+    const token=(await(await owner.post(`${api}/api/share/boards/${board}`,{data:{role:'editor'}})).json()).token
+    expect((await editor.post(api+'/api/share/join',{data:{token}})).status()).toBe(200)
+    const original={id:'rotated-axes',kind:'rectangle',visualType:'symbol',symbol:'cartesian',x:200,y:200,width:240,height:240,rotation:Math.PI/2,color:'#202020',strokeWidth:2}
+    expect((await owner.put(`${api}/api/boards/${board}`,{data:{version:0,content:{camera:{x:0,y:0,zoom:1},shapes:[original]}}})).status()).toBe(200)
+    const pages=await Promise.all(contexts.map(c=>c.newPage()));await Promise.all(pages.map(p=>p.goto(api)))
+    for(const page of pages)await expect(page.getByTitle('Conectado',{exact:true})).toBeVisible()
+    await pages[1].getByRole('button',{name:'Seleccionar área',exact:true}).click();await pages[1].keyboard.press('Control+a')
+    await expect(pages[1].getByRole('button',{name:'Editar elemento',exact:true})).toHaveCount(0)
+    const pen=await contexts[1].newCDPSession(pages[1])
+    await pen.send('Input.dispatchMouseEvent',{type:'mousePressed',x:320,y:440,button:'left',buttons:1,pointerType:'pen'})
+    await pen.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:320,y:500,buttons:1,pointerType:'pen'})
+    await pen.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:320,y:500,button:'left',buttons:0,pointerType:'pen'})
+    await expect.poll(async()=>(await cachedShapes(pages[0]))[0]?.width).toBeCloseTo(360)
+    const saved=(await(await owner.get(`${api}/api/boards/${board}`)).json()).content
+    expect(saved.strokes??[]).toHaveLength(0);expect(saved.shapes[0].height).toBe(240);expect(saved.shapes[0].rotation).toBe(original.rotation)
+    expect(saved.shapes[0].x+saved.shapes[0].width/2).toBeCloseTo(320);expect(saved.shapes[0].y+saved.shapes[0].height/2).toBeCloseTo(320)
+  }finally{await Promise.all(contexts.map(c=>c.close()))}
+})
+
 test('all shared object types appear live and either contributor can delete them',async({browser})=>{
   test.setTimeout(60000)
   const contexts=await Promise.all([browser.newContext(),browser.newContext()])
