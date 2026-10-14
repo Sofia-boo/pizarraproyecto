@@ -31,7 +31,7 @@ test('default tablet mode opens and reopens official ChatGPT with the PC unavail
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:'<h1>ChatGPT oficial simulado</h1>'}))
   const requests=await prepare(page)
   let dialog=await open(page)
-  await expect(dialog.getByText('En este dispositivo · sin PC',{exact:true})).toBeVisible()
+  await expect(dialog.getByText('Tu cuenta personal · navegador de este dispositivo',{exact:true})).toBeVisible()
   await expect(dialog.getByRole('button',{name:'Conectar mi ChatGPT en la PC'})).toHaveCount(0)
   await dialog.getByRole('textbox',{name:'Pregunta para ChatGPT',exact:true}).fill('Resolver mi ejercicio')
   await dialog.locator('input[type=file]').setInputFiles({name:'ejercicio.png',mimeType:'image/png',buffer:png})

@@ -7,6 +7,7 @@ import { createNote, defaultConnector, findAnchor, hitsConnector, isConnector, m
 import type { ShapeItem, ShapeKind, Bounds, ObjectRef, TargetGeometry } from './canvas/visualObjects'
 import { paintVisual, paintLabel } from './canvas/visualRendering'
 import { academicTemplate } from './canvas/academicTemplates'
+import { editableResponse } from './assistant/editableResponse'
 import type { TemplateId } from './canvas/academicTemplates'
 import VisualObjectInspector from './components/VisualObjectInspector'
 import AcademicLibrary from './components/AcademicLibrary'
@@ -5190,6 +5191,17 @@ function App() {
       {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
         beforeOpen={flushBoardForHistory}
         onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
+        onInsertEditable={async text=>{
+          if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
+          const measurement=document.createElement('canvas').getContext('2d')!
+          measurement.font='22px system-ui,sans-serif'
+          const response=editableResponse(text,toWorld(Math.max(24,window.innerWidth/2-360),160),()=>crypto.randomUUID(),value=>measurement.measureText(value).width)
+          if(!response.texts.length&&!response.shapes.length)return
+          rememberChange()
+          textsRef.current=[...textsRef.current,...response.texts];shapesRef.current=[...shapesRef.current,...response.shapes]
+          const first=response.shapes[0]??response.texts[0]
+          selectElement({kind:response.shapes.length?'shape':'text',id:first.id});redraw();scheduleSave();await flushBoardForHistory()
+        }}
         onSelectImage={()=>startChatGPTSelection(studyAssistant.transcription?'transcription':'assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async (text,insertion)=>{
         if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
         // A completed transcription can be resumed after a reload. Its stable

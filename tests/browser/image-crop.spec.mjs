@@ -88,7 +88,7 @@ test('a copied ChatGPT response can be pasted as editable text and preserves tha
   await dialog.getByRole('button',{name:'Pegar como texto editable',exact:true}).click()
   await dialog.getByRole('textbox',{name:'Respuesta para pegar en la pizarra'}).fill('## Solución\n**Resultado:** $\\frac{1}{2}$')
   await dialog.getByRole('button',{name:'Insertar',exact:true}).click()
-  await expect.poll(async()=>(await board(page))?.texts?.[0]?.text).toBe('Solución\nResultado: 1/2')
+  await expect.poll(async()=>(await board(page))?.texts?.map(item=>item.text.trim()).join('\n')).toBe('Solución\nResultado: 1/2')
   expect((await board(page)).media??[]).toHaveLength(0)
 })
 

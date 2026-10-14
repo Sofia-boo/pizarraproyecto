@@ -17,34 +17,9 @@ async function transcribe(page){
   await page.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   await page.getByRole('menuitem',{name:'Transcribir manuscrito con ChatGPT',exact:true}).click()
   const dialog=page.getByRole('dialog',{name:'ChatGPT',exact:true})
-  await expect(dialog.getByRole('button',{name:'En este dispositivo',exact:true})).toHaveAttribute('aria-pressed','true')
-  if(await page.evaluate(()=>sessionStorage.getItem('chatgpt-mode:device')==='pc'))await dialog.getByRole('button',{name:'Con PC',exact:true}).click()
+  await expect(dialog.getByRole('button',{name:'Con PC',exact:true})).toHaveCount(0)
   return dialog
 }
-
-test('PC transcription sends only the selected image and inserts editable Spanish text once beside the ink',async({page})=>{
-  let submissions=0,uploaded
-  await page.route('**/api/**',async route=>{
-    const path=new URL(route.request().url()).pathname
-    if(path==='/api/chatgpt/status')return route.fulfill({json:{state:'ready'}})
-    if(path==='/api/chatgpt/consult'){
-      submissions++;const r=route.request();uploaded=await new Request(r.url(),{method:'POST',headers:r.headers(),body:r.postDataBuffer()}).formData()
-      return route.fulfill({json:{id:'transcription-1',status:'running'}})
-    }
-    if(path==='/api/chatgpt/consult/transcription-1')return route.fulfill({json:{id:'transcription-1',status:'complete',text:'Hay una fracción: $\\frac{1}{2}$\nSegunda línea.'}})
-    return route.fulfill({status:503,body:'offline'})
-  })
-  await prepare(page,true);const dialog=await transcribe(page)
-  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Hay una fracción: 1/2\nSegunda línea.')
-  await expect(dialog.getByRole('status')).toHaveText('Transcripción agregada como texto editable.')
-  expect(submissions).toBe(1);expect(uploaded.get('prompt')).toContain('en español');expect(uploaded.get('prompt')).toContain('No resuelvas ejercicios')
-  expect(uploaded.getAll('files')).toHaveLength(1);expect(uploaded.get('files').type).toBe('image/png');expect(uploaded.get('conversation')).toBeNull()
-  const saved=await content(page);expect(saved.strokes).toHaveLength(1);expect(saved.texts).toHaveLength(1);expect(saved.media??[]).toHaveLength(0)
-  expect(saved.texts[0].x).toBeLessThan(205);expect(saved.texts[0].y).toBeGreaterThan(400)
-  await dialog.getByRole('button',{name:'Texto editable',exact:true}).click()
-  expect((await content(page)).texts).toHaveLength(1)
-  await page.reload();await expect.poll(async()=>(await content(page))?.texts?.length).toBe(1);expect(submissions).toBe(1)
-})
 
 test('without a PC the menu has no OCR and pasting a transcription creates editable text without duplicate ink changes',async({page})=>{
   const requests=[];page.on('request',r=>{if(/\/(api\/(ocr|chatgpt)|recognize)\//.test(new URL(r.url()).pathname))requests.push(r.url())})
@@ -63,33 +38,6 @@ test('without a PC the menu has no OCR and pasting a transcription creates edita
   await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Apuntes en español\n1/2')
   await dialog.getByRole('button',{name:'Pegar transcripción',exact:true}).click()
   const saved=await content(page);expect(saved.texts).toHaveLength(1);expect(saved.strokes).toHaveLength(1);expect(requests).toEqual([])
-})
-
-test('a pending PC transcription resumes on its original board after reload without resubmitting',async({page})=>{
-  let submissions=0,complete=false
-  await page.route('**/api/**',async route=>{
-    const path=new URL(route.request().url()).pathname
-    if(path==='/api/chatgpt/status')return route.fulfill({json:{state:'ready'}})
-    if(path==='/api/chatgpt/consult'){submissions++;return route.fulfill({json:{id:'resumed',status:'running'}})}
-    if(path==='/api/chatgpt/consult/resumed')return route.fulfill({json:complete?{id:'resumed',status:'complete',text:'Texto pendiente'}:{id:'resumed',status:'running'}})
-    return route.fulfill({status:503,body:'offline'})
-  })
-  await prepare(page,true);let dialog=await transcribe(page)
-  await expect(dialog.getByRole('status')).toHaveText('ChatGPT está resolviendo tu consulta…');await expect.poll(()=>submissions).toBe(1)
-  await dialog.getByRole('button',{name:'Cerrar ChatGPT',exact:true}).click();await page.reload()
-  complete=true;dialog=await transcribe(page)
-  await expect.poll(async()=>(await content(page))?.texts?.[0]?.text).toBe('Texto pendiente')
-  expect((await content(page)).texts[0].x).toBeLessThan(205);expect(submissions).toBe(1)
-})
-
-test('empty ChatGPT transcription preserves ink and never inserts an empty object',async({page})=>{
-  await page.route('**/api/**',route=>{
-    const path=new URL(route.request().url()).pathname
-    return path==='/api/chatgpt/status'?route.fulfill({json:{state:'ready'}}):path==='/api/chatgpt/consult'?route.fulfill({json:{id:'empty',status:'running'}}):path==='/api/chatgpt/consult/empty'?route.fulfill({json:{id:'empty',status:'complete',text:''}}):route.fulfill({status:503})
-  })
-  await prepare(page,true);const dialog=await transcribe(page)
-  await expect(dialog.getByRole('alert')).toContainText('transcripción vacía')
-  expect((await content(page)).texts??[]).toHaveLength(0);expect((await content(page)).strokes).toHaveLength(1)
 })
 
 test.describe('tablet transcription',()=>{

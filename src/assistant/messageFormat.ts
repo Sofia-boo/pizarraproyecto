@@ -19,7 +19,13 @@ export function messageParts(text:string):MessagePart[]{
 export function plainMath(text:string){
   let result=text
   for(let i=0;i<8;i++)result=result.replace(/\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g,(_,a:string,b:string)=>`${/^[\w.]+$/.test(a)?a:`(${a})`}/${/^[\w.]+$/.test(b)?b:`(${b})`}`)
-  return result.replace(/\\(?:cdot|times)\b/g,' × ').replace(/\\div\b/g,' ÷ ').replace(/\\(?:left|right)\b/g,'')
+  const symbols:Record<string,string>={langle:'⟨',rangle:'⟩',leq:'≤',geq:'≥',neq:'≠',infty:'∞',in:'∈',notin:'∉',subset:'⊂',subseteq:'⊆',cup:'∪',cap:'∩',forall:'∀',exists:'∃',to:'→',Rightarrow:'⇒',alpha:'α',beta:'β',gamma:'γ',theta:'θ',lambda:'λ',mu:'μ',sigma:'σ',omega:'ω',Delta:'Δ',sum:'Σ',int:'∫',partial:'∂',nabla:'∇',mathbb:'',approx:'≈',pm:'±'}
+  const subs:Record<string,string>={'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','n':'ₙ','i':'ᵢ','j':'ⱼ','x':'ₓ','y':'ᵧ'}
+  return result.replace(/\\begin\{([pbBvV]?matrix|array)\}(?:\{[clr| ]+\})?([\s\S]*?)\\end\{\1\}/g,(_,_env:string,body:string)=>'('+body.replace(/\\\\/g,'; ').replace(/&/g,', ')+')')
+    .replace(/\\([a-zA-Z]+)\b/g,(whole,name:string)=>symbols[name]??whole)
+    .replace(/_\{([0-9nijxy]+)\}|_([0-9nijxy])/g,(_,group:string,single:string)=>[...(group??single)].map(char=>subs[char]).join(''))
+    .replace(/\\([{}|])/g,'$1')
+    .replace(/\\(?:cdot|times)\b/g,' × ').replace(/\\div\b/g,' ÷ ').replace(/\\(?:left|right)\b/g,'')
     .replace(/\\sqrt\s*\{([^{}]*)\}/g,'√($1)').replace(/\\(?:text|mathrm|mathbf)\s*\{([^{}]*)\}/g,'$1')
     .replace(/\\(?:,|;|!|quad\b|qquad\b)/g,' ').replace(/\\pi\b/g,'π').replace(/\\(?:ldots|cdots)\b/g,'…')
     .replace(/\^\{([^{}]*)\}/g,'^($1)').replace(/_\{([^{}]*)\}/g,'_($1)')

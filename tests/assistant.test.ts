@@ -2,6 +2,36 @@ import {describe,it,expect,vi} from 'vitest'
 import {fitFollowCamera,followCycle} from '../src/collaborationCamera'
 import {messageParts,mathMarkup,plainAssistantText,stripVerifierNotes} from '../src/assistant/messageFormat'
 import {CHATGPT_URL,CHATGPT_ANDROID_INTENT,nativeAndroid,openOfficialChatGPT} from '../src/assistant/chatgptBridge'
+import {editableParts,editableResponse} from '../src/assistant/editableResponse'
+
+describe('editable mathematics from ChatGPT',()=>{
+  it('creates native vectors and matrices alongside readable equations',()=>{
+    const source=String.raw`## Base ortogonal
+\[u_1=\begin{pmatrix}1\\0\\0\end{pmatrix},\quad A=\begin{bmatrix}1&2\\3&4\end{bmatrix}\]
+\(\langle v_2,u_1\rangle=\frac{4}{2}\)`
+    let serial=0
+    const result=editableResponse(source,{x:100,y:200},()=>String(++serial))
+    expect(result.shapes.map(shape=>[shape.symbol,shape.matrix])).toEqual([['vector',[['1'],['0'],['0']]],['matrix',[['1','2'],['3','4']]]])
+    const text=result.texts.map(item=>item.text).join('\n')
+    expect(text).toContain('⟨ v₂,u₁⟩=4/2');expect(text).not.toContain('\\')
+    expect(result.shapes[1].x).toBeGreaterThan(result.shapes[0].x)
+    expect(new Set([...result.shapes,...result.texts].map(item=>item.id)).size).toBe(result.shapes.length+result.texts.length)
+  })
+  it('preserves code literally and falls back safely for uneven matrices',()=>{
+    expect(editableParts('```tex\n\\begin{matrix}1&2\\end{matrix}\n```')).toEqual([{kind:'text',text:'\\begin{matrix}1&2\\end{matrix}\n'}])
+    const parts=editableParts(String.raw`\begin{pmatrix}1&2\\3\end{pmatrix}`)
+    expect(parts.every(part=>part.kind==='text')).toBe(true)
+    expect(JSON.stringify(parts)).not.toContain('begin')
+  })
+  it('wraps long answers without overlapping native matrix rows',()=>{
+    let serial=0
+    const result=editableResponse('Una explicación '.repeat(100)+String.raw`\begin{pmatrix}1\\2\\3\end{pmatrix}`+'\nSiguiente paso',{x:0,y:0},()=>String(++serial))
+    expect(result.texts.length).toBeGreaterThan(10)
+    const last=result.texts.at(-1)!,matrix=result.shapes[0]
+    expect(last.y).toBeGreaterThanOrEqual(matrix.y+matrix.height)
+    expect(result.texts.every(item=>item.x<720)).toBe(true)
+  })
+})
 describe('official ChatGPT browser integration',()=>{
   it('opens only the official URL in a separate window without an opener',()=>{
     const popup={opener:{}},open=vi.fn(()=>popup)
