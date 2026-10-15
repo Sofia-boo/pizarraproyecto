@@ -19,12 +19,23 @@ test('HTML scripts stay idle until activation and stop executing when stopped',a
   await page.getByRole('button',{name:'Activar HTML sample-2.html',exact:true}).click()
   await expect(page.locator('.board-html-widget iframe')).toHaveCount(1)
   await expect.poll(()=>page.evaluate(()=>window.fixtureTicks)).toBeGreaterThan(2)
+  await page.keyboard.press('p')
   await page.getByRole('button',{name:'Detener HTML sample-2.html',exact:true}).click()
   await expect(page.locator('.board-html-widget iframe')).toHaveCount(0)
   expect(await page.evaluate(async()=>{
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
     const before=window.fixtureTicks;await new Promise(resolve=>setTimeout(resolve,150));return window.fixtureTicks===before
   })).toBe(true)
+  await page.evaluate(()=>{
+    const data=new DataTransfer();data.items.add(new File(['<button>Arrastrado</button>'],'dropped.html',{type:'text/html'}))
+    document.querySelector('.app').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data,clientX:350,clientY:400}))
+  })
+  await expect(page.locator('.board-html-widget')).toHaveCount(4)
+  await page.evaluate(()=>{
+    const pasted=new DataTransfer();pasted.items.add(new File(['<button>Pegado</button>'],'pasted.html',{type:'text/html'}))
+    document.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:pasted}))
+  })
+  await expect(page.locator('.board-html-widget')).toHaveCount(5)
 })
 
 test('HTML shares actual controls, canvas, timers and scroll without executing scripts twice',async({browser})=>{
@@ -88,8 +99,21 @@ test('HTML shares actual controls, canvas, timers and scroll without executing s
     expect(await c.evaluate(()=>window.executions)).toBe(0)
     expect(events.filter(event=>event.type==='html_frame').slice(1).some(event=>event.text.length<200)).toBe(true)
     await a.getByRole('button',{name:'Detener HTML compartido.html',exact:true}).click()
-    await expect(b.getByText('HTML detenido · última vista')).toBeVisible()
-    await expect(a.locator('.board-html-widget iframe')).toHaveCount(1) // inert last view
+    await expect(b.getByText('HTML detenido',{exact:true})).toBeVisible()
+    await expect(a.locator('.board-html-widget iframe')).toHaveCount(0)
+    await expect(b.locator('.board-html-widget iframe')).toHaveCount(0)
     await expect(b.getByText('Ana está usando este HTML')).toHaveCount(0)
   }finally{await Promise.all(contexts.map(context=>context.close()))}
+})
+
+
+test('confirmed remote removal hides HTML during an unfinished local stroke',async({page})=>{
+  const {sockets}=await htmlFixture([page])
+  await page.goto('/')
+  await expect(page.locator('.board-html-widget')).toHaveCount(1)
+  await expect.poll(()=>sockets.size).toBe(1)
+  await page.mouse.move(950,350);await page.mouse.down();await page.mouse.move(1000,400,{steps:4})
+  sockets.get('0').send(JSON.stringify({type:'board_version',board_id:'shared',version:1,deletions:{shapes:['html-shared']}}))
+  // No mouse-up and no canonical HTTP snapshot: the removal must already show.
+  await expect(page.locator('.board-html-widget')).toHaveCount(0)
 })

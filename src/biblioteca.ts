@@ -2,7 +2,7 @@ import type { Point, Stroke, TextItem, MediaItem, BoardData } from './storage/da
 import { deviceDB, isPrivate, newLocalId, emptyContent, readDeviceBoard, writeDeviceBoard, localLibrary, migrateLegacy } from './storage/device'
 import type { DeviceBoard } from './storage/device'
 import { mergeBoard, strokeIds } from './storage/merge'
-import { createScenePatch } from './storage/livePatch'
+import { createScenePatch,removalsOnly } from './storage/livePatch'
 export type { Point, Stroke, TextItem, MediaItem, BoardData }
 export type BoardContentWithExtras = BoardData & { shapes?: unknown[]; tables?: unknown[]; graphs?: unknown[]; videos?: unknown[] }
 
@@ -280,7 +280,7 @@ export async function saveBoard(content: BoardContentWithExtras) {
   await writeDeviceBoard({ ...previous, draft: content, draftBase })
   try {
     if (!remoteEnabled) throw new Unavailable()
-    const uploads=[...new Set(content.media.map(media=>media.assetId))]
+    const uploads=removalsOnly(strokeIds(draftBase.content),createScenePatch(strokeIds(draftBase.content),content))?[]:[...new Set(content.media.map(media=>media.assetId))]
     await Promise.all(Array.from({length:Math.min(4,uploads.length)},async()=>{
       while(uploads.length)await uploadPendingAsset(uploads.shift()!)
     }))
@@ -291,7 +291,10 @@ export async function saveBoard(content: BoardContentWithExtras) {
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
         const changes=createScenePatch(base,merged)
-        result = await request<{version:number;content?:BoardContentWithExtras}>(`/api/boards/${id}`, json('PUT', {content:merged, version,...(changes?{changes}:{})}))
+        const compact=removalsOnly(base,changes)
+        result = await request<{version:number;content?:BoardContentWithExtras}>(`/api/boards/${id}`, json('PUT', compact
+          ?{version,changes,camera:{x:merged.camera?.x,y:merged.camera?.y,zoom:merged.camera?.zoom}}
+          :{content:merged, version,...(changes?{changes}:{})}))
         break
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 409) throw error

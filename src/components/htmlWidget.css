@@ -14,3 +14,6 @@
 .app:is([data-tool='pen'],[data-tool='eraser'],[data-tool='text'],[data-tool='pan'],[data-tool='shape'],[data-tool='connector']) .board-html-widget *,
 .app[data-control-navigation='true'] .board-html-widget iframe {pointer-events:none!important;}
 .app:is([data-tool='pen'],[data-tool='pan'],[data-tool='text'],[data-tool='shape']) .board-html-widget .html-activate {pointer-events:auto!important;}
+.app .board-html-widget .html-stop {pointer-events:auto!important;}
+
+.app[data-file-drag="true"] .board-html-widget iframe {pointer-events:none!important;}

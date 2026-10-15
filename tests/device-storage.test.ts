@@ -306,7 +306,9 @@ describe('private boards and shared device replicas',()=>{
     fetched.mockResolvedValue(Response.json({version:7}))
     await library.saveBoard({...saved.merged!,texts:[]})
     const body=JSON.parse(fetched.mock.calls.at(-1)![1].body)
-    expect(body.content.texts).toEqual([])
+    expect(body.content).toBeUndefined()
+    expect(body.changes.texts.upsert).toEqual([])
+    expect(body.changes.texts.remove).toHaveLength(2)
     expect((await device.readDeviceBoard(`${owner}:${remoteId}`))?.content.texts).toEqual([])
   })
   it('isolates shared replicas from other signed-in users and denies cached fallback on a 403',async()=>{

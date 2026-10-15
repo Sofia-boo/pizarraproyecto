@@ -75,9 +75,10 @@ class BoardInput(BaseModel):
     folder_id: str | None = None
 
 class BoardSave(BaseModel):
-    content: dict
+    content: dict | None = None
     version: int
     changes: dict | None = None
+    camera: dict | None = None
 
 @app.get('/api/library')
 def get_library():
@@ -130,14 +131,17 @@ def read_board(board_id: str):
 @app.put('/api/boards/{board_id}')
 async def save_board(board_id: str, item: BoardSave):
     from reconocimiento_local.visual_objects import validate_visual_content
-    from reconocimiento_local.live_sync_api import apply_scene_changes
+    from reconocimiento_local.live_sync_api import apply_scene_changes, apply_scene_removals
     with db_connection() as db:
         row = db.execute('SELECT version,content FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')
         if row['version'] != item.version:
             raise HTTPException(409, 'Esta pizarra fue modificada en otra pestaña. Recargá antes de guardar.')
         before = json.loads(row['content'])
-        content = apply_scene_changes(before, item.content, item.changes) if item.changes is not None else item.content
+        if item.content is None:
+            content=apply_scene_removals(before,item.changes,item.camera)
+        else:
+            content = apply_scene_changes(before, item.content, item.changes) if item.changes is not None else item.content
         validate_visual_content(content)
         new_version = item.version + 1
         db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
@@ -152,7 +156,7 @@ async def save_board(board_id: str, item: BoardSave):
                            (board_id, media['assetId']))
     from reconocimiento_local.live_sync_api import notify_board_saved
     await notify_board_saved(board_id, new_version, before, content)
-    return {'version': new_version, **({'content': content} if content != item.content else {})}
+    return {'version': new_version, **({'content': content} if item.content is not None and content != item.content else {})}
 
 @app.put('/api/boards/{board_id}/info')
 def update_board_info(board_id: str, item: BoardInput):

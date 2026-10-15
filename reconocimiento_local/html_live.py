@@ -101,12 +101,13 @@ async def handle(board_id, payload, participant, socket, db_connection, allowed,
         await broadcast(board_id, {'type': 'html_input', 'board_id': board_id, 'html_id': identifier,
                                    'session': state['session'], 'event': clean}, exclude=socket)
         return
-    if not owner:
-        return
     if kind == 'html_stop':
         state['running'] = False
         await broadcast(board_id, public(state, 'html_stop'))
-    elif kind == 'html_frame':
+        return
+    if not owner:
+        return
+    if kind == 'html_frame':
         now = time.monotonic()
         if now - state['_at'] < .20:
             return

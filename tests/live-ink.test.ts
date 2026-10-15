@@ -39,3 +39,18 @@ describe('live ink acknowledgements',()=>{
     expect(resolved.size).toBe(1)
   })
 })
+
+
+import {RemoteDeletions} from '../src/storage/livePatch'
+describe('confirmed remote removals',()=>{
+  it('hides all object types while a local gesture delays the snapshot',()=>{
+    const removed=new RemoteDeletions()
+    expect(removed.record({strokes:['ink'],shapes:['html'],media:['pdf'],texts:['note'],tables:['table'],graphs:['graph'],videos:['video']},12,11)).toBe(true)
+    for(const [kind,id] of [['stroke','ink'],['shape','html'],['media','pdf'],['text','note'],['table','table'],['graph','graph'],['video','video']])expect(removed.has(kind,id)).toBe(true)
+    expect(removed.has('stroke','my-current-stroke')).toBe(false)
+    expect(removed.acknowledge(11)).toBe(false)
+    expect(removed.acknowledge(12)).toBe(true)
+    expect(removed.has('stroke','ink')).toBe(false)
+    expect(removed.record({strokes:['ink']},11,12)).toBe(false)
+  })
+})

@@ -4,6 +4,43 @@ export const sceneLists = ['strokes','texts','media','shapes','tables','graphs',
 type SceneItem={id:string;[key:string]:unknown}
 export type ScenePatch = Partial<Record<typeof sceneLists[number], {upsert: SceneItem[];remove:string[];order?:string[]}>>
 
+/** A removal cannot introduce an asset or an object. Keep old files without
+ * server-side stroke IDs on the full-content path. */
+export function removalsOnly(base:BoardContentWithExtras,patch:ScenePatch|null):patch is ScenePatch {
+  return Boolean(patch&&Object.values(patch).some(change=>change.remove.length)&&
+    Object.values(patch).every(change=>!change.upsert.length&&!change.order)&&
+    !base.strokes.some(stroke=>!stroke.id||stroke.id.startsWith('legacy-')))
+}
+
+/** Hide confirmed deletions immediately, even while local ink delays replacing
+ * the canonical scene. Never mutate the draft or its numeric stroke indices. */
+export class RemoteDeletions {
+  private pending=new Map<string,number>()
+  has(kind:string,id?:string){
+    const lists:Record<string,string>={stroke:'strokes',text:'texts',media:'media',shape:'shapes',table:'tables',graph:'graphs',video:'videos'}
+    return Boolean(id&&this.pending.has(`${lists[kind]??kind}:${id}`))
+  }
+  record(raw:unknown,version:number,displayed:number){
+    if(!raw||typeof raw!=='object'||!Number.isSafeInteger(version)||version<=displayed)return false
+    let changed=false
+    for(const key of sceneLists){
+      const ids=(raw as Record<string,unknown>)[key]
+      if(!Array.isArray(ids))continue
+      for(const id of ids)if(typeof id==='string'&&id.length<=80){
+        const token=`${key}:${id}`
+        if((this.pending.get(token)??-1)<version){this.pending.set(token,version);changed=true}
+      }
+    }
+    return changed
+  }
+  acknowledge(version:number){
+    let changed=false
+    for(const [key,at] of this.pending)if(at<=version){this.pending.delete(key);changed=true}
+    return changed
+  }
+  clear(){this.pending.clear()}
+}
+
 /** Describe the user's actions, rather than replacing objects this screen may
  * not have received yet. Legacy lists without IDs still use a full save. */
 export function createScenePatch(base:BoardContentWithExtras,next:BoardContentWithExtras):ScenePatch|null {

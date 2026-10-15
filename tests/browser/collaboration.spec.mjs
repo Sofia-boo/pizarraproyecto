@@ -28,7 +28,9 @@ test('two contributors edit shared content, navigate, follow cameras and retain 
         if(route.request().method()==='PUT') {
           const body=route.request().postDataJSON()
           if(body.version!==version){conflicts++;return respond({detail:'Modificada en otra pestaña'},409)}
-          content=body.content;version++
+          if(body.content)content=body.content
+          else {for(const [key,change] of Object.entries(body.changes))content[key]=(content[key]??[]).filter(item=>!change.remove.includes(item.id));content.camera={...content.camera,...body.camera}}
+          version++
           await respond({version})
           broadcast({type:'board_version',version})
           return

@@ -1,5 +1,5 @@
 import { mergeBoard } from './storage/merge'
-import { applyScenePatch } from './storage/livePatch'
+import { applyScenePatch,RemoteDeletions } from './storage/livePatch'
 import {retireLiveInk,resolveLiveInk,resolvedLiveInk} from './storage/liveInk'
 import type {RemoteLiveStroke,InkResolution} from './storage/liveInk'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
@@ -496,6 +496,7 @@ function parseTSV(raw: string): SheetCell[][] {
 const isSvgFile = (file: File) => file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)
 const isImageFile = (file: File) => isSvgFile(file) || /^(image\/(png|jpeg|webp))$/i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)
 const isPDFFile = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+const isHTMLFile=(file:File)=>/\.html?$/i.test(file.name)||file.type==='text/html'
 const imageMime = (file: File): string => {
   if (/^image\/(png|jpeg|webp)$/i.test(file.type)) return file.type
   return /\.webp$/i.test(file.name) ? 'image/webp' : /\.jpe?g$/i.test(file.name) ? 'image/jpeg' : 'image/png'
@@ -909,6 +910,9 @@ function App() {
   const remoteStrokesRef = useRef<Map<string, RemoteLiveStroke>>(new Map())
   const inkResolutionsRef=useRef<Map<string,InkResolution>>(new Map())
   const displayedVersionRef=useRef(0)
+  const remoteDeletionsRef=useRef(new RemoteDeletions())
+  function hiddenRemote(kind:string,id?:string){return remoteDeletionsRef.current.has(kind,id)}
+  function refreshRemoteDeletions(){setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1);redraw()}
   const remoteCursorsRef = useRef<Map<string, LiveCursor>>(new Map())
   const lastCursorSentRef = useRef(0)
   const lastHtmlActivityRef=useRef(0)
@@ -1006,6 +1010,7 @@ function App() {
   }
   const savingRef = useRef(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firstSaveAtRef=useRef<number|null>(null)
   const undoRef = useRef<Snapshot[]>([])
   const redoRef = useRef<Snapshot[]>([])
   const clipboardRef = useRef<BoardClipboard | null>(null)
@@ -1537,11 +1542,11 @@ function App() {
     viewportFrameRef.current = requestAnimationFrame(() => {
       viewportFrameRef.current = null
       const view = visibleBounds()
-      const tableIds = tablesRef.current.filter(item => rectsIntersect(view, rotatedRect(tableSize(item),item.rotation))).map(item => item.id)
-      const graphIds = graphsRef.current.filter(item => rectsIntersect(view, rotatedRect(item,item.rotation))).map(item => item.id)
+      const tableIds = tablesRef.current.filter(item => !hiddenRemote('table',item.id)&&rectsIntersect(view, rotatedRect(tableSize(item),item.rotation))).map(item => item.id)
+      const graphIds = graphsRef.current.filter(item => !hiddenRemote('graph',item.id)&&rectsIntersect(view, rotatedRect(item,item.rotation))).map(item => item.id)
       setVisibleTableIds(previous => sameVisibleIds(previous, tableIds) ? previous : tableIds)
       setVisibleGraphIds(previous => sameVisibleIds(previous, graphIds) ? previous : graphIds)
-      const html=shapesRef.current.filter(item=>item.visualType==='html'&&item.html)
+      const html=shapesRef.current.filter(item=>!hiddenRemote('shape',item.id)&&item.visualType==='html'&&item.html)
       setHtmlItems(previous=>previous.length===html.length&&previous.every((item,index)=>{
         const next=html[index];return item.id===next.id&&item.x===next.x&&item.y===next.y&&item.width===next.width&&item.height===next.height&&item.rotation===next.rotation&&item.zIndex===next.zIndex&&item.html===next.html
       })?previous:html.map(item=>({...item})))
@@ -1707,7 +1712,7 @@ function App() {
     ctx.translate(cam.x, cam.y)
     ctx.scale(cam.zoom, cam.zoom)
     const view = visibleBounds()
-    const visibleMedia = mediaRef.current.filter(item => rectsIntersect(view, rotatedRect(item,item.rotation)))
+    const visibleMedia = mediaRef.current.filter(item => !hiddenRemote('media',item.id)&&rectsIntersect(view, rotatedRect(item,item.rotation)))
     enqueueVisibleMedia(visibleMedia)
     updateVisibleLayers()
 
@@ -1736,6 +1741,7 @@ function App() {
       }})
     }
     for(const item of shapesRef.current){
+      if(hiddenRemote('shape',item.id))continue
       if(item.visualType==='html')continue
       const bounds=rotatedRect(visualBounds(item,resolveObject),item.rotation)
       if(rectsIntersect(view,bounds))
@@ -1743,11 +1749,13 @@ function App() {
     }
     for(const index of strokeTilesRef.current.query(strokesRef.current,view)){
       const item=strokesRef.current[index]
+      if(hiddenRemote('stroke',item.id))continue
       renderables.push({z:(item as GroupedItem).zIndex??-100000,index:renderIndex++,
         bounds:hasDomObjects?selectionBounds({kind:'stroke',id:index})??undefined:undefined,
         paint:surface=>drawStroke(surface,item)})
     }
     for(const item of textsRef.current){
+      if(hiddenRemote('text',item.id))continue
       if(editingRef.current?.id===item.id)continue
       const lines=item.text.split('\n')
       const longest=Math.max(1,...lines.map(line=>line.length))
@@ -1787,6 +1795,7 @@ function App() {
     // persistido y deben estar visibles sobre los objetos interactivos.
     const uiCtx = foregroundCtx ?? ctx
     for (const remote of remoteStrokesRef.current.values()) {
+      if(hiddenRemote('stroke',remote.stroke.id))continue
       if (remote.stroke.points.length) drawStroke(uiCtx, remote.stroke)
     }
     if (activeStroke.current) drawStroke(uiCtx, activeStroke.current)
@@ -2146,7 +2155,7 @@ function App() {
         setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1)
         redraw();hydrateMedia(mediaRef.current)
       }
-      if(!result.pending)displayedVersionRef.current=getActiveBoardVersion()
+      if(!result.pending){displayedVersionRef.current=getActiveBoardVersion();if(remoteDeletionsRef.current.acknowledge(displayedVersionRef.current))refreshRemoteDeletions()}
       if(retireCommittedPreviews())redraw()
       setSaveStatus(dirtyRef.current ? 'pending' : result.pending ? 'local' : 'saved')
     } catch (error) {
@@ -2175,18 +2184,21 @@ function App() {
     if (dirtyRef.current) throw new Error('Hay cambios sin guardar. Resolvé el problema de guardado antes de crear o restaurar una versión.')
   }
 
-  function scheduleSave() {
+  function scheduleSave(urgent=false) {
     setBoardSearchRevision(value=>value+1)
 
     if (!loadedRef.current) return
     dirtyRef.current = true
     if (syncConflictRef.current) { setSaveStatus('error'); return }
     setSaveStatus('pending')
+    const now=performance.now();firstSaveAtRef.current??=now
+    const delay=privateBoard()?400:urgent?0:Math.min(80,Math.max(0,250-(now-firstSaveAtRef.current)))
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
+      firstSaveAtRef.current=null
       void persistBoard()
-    }, privateBoard() ? 400 : 80)
+    }, delay)
   }
 
   useEffect(()=>beforeAppUpdate(flushBoardForHistory))
@@ -2324,6 +2336,7 @@ function App() {
         refreshTables(n => n + 1)
         mediaFailedRef.current.clear()
         displayedVersionRef.current=snapshot.version
+        remoteDeletionsRef.current.acknowledge(snapshot.version)
         retireCommittedPreviews(snapshot.version)
         redraw()
         hydrateMedia(mediaRef.current)
@@ -2414,8 +2427,16 @@ function App() {
               name?:string;emoji?:string;point?:Point;points?:Point[];color?:string;width?:number;highlighter?:boolean;html_id?:string;html_action?:string;
               video_id?:string;position?:number;playing?:boolean;start?:number;end?:number|null;at?:number
               saved?:unknown;removed?:unknown
+              deletions?:unknown
             }
             if (msg.board_id !== boardId) return
+            if(msg.type==='board_version'&&typeof msg.version==='number'&&remoteDeletionsRef.current.record(msg.deletions,msg.version,displayedVersionRef.current)){
+              if(groupRef.current.some(selection=>{const ref=objectReference(selection);return ref&&hiddenRemote(ref.kind,ref.id)})){
+                transformRef.current=null;selectElement(null);setVisualEditor(null);setTableEditorId(null)
+              }
+              if(editingRef.current&&hiddenRemote('text',editingRef.current.id))setEditor(null)
+              refreshRemoteDeletions()
+            }
             if(msg.type?.startsWith('html_')){
               if(!receiveHtmlSignal(msg as HtmlSignal)&&msg.html_id)sendLive({type:'html_request',html_id:msg.html_id})
               return
@@ -2554,6 +2575,7 @@ function App() {
       clearHtmlViews()
       remoteStrokesRef.current.clear()
       inkResolutionsRef.current.clear()
+      remoteDeletionsRef.current.clear()
       remoteCursorsRef.current.clear()
       viewsRef.current.clear()
       stopFollowing()
@@ -2588,6 +2610,7 @@ function App() {
     if (!ctx) return null
     for (let i = textsRef.current.length - 1; i >= 0; i--) {
       const item = textsRef.current[i]
+      if(hiddenRemote('text',item.id))continue
       ctx.font = `${item.fontSize}px system-ui, sans-serif`
       const lines = item.text.split('\n')
       const textWidth = Math.max(item.fontSize, ...lines.map(line => ctx.measureText(line).width))
@@ -2751,7 +2774,7 @@ function App() {
   }
 
   function hitShapeAt(point:Point):ShapeItem|undefined {
-    return [...shapesRef.current].reverse().sort((a,b)=>(b.zIndex??-200000)-(a.zIndex??-200000)).find(item=>
+    return shapesRef.current.filter(item=>!hiddenRemote('shape',item.id)).reverse().sort((a,b)=>(b.zIndex??-200000)-(a.zIndex??-200000)).find(item=>
       isConnector(item)?hitsConnector(item,point,resolveObject,8/cameraRef.current.zoom):
       item.visualType==='page'?shapeTouchesEraser(item,point,12/cameraRef.current.zoom):
       overlaps({x:point.x,y:point.y,width:0,height:0},rotatedRect(item,item.rotation)))
@@ -4095,9 +4118,9 @@ function App() {
       alert('Esperá a que termine la importación en curso.')
       return
     }
-    const supported = files.filter(file => isImageFile(file) || isPDFFile(file) || isExcelFile(file) || isCSVFile(file))
+    const supported = files.filter(file => isImageFile(file) || isPDFFile(file) || isExcelFile(file) || isCSVFile(file)||isHTMLFile(file))
     if (!supported.length) {
-      alert('Formato no admitido. Podés agregar PNG, JPG, WebP, SVG, PDF, Excel o CSV.')
+      alert('Formato no admitido. Podés agregar PNG, JPG, WebP, SVG, PDF, Excel, CSV o HTML.')
       return
     }
     if (editingRef.current) commitText()
@@ -4110,7 +4133,8 @@ function App() {
         // Un pequeño desplazamiento evita que varios archivos queden superpuestos.
         const position = at && { x: at.x + i * 24 / cameraRef.current.zoom, y: at.y + i * 24 / cameraRef.current.zoom }
         try {
-          if (isExcelFile(file)||isCSVFile(file)) await importExcelFile(file,position)
+          if(isHTMLFile(file))await addHtmlFiles([file],position)
+          else if (isExcelFile(file)||isCSVFile(file)) await importExcelFile(file,position)
           else if (isPDFFile(file)) await addPDF(file, position)
           else await addImage(file, position)
         } catch (error) {
@@ -4126,27 +4150,28 @@ function App() {
     if (errors.length || unsupported) {
       alert([
         errors.length ? `No se pudieron importar: ${errors.join(', ')}.` : '',
-        unsupported ? `${unsupported} archivo(s) ignorado(s): se aceptan imágenes (incluido SVG), PDF, XLSX, XLSM y CSV.` : '',
+        unsupported ? `${unsupported} archivo(s) ignorado(s): se aceptan imágenes (incluido SVG), PDF, XLSX, XLSM, CSV y HTML.` : '',
       ].filter(Boolean).join('\n'))
     }
   }
 
   async function onHtmlFiles(event:ChangeEvent<HTMLInputElement>){
     const files=Array.from(event.target.files??[]);event.target.value=''
+    try{await addHtmlFiles(files)}catch(error){setSelectionError(error instanceof Error?error.message:'No se pudo insertar el HTML.')}
+  }
+  async function addHtmlFiles(files:File[],at?:Point){
     if(!loadedRef.current)return
     const boardId=getActiveBoardId()
-    try{
       const items:ShapeItem[]=[]
-      const center=boardCenter()
+      const center=at??boardCenter()
       for(const [index,file] of files.entries()){
-        if(!/\.html?$/i.test(file.name)||file.size>1_000_000)throw new Error('Elegí archivos .html o .htm de hasta 1 MB, con sus recursos incluidos.')
+        if(!isHTMLFile(file)||file.size>1_000_000)throw new Error('Elegí archivos .html o .htm de hasta 1 MB, con sus recursos incluidos.')
         const source=await file.text()
         if(!source.trim())throw new Error('El archivo HTML está vacío.')
-        items.push({id:createId(),kind:'rectangle',visualType:'html',html:{name:file.name.slice(0,200),source},x:center.x-320+index*30,y:center.y-220+index*30,width:640,height:440,color:'#64748b',strokeWidth:1,zIndex:150000})
+        items.push({id:createId(),kind:'rectangle',visualType:'html',html:{name:file.name.slice(0,200)||'Documento.html',source},x:center.x-(at?0:320)+index*30,y:center.y-(at?0:220)+index*30,width:640,height:440,color:'#64748b',strokeWidth:1,zIndex:150000})
       }
       if(boardId!==getActiveBoardId()||!items.length)return
       rememberChange();shapesRef.current.push(...items);selectTool('select');selectElement({kind:'shape',id:items.at(-1)!.id});setSelectionError('');redraw();scheduleSave()
-    }catch(error){setSelectionError(error instanceof Error?error.message:'No se pudo insertar el HTML.')}
   }
 
   function updateHtml(id:string,patch:Partial<ShapeItem>){
@@ -4157,7 +4182,7 @@ function App() {
     rememberChange()
     const next=detachTargets(shapesRef.current,new Set([`shape:${id}`]),resolveObject)
     shapesRef.current=next.filter(item=>item.id!==id)
-    selectElement(null);redraw();scheduleSave()
+    selectElement(null);redraw();scheduleSave(true)
   }
 
   async function onImages(e: ChangeEvent<HTMLInputElement>) {
@@ -4442,7 +4467,7 @@ function App() {
     textsRef.current = textsRef.current.filter(item => !textIds.has(item.id))
     strokesRef.current = strokesRef.current.filter((_, i) => !strokeIds.has(i))
     selectElement(null)
-    scheduleSave()
+    scheduleSave(true)
   }
 
   function copySelected(): boolean {
@@ -4567,7 +4592,7 @@ function App() {
     ...tablesRef.current.map(v=>({kind:'table',id:v.id} as Selection)),
     ...graphsRef.current.map(v=>({kind:'graph',id:v.id} as Selection)),
     ...videosRef.current.map(v=>({kind:'video',id:v.id} as Selection)),
-  ]}
+  ].filter(selection=>{const ref=objectReference(selection);return !ref||!hiddenRemote(ref.kind,ref.id)})}
   function selectedItems():Array<Stroke|TextItem|MediaItem|ShapeItem|SheetItem|BoardGraphItem|YouTubeItem>{
     return groupRef.current.flatMap(sel=>{
       const item=sel.kind==='stroke'?strokesRef.current[Number(sel.id)]:
@@ -4725,7 +4750,7 @@ function App() {
     : []
   const selectedDayLabel = selectedCalendarDate ? (() => { const [y,m,d] = selectedCalendarDate.split('-').map(Number); return `${d} de ${new Intl.DateTimeFormat('es-AR', { month: 'long' }).format(new Date(y,m-1,d))}` })() : ''
   return (
-    <div className="app" data-theme={theme} data-tool={tool} data-control-navigation={controlNavigation}
+    <div className="app" data-theme={theme} data-tool={tool} data-control-navigation={controlNavigation} data-file-drag={fileDragActive}
       onPointerDownCapture={captureScenePointerDown} onPointerMoveCapture={captureScenePointerMove}
       onPointerUpCapture={captureScenePointerUp} onPointerCancelCapture={captureScenePointerCancel}
       onLostPointerCapture={captureScenePointerCancel}
@@ -4777,11 +4802,11 @@ function App() {
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>
-          table.id !== tableEditorId && rectsIntersect(visibleBounds(), rotatedRect(tableSize(table),table.rotation))
+          !hiddenRemote('table',table.id)&&table.id !== tableEditorId && rectsIntersect(visibleBounds(), rotatedRect(tableSize(table),table.rotation))
         ).map(table => <StaticTable key={table.id} table={table}/>)}
       </div>
       <div className="board-graph-layer" ref={graphLayerRef} onContextMenu={onBoardContextMenu} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
-        {graphs.filter(item => visibleGraphIds.includes(item.id)).map(item=><BoardGraphWidget key={item.id} item={item}
+        {graphs.filter(item => !hiddenRemote('graph',item.id)&&visibleGraphIds.includes(item.id)).map(item=><BoardGraphWidget key={item.id} item={item}
           getZoom={()=>cameraRef.current.zoom} boardZoom={zoomLabel/100}
           activeTool={tool}
           selected={groupRef.current.some(s=>s.kind==='graph'&&s.id===item.id)}
@@ -4794,7 +4819,7 @@ function App() {
       <div className="board-video-layer" ref={videoLayerRef}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`,
           zIndex:videos.some(v=>(v.zIndex??-150000)>200000)?9:7}}>
-        {videos.filter(item=>/^[A-Za-z0-9_-]{11}$/.test(item.videoId)).map(item=><div
+        {videos.filter(item=>!hiddenRemote('video',item.id)&&/^[A-Za-z0-9_-]{11}$/.test(item.videoId)).map(item=><div
           className={`board-video-card ${groupRef.current.some(sel=>sel.kind==='video'&&sel.id===item.id)?'board-video-selected':''}`}
           data-video-id={item.id} key={item.id} onContextMenu={onBoardContextMenu}
           style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??-150000)*2}}>
@@ -4870,7 +4895,7 @@ function App() {
         border: '3px dashed #6366f1', borderRadius: 20,
         color: '#eef2ff', background: 'rgba(30,41,59,.76)',
         font: '600 22px system-ui, sans-serif', textAlign: 'center', padding: 24,
-      }}>Soltá imágenes (también SVG), PDF o Excel para agregarlos a la pizarra</div>}
+      }}>Soltá imágenes (también SVG), PDF, HTML o Excel para agregarlos a la pizarra</div>}
       {screenMarquee && (
         <div className="selection-marquee" style={{
           left: Math.min(screenMarquee.startX, screenMarquee.endX),

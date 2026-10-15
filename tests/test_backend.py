@@ -42,6 +42,22 @@ class BackendTest(unittest.TestCase):
             self.assertEqual(owner.get('/api/library').json()['boards'][0]['folder_id'],folder)
             self.assertEqual(owner.get(f'/api/boards/{board}').json()['version'],2)
 
+    def test_compact_removal_preserves_unseen_objects_and_rejects_insertions(self):
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Compact removals','password':'compact-password'})
+            board=client.post('/api/boards',json={'name':'Removal fixture'}).json()['id']
+            content={'texts':[{'id':'remove-me','text':'old'},{'id':'unseen','text':'keep'}]}
+            self.assertEqual(client.put(f'/api/boards/{board}',json={'version':0,'content':content}).status_code,200)
+            payload={'version':1,'changes':{'texts':{'upsert':[],'remove':['remove-me']}},'camera':{'x':0,'y':0,'zoom':1}}
+            response=client.put(f'/api/boards/{board}',json=payload)
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertNotIn('content',response.json())
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content']['texts'],[content['texts'][1]])
+            self.assertEqual(client.put(f'/api/boards/{board}',json=payload).status_code,409)
+            payload['version']=2
+            payload['changes']['texts']['upsert']=[{'id':'smuggled','text':'no'}]
+            self.assertEqual(client.put(f'/api/boards/{board}',json=payload).status_code,422)
+
     def test_retired_ocr_routes_are_absent_and_boards_still_load(self):
         paths={route.path for route in self.app.routes if hasattr(route,'path')}
         self.assertFalse(any(path.startswith(('/recognize/','/api/ocr/')) for path in paths))
@@ -521,7 +537,7 @@ class BackendTest(unittest.TestCase):
                         c.send_json({'type':'html_input','html_id':'html-live','session':'session-a','event':{'action':'click','node':'5'}})
                         c.send_json({'type':'cursor_move','point':{'x':0,'y':0}})
                         self.assertEqual(a.receive_json()['type'],'cursor_move');b.receive_json()
-                        a.send_json({'type':'html_stop','html_id':'html-live','session':'session-a'})
+                        b.send_json({'type':'html_stop','html_id':'html-live','session':'session-a'})
                         for peer in [a,b,c]:
                             self.assertFalse(peer.receive_json()['running'])
 

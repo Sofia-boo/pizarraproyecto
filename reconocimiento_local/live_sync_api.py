@@ -402,6 +402,28 @@ def attach_live_sync(app, db_connection):
 SCENE_LISTS = ('strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos')
 
 
+def apply_scene_removals(current, changes, camera=None):
+    """Compact saves can ONLY remove existing IDs; they cannot smuggle assets."""
+    if not isinstance(changes,dict) or not changes or any(key not in SCENE_LISTS for key in changes):
+        raise HTTPException(422,'Se requieren borrados explícitos.')
+    desired=dict(current)
+    for key, change in changes.items():
+        if (not isinstance(change,dict) or set(change) != {'upsert','remove'} or change['upsert'] != []
+                or not isinstance(change['remove'],list) or len(change['remove'])>50000
+                or any(not isinstance(identifier,str) or not 1<=len(identifier)<=80 for identifier in change['remove'])):
+            raise HTTPException(422,'El guardado compacto sólo permite borrar identificadores.')
+        old=current.get(key,(current.get('camera') or {}).get('youtubeVideos',[]) if key=='videos' else [])
+        removed=set(change['remove'])
+        desired[key]=[item for item in old if item.get('id') not in removed]
+    result=apply_scene_changes(current,desired,changes)
+    if camera is not None:
+        if (set(camera)!={'x','y','zoom'} or any(type(v) not in (int,float) or not math.isfinite(v) for v in camera.values())
+                or not .01<=camera['zoom']<=5 or max(abs(camera['x']),abs(camera['y']))>10000000):
+            raise HTTPException(422,'Cámara inválida.')
+        result['camera']={**result.get('camera',{}),**camera,'youtubeVideos':result['videos']}
+    return result
+
+
 def apply_scene_changes(current: dict, desired: dict, changes: dict):
     """Apply explicit actions; an absent object is not an implicit deletion."""
     if any(key not in SCENE_LISTS for key in changes):
@@ -487,6 +509,14 @@ async def notify_board_saved(board_id: str, version: int, before=None, after=Non
     event = {'type': 'board_version', 'board_id': board_id, 'version': version}
     settled = None
     if isinstance(before, dict) and isinstance(after, dict):
+        deletions={}
+        for key in SCENE_LISTS:
+            previous=before.get(key,(before.get('camera') or {}).get('youtubeVideos',[]) if key=='videos' else [])
+            current=after.get(key,(after.get('camera') or {}).get('youtubeVideos',[]) if key=='videos' else [])
+            present={item.get('id') for item in current if isinstance(item,dict)}
+            removed_ids=[item['id'] for item in previous if isinstance(item,dict) and isinstance(item.get('id'),str) and item['id'] not in present]
+            if removed_ids:deletions[key]=removed_ids
+        if deletions:event['deletions']=deletions
         old = {stroke['id']: stroke for stroke in before.get('strokes', [])
                if isinstance(stroke, dict) and isinstance(stroke.get('id'), str)}
         new = {stroke['id']: stroke for stroke in after.get('strokes', [])

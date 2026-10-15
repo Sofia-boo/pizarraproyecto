@@ -14,11 +14,12 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
   const remoteView=useRef(remote),session=useRef<string|null>(null),pending=useRef<string|null>(null)
   const sent=useRef({document:'',revision:0}),snapshot=useRef('')
   const retry=useRef<ReturnType<typeof setTimeout>|null>(null),attempts=useRef(0)
+  const stoppedSession=useRef<string|null>(null)
   const frame=useRef<HTMLIFrameElement>(null),latest=useRef({item,onActivity,onSync,onNavigate,active,shared,connected})
   const activityAt=useRef(0)
   useLayoutEffect(()=>{latest.current={item,onActivity,onSync,onNavigate,active,shared,connected}},[item,onActivity,onSync,onNavigate,active,shared,connected])
   const source=item.html!.source
-  const mirrored=Boolean(!active&&remote?.document)
+  const mirrored=Boolean(!active&&remote?.running&&remote.document)
   const frameDocument=useMemo(()=>{
     if(!active&&!mirrored)return null
     const token=crypto.randomUUID();return {token,source:mirrored?instrumentHtml(mirrorDocument(token),token):instrumentHtml(source,token,shared?`<script>${sharedHtmlHook(token)}</script>`:'')}
@@ -35,6 +36,7 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
   },[item.id])
   function start(){
     onSelect();setError('')
+    stoppedSession.current=null
     attempts.current=0
     if(!active)snapshot.current=''
     if(shared&&connected){
@@ -42,10 +44,22 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
     }else{setActive(true);if(shared)setError('Sin conexión: esta actividad sólo se ve en este dispositivo.')}
     onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'interact'})
   }
+  function stop(){
+    const current=session.current??remoteView.current?.session
+    stoppedSession.current=current??null
+    if(current&&connected)onSync({type:'html_stop',html_id:item.id,session:current})
+    if(retry.current){clearTimeout(retry.current);retry.current=null}
+    pending.current=null;session.current=null;setActive(false)
+    const frozen={...remoteView.current,type:'html_stop',html_id:item.id,session:current??undefined,running:false}
+    remoteView.current=frozen;setRemote(frozen)
+    onNavigate({action:'modifiers',pressed:false})
+    onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'leave'})
+  }
   useEffect(()=>{
     function receive(event:Event){
       const signal=(event as CustomEvent<HtmlSignal>).detail
       if(signal.html_id!==item.id)return
+      if(signal.running&&signal.session===stoppedSession.current)return
       const document=frameDocumentRef.current
       if(signal.type==='html_input'){
         if(session.current===signal.session&&document)frame.current?.contentWindow?.postMessage({token:document.token,kind:'input',event:signal.event},'*')
@@ -84,6 +98,7 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
   },[item.id,sendSnapshot])
   useEffect(()=>{
     if(!shared||!connected)return
+    if(stoppedSession.current)latest.current.onSync({type:'html_stop',html_id:item.id,session:stoppedSession.current})
     latest.current.onSync({type:'html_request',html_id:item.id})
     if(latest.current.active){pending.current=crypto.randomUUID();latest.current.onSync({type:'html_start',html_id:item.id,request:pending.current})}
   },[shared,connected,item.id])
@@ -166,13 +181,12 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
   return <section className="board-html-widget" data-html-id={item.id} onContextMenu={onContextMenu} style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??150000)*2,transform:`rotate(${item.rotation??0}rad)`}}>
     <header aria-label={`Mover HTML ${item.html!.name}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <span title={`${item.html!.name} · Usá el selector para interactuar`}>↔ {item.html!.name}</span>
-      {active&&<button type="button" className="html-stop" aria-label={`Detener HTML ${item.html!.name}`} title="Detener y liberar memoria; al activarlo se reinicia" onPointerDown={event=>event.stopPropagation()} onClick={()=>{if(session.current)onSync({type:'html_stop',html_id:item.id,session:session.current});else setActive(false);onActivity({point:{x:item.x+item.width/2,y:item.y+item.height/2},action:'leave'})}}>Detener</button>}
-      {mirrored&&!remote?.running&&<button type="button" className="html-stop" onPointerDown={event=>event.stopPropagation()} onClick={start}>Reactivar</button>}
+      {(active||remote?.running)&&<button type="button" className="html-stop" aria-label={`Detener HTML ${item.html!.name}`} title="Detener y liberar memoria; al activarlo se reinicia" onPointerDown={event=>event.stopPropagation()} onClick={stop}>Detener</button>}
       <button type="button" aria-label={`Eliminar HTML ${item.html!.name}`} onPointerDown={event=>event.stopPropagation()} onClick={onDelete}>×</button>
     </header>
     {presence.length>0&&<div className="html-presence" role="status">{presence.map(user=><span key={user.clientId} style={{borderColor:user.color}}>{user.emoji} {user.name} está usando este HTML</span>)}</div>}
     {error&&<div className="html-sync-status" role="alert">{error}</div>}
-    {mirrored&&<div className="html-sync-status">{remote?.running?'Vista compartida · podés interactuar':'HTML detenido · última vista'}</div>}
+    {(mirrored||remote?.running===false)&&<div className="html-sync-status">{mirrored?'Vista compartida · podés interactuar':'HTML detenido'}</div>}
     {frameDocument?<iframe ref={frame} title={`HTML: ${item.html!.name}`} onLoad={()=>{const document=frameDocumentRef.current;if(document)frame.current?.contentWindow?.postMessage(remoteView.current?.document&&!active?{token:document.token,kind:'render',document:remoteView.current.document}:{token:document.token,kind:'capture'},'*')}} srcDoc={frameDocument.source} sandbox={mirrored?'allow-scripts':'allow-scripts allow-forms allow-downloads'} referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"/>:<button type="button" className="html-activate" aria-label={`Activar HTML ${item.html!.name}`} onClick={start}><strong>Activar HTML</strong><span>Tocá para cargar e interactuar</span></button>}
     <div className="html-resize" role="button" tabIndex={0} aria-label={`Cambiar tamaño HTML ${item.html!.name}`} onPointerDown={event=>down(event,true)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();onBegin();onChange({width:Math.max(240,item.width+(event.key==='ArrowRight'?20:event.key==='ArrowLeft'?-20:0)),height:Math.max(160,item.height+(event.key==='ArrowDown'?20:event.key==='ArrowUp'?-20:0))});onEnd()}}>↘</div>
