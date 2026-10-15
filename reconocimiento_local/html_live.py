@@ -3,13 +3,16 @@ import json
 import math
 import re
 import time
+import asyncio
+from reconocimiento_local import cloud_live
 
 _states = {}
 _ID = re.compile(r'[A-Za-z0-9_-]{1,80}')
 
 
 def states(board_id):
-    return list(_states.get(board_id, {}).values())
+    cache=cloud_live.state(board_id,'html',{}) if cloud_live.enabled() else _states.get(board_id,{})
+    return list(cache.values())
 
 
 def public(state, kind='html_state', **extra):
@@ -18,16 +21,43 @@ def public(state, kind='html_state', **extra):
 
 def clear(board_id):
     _states.pop(board_id, None)
+    if cloud_live.enabled():cloud_live.state_save(board_id,'html',{})
 
 
-async def disconnect(board_id, client_id, broadcast):
-    for state in states(board_id):
+async def disconnect(board_id,client_id,broadcast):
+    if cloud_live.enabled():
+        await _coordinated(board_id,lambda send,emit:_disconnect(board_id,client_id,emit),None,broadcast)
+    else:await _disconnect(board_id,client_id,broadcast)
+
+
+async def _disconnect(board_id, client_id, broadcast):
+    for state in _states.get(board_id,{}).values():
         if state['owner_id'] == client_id and state['running']:
             state['running'] = False
             await broadcast(board_id, public(state, 'html_stop'))
 
 
-async def handle(board_id, payload, participant, socket, db_connection, allowed, send, broadcast):
+async def handle(board_id,payload,participant,socket,db_connection,allowed,send,broadcast):
+    if cloud_live.enabled():
+        await _coordinated(board_id,lambda reply,emit:_handle(board_id,payload,participant,socket,db_connection,allowed,reply,emit),send,broadcast)
+    else:await _handle(board_id,payload,participant,socket,db_connection,allowed,send,broadcast)
+
+
+async def _coordinated(board_id,operation,send,broadcast):
+    def transaction():
+        events=[]
+        async def reply(socket,value):
+            events.append((send,(socket,value),{}));return True
+        async def emit(board,value,**kwargs):
+            events.append((broadcast,(board,value),kwargs))
+        with cloud_live.html_state(board_id,_states):
+            asyncio.run(operation(reply,emit))
+        return events
+    for action,args,kwargs in await asyncio.to_thread(transaction):
+        await action(*args,**kwargs)
+
+
+async def _handle(board_id, payload, participant, socket, db_connection, allowed, send, broadcast):
     identifier = payload.get('html_id')
     if not isinstance(identifier, str) or not _ID.fullmatch(identifier):
         return
@@ -108,7 +138,7 @@ async def handle(board_id, payload, participant, socket, db_connection, allowed,
     if not owner:
         return
     if kind == 'html_frame':
-        now = time.monotonic()
+        now = time.time()
         if now - state['_at'] < .20:
             return
         before = state['document']

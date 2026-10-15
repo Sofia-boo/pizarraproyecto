@@ -345,6 +345,20 @@ function releaseUploadSlot() {
   if(next)next()
   else runningUploads--
 }
+async function transferAsset(id:string,blob:Blob) {
+  const path=`/api/assets/${encodeURIComponent(id)}`
+  try { await request(path,{method:'PUT',headers:{'Content-Type':blob.type},body:blob},120000);return }
+  catch(error) {
+    // A cloud function accepts at most 4.5 MB per request. Keep the original
+    // file and transfer larger images in pieces when that limit is reached.
+    if(!(error instanceof HttpError)||error.status!==413||blob.size>30_000_000)throw error
+  }
+  const upload=crypto.randomUUID()
+  for(let offset=0;offset<blob.size;offset+=1_000_000) {
+    await request(`${path}?upload_id=${upload}&offset=${offset}&total=${blob.size}`,
+      {method:'PUT',headers:{'Content-Type':blob.type},body:blob.slice(offset,offset+1_000_000)},120000)
+  }
+}
 function uploadPendingAsset(id:string):Promise<void> {
   const key=assetKey(id)
   const pending=assetUploads.get(key)
@@ -355,7 +369,7 @@ function uploadPendingAsset(id:string):Promise<void> {
     const blob=await db.get('assets',key) as Blob|undefined
     if(!blob)throw new Error('Falta una imagen local pendiente de subir.')
     await acquireUploadSlot()
-    try {await request(`/api/assets/${id}`,{method:'PUT',headers:{'Content-Type':blob.type},body:blob},120000)}
+    try {await transferAsset(id,blob)}
     finally {releaseUploadSlot()}
     await db.delete('meta',`upload:${key}`)
   })().finally(()=>assetUploads.delete(key))
@@ -383,10 +397,23 @@ async function readAsset(id:string,key:string,local:boolean,remote:boolean):Prom
   const db = await deviceDB
   const cached = await db.get('assets', key) as Blob | undefined
   if (cached || local || !remote || navigator.onLine===false) return cached
-  const response = await fetch(`${API}/api/assets/${id}`, {credentials: 'include', signal: AbortSignal.timeout(12000)})
+  const url=`${API}/api/assets/${encodeURIComponent(id)}`
+  const response = await fetch(url, {credentials: 'include',headers:{Range:'bytes=0-999999'}, signal: AbortSignal.timeout(12000)})
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`Error de imagen ${response.status}`)
-  const blob = await response.blob()
+  const parts=[await response.blob()]
+  if(response.status===206) {
+    const range=response.headers.get('Content-Range')?.match(/^bytes 0-\d+\/(\d+)$/)
+    const total=range?Number(range[1]):0
+    if(!total||total>30_000_000)throw new Error('Tamaño de imagen inválido.')
+    for(let offset=parts[0].size;offset<total;offset+=1_000_000) {
+      const part=await fetch(url,{credentials:'include',headers:{Range:`bytes=${offset}-${offset+999999}`},signal:AbortSignal.timeout(12000)})
+      if(part.status!==206)throw new Error('No se pudo completar la imagen.')
+      parts.push(await part.blob())
+    }
+    if(parts.reduce((sum,part)=>sum+part.size,0)!==total)throw new Error('La imagen llegó incompleta.')
+  }
+  const blob = new Blob(parts,{type:response.headers.get('Content-Type')??parts[0].type})
   await db.put('assets', blob, key)
   return blob
 }
@@ -500,7 +527,7 @@ export async function publishPrivateCopy() {
     const blob = await (await deviceDB).get('assets', assetKey(media.assetId, true)) as Blob | undefined
     if (!blob) throw new Error('Falta una imagen de la privada.')
     const id = crypto.randomUUID()
-    await request(`/api/assets/${id}`, {method:'PUT', headers:{'Content-Type':blob.type}, body:blob})
+    await transferAsset(id,blob)
     await (await deviceDB).put('assets', blob, `${account}:${id}`)
     media.assetId = id
   }

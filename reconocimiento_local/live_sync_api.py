@@ -1,8 +1,8 @@
 """Notificaciones, participantes presentes y trazos temporales en directo.
 
-SQLite sigue siendo la fuente de verdad: solo save_board() confirma los trazos.
+La base persistente es la fuente de verdad: solo save_board() confirma los trazos.
 El canal no acepta escrituras persistentes ni saltea permisos por pizarra.
-Diseñado para un proceso Uvicorn (workers=1) y grupos pequeños.
+SQLite usa un proceso local; PostgreSQL coordina las instancias de Vercel.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, quote
 from collections import deque, OrderedDict
 from fastapi import WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import JSONResponse
-from reconocimiento_local import html_live
+from reconocimiento_local import html_live, cloud_live
 
 # {board_id: {websocket: {uid, client_id, name, color, role, active, points, traffic}}}
 _clients: dict[str, dict[WebSocket, dict]] = {}
@@ -33,6 +33,9 @@ _ink_resolutions = OrderedDict()
 
 
 def _remember_ink(board_id, version, saved, removed):
+    if cloud_live.enabled():
+        cloud_live.remember_ink(board_id,version,saved,removed)
+        return
     cache = _ink_resolutions.setdefault(board_id, {})
     _ink_resolutions.move_to_end(board_id)
     for identifiers, deleted in ((saved, False), (removed, True)):
@@ -49,6 +52,8 @@ def _remember_ink(board_id, version, saved, removed):
 
 
 def _ink_events(board_id):
+    if cloud_live.enabled():
+        return cloud_live.ink_events(board_id)
     grouped = {}
     for identifier, (version, deleted) in _ink_resolutions.get(board_id, {}).items():
         event = grouped.setdefault(version, {'type': 'ink_settled', 'board_id': board_id,
@@ -85,10 +90,18 @@ async def _send(socket: WebSocket, value: dict) -> bool:
         return False
 
 
-async def _broadcast(board_id: str, value: dict, *, exclude: WebSocket | None = None):
+async def _deliver(board_id: str, value: dict, exclude=None):
+    if value.get('type')=='_avatar_changed':
+        for participant in _clients.get(board_id,{}).values():
+            if participant['uid']==value['user_id']:participant['emoji']=value['emoji']
+        await _presence(board_id,publish=False)
+        return
+    if value.get('type')=='_presence_changed':
+        await _presence(board_id,publish=False)
+        return
     peers = list(_clients.get(board_id, {}).items())
     for socket, participant in peers:
-        if socket is exclude:
+        if socket is exclude or participant['client_id']==exclude:
             continue
         if not _allowed(board_id, participant['uid']):
             _clients.get(board_id, {}).pop(socket, None)
@@ -101,11 +114,19 @@ async def _broadcast(board_id: str, value: dict, *, exclude: WebSocket | None = 
             _clients.get(board_id, {}).pop(socket, None)
 
 
-async def _presence(board_id: str):
+async def _broadcast(board_id: str, value: dict, *, exclude: WebSocket | None = None):
+    excluded=_clients.get(board_id,{}).get(exclude,{}).get('client_id')
+    await _deliver(board_id,value,exclude)
+    if cloud_live.enabled():
+        await cloud_live.publish(board_id,value,excluded)
+
+
+async def _presence(board_id: str, publish=True):
     peers = _clients.get(board_id, {})
     # Una misma identidad abierta en dos pestañas se presenta una sola vez.
     by_user = {}
-    for participant in peers.values():
+    participants=cloud_live.peers(board_id) if cloud_live.enabled() else peers.values()
+    for participant in participants:
         previous = by_user.get(participant['uid'], {})
         by_user[participant['uid']] = {
             'id': participant['uid'],
@@ -119,10 +140,13 @@ async def _presence(board_id: str):
     for socket, participant in list(peers.items()):
         await _send(socket, {'type': 'presence', 'users': users,
                              'you': participant['uid'], 'board_id': board_id})
+    if cloud_live.enabled() and publish:
+        await cloud_live.publish(board_id,{'type':'_presence_changed'})
 
 
 def _active_view(board_id, uid):
-    candidates = [p for p in _clients.get(board_id, {}).values() if p['uid'] == uid and p.get('view')]
+    participants=cloud_live.peers(board_id) if cloud_live.enabled() else _clients.get(board_id,{}).values()
+    candidates = [p for p in participants if p['uid'] == uid and p.get('view')]
     return max(candidates, key=lambda p: p.get('view_changed', 0))['view'] if candidates else None
 
 
@@ -145,7 +169,8 @@ def attach_live_sync(app, db_connection):
         if len(_tickets) >= 2048:
             raise HTTPException(429,'Demasiadas conexiones pendientes')
         token = secrets.token_urlsafe(32)
-        _tickets[token] = (uid,board_id,now+30)
+        if cloud_live.enabled():cloud_live.ticket_create(token,uid,board_id,now+30)
+        else:_tickets[token] = (uid,board_id,now+30)
         origin = urlsplit(os.environ.get('PIZARRA_WS_ORIGIN') or str(request.base_url))
         if origin.scheme not in ('http','https') or not origin.netloc:
             raise HTTPException(503,'Conexión en vivo sin configurar')
@@ -159,7 +184,7 @@ def attach_live_sync(app, db_connection):
         token = websocket.query_params.get('ticket')
         ticket_uid = None
         if token:
-            ticket = _tickets.pop(token,None)
+            ticket = cloud_live.ticket_pop(token) if cloud_live.enabled() else _tickets.pop(token,None)
             if not ticket or ticket[1] != board_id or ticket[2] < time.monotonic():
                 await websocket.close(code=1008)
                 return
@@ -191,11 +216,18 @@ def attach_live_sync(app, db_connection):
         peers = _clients.setdefault(board_id, {})
         peers[websocket] = participant
         try:
+            if cloud_live.enabled():
+                await cloud_live.ensure_listener(_deliver)
+                cloud_live.register(board_id,participant)
+                participant['touch_at']=time.monotonic()
+                with db_connection() as db:
+                    row=db.execute('SELECT version FROM boards WHERE id=?',(board_id,)).fetchone()
             await _send(websocket, {'type': 'board_version', 'board_id': board_id, 'version': row['version']})
             await _presence(board_id)
             # Quien entra tarde puede unirse al minuto actual sin pedir el estado
             # al resto de participantes. Se limita el tamaño de la memoria.
-            for state in list(_video_states.get(board_id, {}).values()):
+            video_states=cloud_live.state(board_id,'video',{}) if cloud_live.enabled() else _video_states.get(board_id,{})
+            for state in list(video_states.values()):
                 await _send(websocket, state)
             for state in html_live.states(board_id):
                 await _send(websocket, html_live.public(state))
@@ -222,6 +254,8 @@ def attach_live_sync(app, db_connection):
                     await websocket.close(code=1008)
                     break
                 clock = time.monotonic()
+                if cloud_live.enabled() and clock-participant.get('touch_at',0)>10:
+                    cloud_live.touch(participant['client_id']);participant['touch_at']=clock
                 traffic = participant['traffic']
                 while traffic and clock - traffic[0] > 1:
                     traffic.popleft()
@@ -249,6 +283,7 @@ def attach_live_sync(app, db_connection):
                         view['following'] = following
                     if participant.get('view') != view:
                         participant['view_changed'] = clock
+                        if cloud_live.enabled():cloud_live.touch(participant['client_id'],view)
                     participant['view'] = view
                     active = _active_view(board_id, user_id)
                     if active != view:
@@ -307,7 +342,7 @@ def attach_live_sync(app, db_connection):
                         continue
                     if found is None:
                         continue
-                    board_states = _video_states.setdefault(board_id, {})
+                    board_states = cloud_live.state(board_id,'video',{}) if cloud_live.enabled() else _video_states.setdefault(board_id,{})
                     if video_id not in board_states and len(board_states) >= 30:
                         # Acotar memoria de las pizarras con múltiples videos.
                         board_states.pop(next(iter(board_states)))
@@ -336,6 +371,7 @@ def attach_live_sync(app, db_connection):
                              'playing': playing, 'start': start, 'end': end,
                              'at': time.time(), 'client_id': participant['client_id']}
                     board_states[video_id] = state
+                    if cloud_live.enabled():cloud_live.state_save(board_id,'video',board_states)
                     await _broadcast(board_id, state, exclude=websocket)
                     continue
                 stroke_id = payload.get('stroke_id')
@@ -383,6 +419,9 @@ def attach_live_sync(app, db_connection):
         except Exception:
             pass
         finally:
+            if cloud_live.enabled():
+                try:cloud_live.unregister(participant['client_id'])
+                except Exception:pass
             await html_live.disconnect(board_id, participant['client_id'], _broadcast)
             if participant['active']:
                 await _broadcast(board_id, {'type': 'stroke_interrupted', 'board_id': board_id,
@@ -394,9 +433,11 @@ def attach_live_sync(app, db_connection):
             _locks.pop(websocket, None)
             if not peers:
                 _clients.pop(board_id, None)
-                html_live.clear(board_id)
-            else:
+                if not cloud_live.enabled() or not cloud_live.peers(board_id):html_live.clear(board_id)
+            if peers or cloud_live.enabled():
                 await _presence(board_id)
+            if cloud_live.enabled() and not _clients:
+                await cloud_live.stop_listener()
 
 
 SCENE_LISTS = ('strokes', 'texts', 'media', 'shapes', 'tables', 'graphs', 'videos')
@@ -504,7 +545,7 @@ def scene_patch(before: dict, after: dict):
 
 
 async def notify_board_saved(board_id: str, version: int, before=None, after=None, discarded_strokes=()):
-    if board_id not in _clients and board_id not in _ink_resolutions and not discarded_strokes:
+    if not cloud_live.enabled() and board_id not in _clients and board_id not in _ink_resolutions and not discarded_strokes:
         return
     event = {'type': 'board_version', 'board_id': board_id, 'version': version}
     settled = None
@@ -543,6 +584,11 @@ async def notify_board_saved(board_id: str, version: int, before=None, after=Non
 
 async def notify_avatar_changed(user_id: str, emoji: str):
     """Actualiza el emoji en todas las conexiones y listas de participantes."""
+    if cloud_live.enabled():
+        for board_id in cloud_live.avatar(user_id,emoji):
+            await _deliver(board_id,{'type':'_avatar_changed','user_id':user_id,'emoji':emoji})
+            await cloud_live.publish(board_id,{'type':'_avatar_changed','user_id':user_id,'emoji':emoji})
+        return
     for board_id, peers in list(_clients.items()):
         changed = False
         for participant in peers.values():

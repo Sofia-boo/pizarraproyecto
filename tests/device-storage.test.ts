@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto'
+import { createHash } from 'node:crypto'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { academicTemplate } from '../src/canvas/academicTemplates'
 import { createNote } from '../src/canvas/visualObjects'
@@ -40,6 +41,26 @@ function server(boardContent=content()) {
 }
 
 describe('private boards and shared device replicas',()=>{
+  it('assembles ranged image downloads exactly and never caches an incomplete image',async()=>{
+    server()
+    const data=new Uint8Array(1_500_000).fill(37)
+    fetched.mockImplementation(async(_input:string,init:RequestInit)=>{
+      const range=String((init.headers as Record<string,string>).Range)
+      const offset=Number(range.match(/bytes=(\d+)-/)![1])
+      const end=Math.min(offset+1_000_000,data.length)
+      return new Response(data.slice(offset,end),{status:206,headers:{'Content-Type':'image/png',
+        'Content-Range':`bytes ${offset}-${end-1}/${data.length}`}})
+    })
+    const image=await library.loadAsset('large')
+    expect(image?.size).toBe(data.length)
+    expect(createHash('sha256').update(new Uint8Array(await image!.arrayBuffer())).digest('hex'))
+      .toBe(createHash('sha256').update(data).digest('hex'))
+    expect(fetched).toHaveBeenCalledTimes(2)
+    expect((await (await device.deviceDB).get('assets',`${owner}:large`))?.size).toBe(data.length)
+    fetched.mockImplementation(async()=>new Response(new Uint8Array(5),{status:206,headers:{'Content-Range':'bytes 0-4/50'}}))
+    await expect(library.loadAsset('incomplete')).rejects.toThrow('incompleta')
+    expect(await (await device.deviceDB).get('assets',`${owner}:incomplete`)).toBeUndefined()
+  })
   it('keeps shared board placement in a local folder without changing other members folders',async()=>{
     server()
     const folder=await library.addFolder('Facultad')

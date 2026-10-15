@@ -165,6 +165,9 @@ class BackendTest(unittest.TestCase):
         # Each test is an independent session in the isolated temporary server.
         from reconocimiento_local.anonymous_users import _rate
         _rate.clear()
+        if getattr(self,'cloud_schema',None):
+            from reconocimiento_local.server import db_connection
+            with db_connection() as db:db.execute('DELETE FROM pizarra_rate')
 
     def test_four_digit_codes_preserve_personal_folders_and_rejoin_without_duplicates(self):
         import time
@@ -261,6 +264,25 @@ class BackendTest(unittest.TestCase):
         cls.storage = tempfile.TemporaryDirectory()
         cls.previous_data_dir = os.environ.get('PIZARRA_DATA_DIR')
         os.environ['PIZARRA_DATA_DIR'] = cls.storage.name
+        cls.cloud_schema=None
+        if os.environ.get('PIZARRA_TEST_DATABASE_URL'):
+            import asyncio, uuid, psycopg
+            from urllib.parse import urlsplit
+            from psycopg.conninfo import make_conninfo
+            from psycopg import sql
+            target=os.environ['PIZARRA_TEST_DATABASE_URL']
+            if urlsplit(target).hostname not in ('127.0.0.1','localhost'):
+                raise RuntimeError('Cloud tests require an isolated local PostgreSQL server.')
+            if os.name=='nt':asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            subprocess.run([sys.executable,'-c','from reconocimiento_local.server import app'],check=True,env={k:v for k,v in os.environ.items() if k not in ('VERCEL','DATABASE_URL','PIZARRA_DATABASE_URL')})
+            cls.cloud_schema='pizarra_test_'+uuid.uuid4().hex
+            with psycopg.connect(target,autocommit=True) as db:
+                db.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(cls.cloud_schema)))
+            scoped=make_conninfo(target,options='-c search_path='+cls.cloud_schema)
+            from scripts.migrar_neon import migrate
+            migrate(Path(cls.storage.name).resolve()/'pizarras.db',scoped)
+            os.environ['PIZARRA_DATABASE_URL']=scoped
+            os.environ['PIZARRA_DATABASE_DIRECT_URL']=scoped
         from reconocimiento_local.server import app
         cls.app = app
 
@@ -274,6 +296,14 @@ class BackendTest(unittest.TestCase):
         import gc
         gc.collect()
         cls.storage.cleanup()
+        if cls.cloud_schema:
+            from reconocimiento_local import cloud_database
+            cloud_database._pool.close();cloud_database._pool=None
+            import psycopg
+            from psycopg import sql
+            with psycopg.connect(os.environ['PIZARRA_TEST_DATABASE_URL'],autocommit=True) as db:
+                db.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(cls.cloud_schema)))
+            os.environ.pop('PIZARRA_DATABASE_URL',None);os.environ.pop('PIZARRA_DATABASE_DIRECT_URL',None)
 
     def test_login_save_isolation_and_restart(self):
         with TestClient(self.app, base_url='https://testserver') as client:
@@ -320,10 +350,9 @@ class BackendTest(unittest.TestCase):
 
         # A fresh interpreter reopens the same persistent storage and sessions.
         result = subprocess.run([sys.executable, '-c',
-            "from reconocimiento_local.server import db_connection; "
-            "db=db_connection(); "
-            "assert db.execute('SELECT content FROM boards WHERE id=?', (__import__('sys').argv[1],)).fetchone(); "
-            "db.close()", board_id], capture_output=True, text=True)
+            "from reconocimiento_local.server import db_connection\n"
+            "with db_connection() as db:\n"
+            "    assert db.execute('SELECT content FROM boards WHERE id=?', (__import__('sys').argv[1],)).fetchone()", board_id], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((Path(self.storage.name) / 'letter_samples.json').exists())
         paths = set(self.app.openapi()['paths'])
@@ -622,6 +651,8 @@ class BackendTest(unittest.TestCase):
             with client.websocket_connect(f'wss://testserver/api/live/{board}') as a:
                 a.receive_json()
                 a.receive_json()
+                if self.cloud_schema:
+                    self.assertEqual(a.receive_json()['type'],'ink_settled')
                 a.send_json({'type': 'camera_move', 'center': {'x': 400, 'y': 500}, 'zoom': 2})
                 client.cookies.clear()
                 other = client.post('/api/auth/guest', json={
@@ -630,6 +661,8 @@ class BackendTest(unittest.TestCase):
                 with client.websocket_connect(f'wss://testserver/api/live/{board}') as b:
                     b.receive_json()
                     presence = b.receive_json()
+                    if self.cloud_schema:
+                        self.assertEqual(b.receive_json()['type'],'ink_settled')
                     owner_view = next(u['view'] for u in presence['users'] if u['id'] == owner['id'])
                     self.assertEqual(owner_view, {'center': {'x': 400, 'y': 500}, 'zoom': 2})
                     a.receive_json()  # New participant.

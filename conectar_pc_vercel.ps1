@@ -1,7 +1,10 @@
 # Inicia el servidor de esta PC y un enlace temporal, sin reemplazar datos.
-param([string]$Pagina = 'https://pizarraproyecto.vercel.app')
+param([string]$Pagina = 'https://pizarraproyecto.vercel.app', [switch]$UsarServidorLocal)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+if ((Get-Content -LiteralPath 'vercel.json' -Raw | ConvertFrom-Json).framework -eq 'fastapi' -and -not $UsarServidorLocal) {
+    throw 'Las compartidas ya funcionan en Vercel con Neon. Este script es para el alojamiento anterior en la PC; no es necesario iniciarlo.'
+}
 if (Get-NetTCPConnection -State Listen -LocalPort 8765 -ErrorAction SilentlyContinue) {
     throw 'El puerto 8765 está ocupado. Cerrá el servidor anterior antes de conectar esta versión.'
 }
@@ -42,7 +45,7 @@ try {
         } catch { Start-Sleep -Milliseconds 200 }
     }
     if (-not $pizarraReady) { throw 'El servidor no respondió a la comprobación de inicio. Revisá logs/.' }
-    & node scripts/conectar-vercel.mjs $pizarraUrl $Pagina
+    & node scripts/conectar-vercel.mjs $pizarraUrl $Pagina --usar-servidor-local
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar Vercel.' }
     [pscustomobject]@{ServidorPID=$pizarraServer.Id;TunelPID=$pizarraTunnel.Id;URL=$pizarraUrl;Pagina=$Pagina} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $pizarraLogs 'conexion-actual.json')
     Write-Host "Página en Vercel: $Pagina"

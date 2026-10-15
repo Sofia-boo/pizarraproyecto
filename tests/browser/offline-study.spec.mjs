@@ -62,6 +62,8 @@ test('offline private study opens in a new window, imports PDF, draws, calculate
   await offline.getByRole('button',{name:'IA: opciones de reconocimiento',exact:true}).click()
   await offline.getByRole('menuitem',{name:/Consultar con ChatGPT/}).click()
   await expect(offline.getByRole('dialog',{name:'ChatGPT',exact:true})).toContainText('Sin conexión')
+  await expect(offline.getByRole('button',{name:'Conectar ChatGPT',exact:true})).toBeDisabled()
+  await offline.getByText('Consulta manual (opcional)',{exact:true}).click()
   await expect(offline.getByRole('button',{name:'Abrir ChatGPT en este dispositivo',exact:true})).toBeDisabled()
 })
 

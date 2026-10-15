@@ -1,87 +1,33 @@
-# Vercel + tu computadora + copias en cada dispositivo
+# Vercel + Neon Free
 
-La página permanece en **https://pizarraproyecto.vercel.app**. No requiere Render.
+Producción: **https://pizarraproyecto.vercel.app**. La PC no necesita permanecer encendida.
 
-- **Privadas:** se crean y guardan en IndexedDB, en el navegador del usuario.
-  No se envían al servidor. Se abren con «Abrir privadas y copias de este dispositivo».
-- **Compartidas:** la copia principal se guarda en `datos/pizarras.db` de tu PC.
-  Al abrir una, se descarga su contenido e imágenes al navegador de ese usuario.
-  Al guardar o recibir una versión nueva, también se actualiza esa copia local.
-- **Servidor apagado:** se pueden abrir las privadas y las compartidas descargadas.
-  Los cambios en compartidas quedan pendientes localmente. Al reconectar se usa
-  la versión original para evitar reemplazar cambios ajenos. Si hay conflicto,
-  «Guardar copia como privada» permite conservar una versión independiente.
+- Vercel sirve el frontend compilado y la función FastAPI `web_host:app`, en São Paulo (`gru1`). Fluid Compute está habilitado.
+- Neon Free guarda las cuentas, pizarras compartidas, carpetas, permisos, archivos e historial. No hay base de producción en el disco temporal de Vercel.
+- Las privadas y copias descargadas siguen en cada dispositivo; se abren con «Abrir privadas y copias de este dispositivo».
+- Sin conexión, las ediciones compartidas quedan pendientes localmente y se combinan al volver a conectar. Descargar respaldos sigue siendo recomendable.
 
-Una copia local no convierte las computadoras de los usuarios en servidores:
-otros participantes siguen necesitando tu PC conectada para colaborar y sincronizar.
-Cada copia pertenece a ese navegador y dominio. No se guarda automáticamente en
-una carpeta visible del explorador de archivos. «Descargar respaldo» exporta un
-archivo JSON con contenido e imágenes; «Importar respaldo» lo abre como privada.
-No se pueden retirar copias que otro usuario ya descargó.
+## Publicar
 
-## Primera conexión con Vercel
+Vercel publica la rama `main`. `vercel.json`, `pyproject.toml` y `.python-version` definen la compilación (`npm ci && npm run build`), Python 3.12, el backend y los archivos estáticos del CDN.
 
-1. Desde PowerShell, en esta carpeta, ejecutá:
+`DATABASE_URL` y `DATABASE_URL_UNPOOLED` las proporciona la integración Neon del proyecto. Nunca poner sus valores en Git, el frontend o comandos de consola. `PIZARRA_DATABASE_URL` y `PIZARRA_DATABASE_DIRECT_URL` permiten destinos explícitos para pruebas aisladas. `PIZARRA_PUBLIC_ORIGINS` admite la URL pública; en producción `PIZARRA_WS_ORIGIN` debe estar ausente o apuntar al mismo dominio de Vercel, nunca al túnel de la PC.
 
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File .\conectar_pc_vercel.ps1
-   ```
+La migración inicial se ejecuta una sola vez con `scripts/migrar_neon.py`. Requiere un destino vacío y conserva SQLite. No ejecutar una segunda migración sobre datos nuevos de Neon. Los cambios de esquema futuros necesitan migraciones específicas.
 
-2. El script compila, inicia Python y un túnel HTTPS temporal de Cloudflare,
-   y genera `vercel.json`. Los procesos quedan en segundo plano; sus logs están
-   en `logs/`. Si el puerto 8765 está ocupado, cerrá el servidor anterior primero.
-3. Subí los cambios y `vercel.json` a GitHub. Vercel publica desde `main`.
-4. Abrí el enlace de Vercel. Las privadas funcionan sin iniciar sesión.
-   Para crear o editar compartidas, ingresá o creá una cuenta.
-5. En Mis pizarras elegí «Privada en este dispositivo» o «Compartida en el servidor
-   + copia local». «Publicar copia compartida» conserva la privada original.
-   Después, desde Perfil, creá la invitación para otros participantes.
-
-La conexión temporal cambia al reiniciar el túnel: hay que regenerar y subir
-`vercel.json`. Para usar una dirección fija, configurá un túnel con hostname
-estable en Cloudflare y ejecutá:
-
-```powershell
-node scripts/conectar-vercel.mjs https://TU-HOSTNAME-FIJO
-```
-
-Reiniciá `iniciar_pizarra.ps1` para cargar `hosting.local.json` y subí el
-`vercel.json` generado. La página sigue alojada en Vercel: solo `/api/` y
-`/recognize/` se reenvían a tu PC. La conexión en vivo usa tickets de un solo uso
-para acceder al túnel sin compartir cookies entre dominios.
-
-## Apagar la conexión
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\detener_pc_vercel.ps1
-```
-
-Tu PC debe estar encendida y conectada mientras haya colaboración. Apagarla
-no borra `datos/` ni las copias descargadas en los navegadores.
-
-## Datos anteriores
-
-No se borran ni se publican `datos/pizarras.db`, usuarios o contraseñas.
-Las pizarras existentes en el servidor se mantienen allí; las nuevas son privadas
-locales por defecto. Las versiones antiguas que usaban IndexedDB se recuperan
-una sola vez como «Pizarra local recuperada», si existen en ese navegador y dominio.
-No se pueden leer automáticamente los datos guardados bajo otro dominio o puerto.
-
-El navegador puede borrar datos si el usuario limpia el sitio o bajo presión de
-almacenamiento. Se solicita almacenamiento persistente, pero conviene descargar
-respaldos. Cambiar de navegador, dominio o dispositivo no traslada las privadas.
-
-## Verificación
+## Verificar
 
 ```powershell
 npm.cmd test
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.venv\Scripts\python.exe -m unittest discover -s tests
 npm.cmd run build
 npm.cmd run test:browser
 ```
 
-Las pruebas de navegador usan Chrome instalado. Las pruebas Python usan una
-base temporal; no modifican las pizarras reales.
+Las pruebas Python usan datos temporales. Para probar PostgreSQL y dos procesos reales, apuntar `PIZARRA_TEST_DATABASE_URL` a un PostgreSQL **local de pruebas** y ejecutar `tests.test_backend` y `tests.test_cloud` en comandos separados; crean y eliminan su propio esquema. No aceptan una URL de nube para prevenir pruebas sobre datos reales.
 
-Documentación: https://vercel.com/docs/routing/rewrites y
-https://developers.cloudflare.com/tunnel/get-started/
+## Instalación local
+
+`iniciar_pizarra.ps1` sigue sirviendo SQLite para uso local explícito. La base local es una copia anterior a la migración, no una réplica automática de Neon. No iniciar los scripts antiguos de túnel para usar la página pública. Reemplazar la configuración de nube con esos scripts requiere `--usar-servidor-local` o `-UsarServidorLocal` explícitamente.
+
+Consultar [disponibilidad, respaldo y límites gratuitos](docs/DISPONIBILIDAD_SERVIDOR.md).

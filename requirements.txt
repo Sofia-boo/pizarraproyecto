@@ -5,3 +5,5 @@ Pillow==12.3.0
 python-multipart>=0.0.32,<0.1
 httpx>=0.28,<1
 scrapling==0.4.15
+psycopg[binary]>=3.3,<4
+psycopg_pool>=3.3,<4

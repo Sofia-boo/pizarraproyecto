@@ -1,23 +1,28 @@
 # Disponibilidad de las pizarras compartidas
 
-La configuración actual tiene dos alojamientos: Vercel sirve la página y reenvía `/api/` al servidor Python de la PC mediante un Quick Tunnel de Cloudflare. SQLite y los archivos compartidos están en `datos/` de esa PC. Las privadas y las copias descargadas se guardan en cada dispositivo.
+La página y la API se alojan en Vercel. Las cuentas, sesiones, carpetas, pizarras, permisos, imágenes e historial se guardan en PostgreSQL de **Neon Free**. La PC puede apagarse: no sirve solicitudes de producción ni guarda la única copia de las compartidas.
 
-Apagar o suspender la PC, cerrar el servidor Python o perder el túnel deja inaccesibles el inicio de sesión y la colaboración. Vercel puede seguir mostrando la página y responder HTTP 502 a las solicitudes del servidor. Un túnel nuevo cambia su dirección y exige actualizar también `PIZARRA_WS_ORIGIN`, `hosting.local.json` y `vercel.json`.
+El error 502 del alojamiento anterior aparecía cuando Vercel reenviaba `/api/` a un túnel de Cloudflare cuyo servidor era esta PC. Al apagarla, suspenderla o caducar el túnel, la página seguía abriendo pero la API dejaba de responder. Se retiró ese reenvío de `vercel.json`.
 
-El 15 de octubre de 2026 se comprobó que el puerto local 8765 rechazaba conexiones y que el hostname anterior no resolvía por DNS. Se inició un servidor con la misma carpeta de datos, se creó un túnel nuevo y se actualizó el destino público. Esta recuperación mantiene la dependencia de la PC.
+## Sincronización
 
-## Funcionamiento con la PC apagada
+Los WebSockets se ejecutan en la función FastAPI con Fluid Compute. Las instancias comparten notificaciones mediante PostgreSQL LISTEN/NOTIFY, un registro breve de eventos y estado compartido de presencia, HTML, videos y confirmaciones de tinta. Los guardados comparan la versión dentro del UPDATE: una escritura concurrente recibe 409 y el cliente combina los cambios.
 
-Hace falta alojar el backend y los datos en un servidor independiente con HTTPS, WebSockets y almacenamiento persistente. Cambiar únicamente a un hostname fijo no mantiene encendida la PC que ejecuta Python.
+Vercel cierra las conexiones al llegar a su duración máxima (300 segundos en esta configuración). El cliente vuelve a conectarse y recupera la versión persistida y las confirmaciones de borrado. Al cerrar el último socket se cierra el listener para que la base pueda suspender su cómputo durante períodos sin uso.
 
-El repositorio ya incluye un `Dockerfile` que compila la página y ejecuta el backend con un solo trabajador. La migración debe:
+## Datos y respaldo
 
-1. Preparar el alojamiento y un volumen persistente para `PIZARRA_DATA_DIR`, que por defecto es `/app/datos` en la imagen.
-2. Crear una copia consistente de SQLite, con el servidor detenido o la API de respaldo de SQLite, y copiar los archivos de `datos/`. Conservar la copia local original.
-3. Configurar `PIZARRA_PUBLIC_ORIGINS=https://pizarraproyecto.vercel.app` y `PIZARRA_WS_ORIGIN` con la URL HTTPS del nuevo servidor.
-4. Probar salud, cuentas, archivos y colaboración con datos aislados; verificar también la conservación de los datos al reiniciar el servicio.
-5. Cambiar el destino de Vercel mediante `scripts/conectar-vercel.mjs` y comprobarlo antes de retirar el túnel de la PC.
+`scripts/migrar_neon.py --apply` copia una instantánea consistente de SQLite a un destino PostgreSQL vacío, dentro de una transacción. Rechaza sobrescribir tablas existentes y verifica todos los valores de cada tabla, incluidos archivos y hashes de contraseñas. No imprime datos personales ni claves. Conserva la base original y genera `datos/backups/antes-neon-*.db`.
 
-El proveedor, la cuenta y las condiciones del alojamiento siguen pendientes. No se creó ningún servicio de pago ni se trasladaron los datos a un tercero.
+Las privadas y las copias sin conexión siguen en IndexedDB de cada dispositivo. No se trasladan a Neon. Los respaldos previos a eliminar usuarios también se conservan en PostgreSQL; las credenciales se configuran únicamente como variables privadas en Vercel.
 
-Cloudflare documenta que los [Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) son temporales, están destinados a pruebas y no tienen garantía de disponibilidad.
+## Límites gratuitos
+
+- Neon está en Free; Vercel permanece en Hobby. No se activó un plan pago. Si se alcanzan las cuotas, el servicio puede limitarse o pausarse.
+- Neon Free publica 1 GB y 100 horas de cómputo por proyecto al mes; revisar el panel para el consumo real y los límites vigentes.
+- Cada imagen puede tener hasta 30 MB. Los archivos grandes viajan en partes de hasta 1 MB y se publican al completar la transferencia. Las páginas de PDF siguen convirtiéndose en imágenes como antes.
+- El contenido JSON de una pizarra sigue sujeto al límite de solicitud/respuesta de Vercel (4,5 MB). Los cambios que no se pueden enviar quedan pendientes en la copia local; las privadas no tienen ese límite de red.
+- La primera solicitud tras un período sin uso puede tardar más mientras arranca el servicio. Estar en la nube no garantiza disponibilidad absoluta.
+- Los programas que requieren software en la PC (Chrome automatizado o un Judge0 local) no se trasladan a Vercel. El uso local de ChatGPT en Android y el flujo de copiar/pegar siguen siendo independientes.
+
+Documentación: [FastAPI en Vercel](https://vercel.com/docs/frameworks/backend/fastapi), [WebSockets](https://vercel.com/docs/functions/websockets), [límites de funciones](https://vercel.com/docs/functions/limitations), [Neon Free](https://neon.com/pricing).

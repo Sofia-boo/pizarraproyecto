@@ -142,6 +142,9 @@ def owner_id(db):
 
 
 def migrate(db_connection, data_dir: Path):
+    from reconocimiento_local.cloud_database import enabled
+    if enabled():
+        return  # Schema and original accounts were migrated explicitly.
     # Llamar con servidor detenido. La copia SQLite es consistente, incluso con WAL.
     with db_connection() as db:
         existing = {r['name'] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -294,6 +297,17 @@ def issue_session(db, response: JSONResponse, request: Request, uid: str):
 
 def rate_limit(request: Request, category: str = 'recover'):
     ident = request.client.host if request.client else 'unknown'
+    from reconocimiento_local.cloud_database import enabled, connection
+    if enabled():
+        with connection() as db:
+            count=db.execute('''INSERT INTO pizarra_rate(key,count,expires) VALUES (?,1,?)
+              ON CONFLICT(key) DO UPDATE SET
+                count=CASE WHEN pizarra_rate.expires<? THEN 1 ELSE pizarra_rate.count+1 END,
+                expires=CASE WHEN pizarra_rate.expires<? THEN excluded.expires ELSE pizarra_rate.expires END
+              RETURNING count''',(digest(ident+':'+category),time.time()+900,time.time(),time.time())).fetchone()[0]
+        if count>=(31 if category=='guest' else 13):
+            raise HTTPException(429,'Demasiados intentos. Espera 15 minutos.')
+        return
     now = time.monotonic()
     attempts = _rate[(ident,category)]
     while attempts and now - attempts[0] > 900:
@@ -615,16 +629,19 @@ def attach_anonymous_users(app, db_connection, data_dir):
             return JSONResponse({'detail': 'Origen no autorizado'}, status_code=403)
         if path in ('/api/auth/me','/api/auth/guest','/api/auth/login','/api/auth/recover','/api/auth/logout','/api/auth/avatar','/api/auth/set-password'):
             return await call_next(request)
+        # Buffer JSON before acquiring a database connection; never keep one
+        # checked out while waiting for an upload or another request handler.
+        if method in ('POST','PUT','PATCH') and path.startswith(('/api/boards','/api/folders','/api/calendars','/api/calendar/events')):
+            await request.body()
+        separate_permissions=path.startswith('/api/share/') or path=='/api/admin/users' or path.startswith('/api/admin/users/')
         with db_connection() as db:
             user = find_user(db, request.cookies.get(COOKIE))
             if not user:
                 return JSONResponse({'detail': 'Iniciá sesión como invitado'}, status_code=401)
             uid = user['id']
             request.state.user_id = uid
-            # Todas las cuentas pueden aportar ejemplos al reconocedor compartido.
-            if path.startswith('/api/share/') or path == '/api/admin/users' or path.startswith('/api/admin/users/'):
-                # Las rutas admin hacen su propia comprobación de is_admin en el servidor.
-                return await call_next(request)
+            # Share/admin routes check their own roles after this connection
+            # is released, rather than reserving two pool slots per request.
             if path == '/api/library' and method == 'GET':
                 folders = [dict(r) for r in db.execute('''SELECT id,name FROM folders
                     WHERE owner_user_id=? ORDER BY name''', (uid,))]
@@ -718,11 +735,8 @@ def attach_anonymous_users(app, db_connection, data_dir):
                         linked = db.execute('SELECT 1 FROM board_assets WHERE board_id=? AND asset_id=?', (bid,asset)).fetchone()
                         if not (owned or linked):
                             return JSONResponse({'detail':'Imagen sin permisos'},status_code=403)
-                    # El handler guarda con control optimista de versiones.
-                    result = await call_next(request)
-                    # The handler updates links atomically with the board. A
-                    # second transaction here could overwrite a newer save.
-                    return result
+                    # The handler saves the scene and asset links atomically
+                    # after this validation connection has been released.
             asset_match = ASSET_PATH.fullmatch(path)
             if asset_match:
                 asset_id = asset_match.group(1)
@@ -732,11 +746,6 @@ def attach_anonymous_users(app, db_connection, data_dir):
                     existing = db.execute('SELECT owner_user_id FROM assets WHERE id=?',(asset_id,)).fetchone()
                     if existing and existing['owner_user_id']!=uid:
                         return JSONResponse({'detail':'Imagen de otro usuario'},status_code=403)
-                    result = await call_next(request)
-                    if result.status_code < 300:
-                        db.execute('UPDATE assets SET owner_user_id=? WHERE id=?',(uid,asset_id))
-                        db.commit()
-                    return result
             # Calendarios: API propia aislada por usuario, sin romper los antiguos.
             if path == '/api/calendars' and method == 'GET':
                 return JSONResponse([dict(row) for row in db.execute('''SELECT id,name FROM calendars
@@ -780,14 +789,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                     return JSONResponse({'detail':'Datos inválidos'},status_code=422)
                 if not isinstance(calendar_id,str) or not calendar_owned(db,uid,calendar_id):
                     return JSONResponse({'detail':'Calendario ajeno'},status_code=403)
-                result=await call_next(request)
-                if result.status_code<300:
-                    # Handler devuelve el ID creado: evitemos consumir StreamingResponse;
-                    # localizar el último evento nuevo por ID no es fiable. En vez de eso
-                    # validar y dejar que el ORM original lo cree; asociar durante la
-                    # inserción mediante SQLite trigger (ver más abajo).
-                    pass
-                return result
+                # The insertion trigger associates the owner in the handler.
             event_match=EVENT_PATH.fullmatch(path)
             if event_match:
                 eid=event_match.group(1)
@@ -802,7 +804,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                         return JSONResponse({'detail':'Calendario ajeno'},status_code=403)
             # Los otros endpoints /api y /recognize requieren sesión; por defecto no
             # exponer futuras rutas nuevas que puedan saltarse el control de permisos.
-            allowed = (path.startswith('/api/chatgpt/') or path == '/api/code/run' or path.startswith('/api/code/results/') or
+            allowed = (separate_permissions or path=='/api/calendar/events' or path.startswith('/api/chatgpt/') or path == '/api/code/run' or path.startswith('/api/code/results/') or
                        path == '/health' or path.startswith('/api/excel/') or
                        path.startswith('/api/calendar/parse-handwriting') or path.startswith('/api/boards/') or
                        path.startswith('/api/folders/') or path.startswith('/api/assets/') or

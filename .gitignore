@@ -51,3 +51,5 @@ android/local.properties
 android/**/build/
 *.jks
 *.keystore
+
+.vercel

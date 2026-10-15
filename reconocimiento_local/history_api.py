@@ -32,51 +32,53 @@ def attach_version_history(app, db_connection: Callable):
     if getattr(app.state, 'board_history_attached', False):
         return
 
-    with db_connection() as db:
-        db.executescript(f"""
-        CREATE TABLE IF NOT EXISTS board_history (
-          id TEXT PRIMARY KEY,
-          board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-          board_version INTEGER NOT NULL,
-          kind TEXT NOT NULL CHECK(kind IN ('auto','manual','safety')),
-          title TEXT NOT NULL DEFAULT '',
-          content TEXT NOT NULL,
-          size_bytes INTEGER NOT NULL,
-          created_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_board_history_by_board
-          ON board_history(board_id, created_at DESC);
-        -- Reinstalar el trigger para actualizar instalaciones que usaban 5 minutos.
-        DROP TRIGGER IF EXISTS trg_board_history_on_content_change;
-        CREATE TRIGGER trg_board_history_on_content_change
-        AFTER UPDATE OF content ON boards
-        WHEN (CASE WHEN json_valid(NEW.content) AND json_valid(OLD.content)
-            THEN json_remove(NEW.content, '$.camera') != json_remove(OLD.content, '$.camera')
-            ELSE NEW.content != OLD.content END) AND (
-          NOT EXISTS (
-            SELECT 1 FROM board_history
-              WHERE board_id = NEW.id AND kind='auto'
-          )
-          OR (julianday('now') - (
-            SELECT MAX(julianday(created_at)) FROM board_history
-             WHERE board_id = NEW.id AND kind='auto'
-          )) * 1440 >= {AUTO_INTERVAL_MINUTES}
-        )
-        BEGIN
-          INSERT INTO board_history
-            (id, board_id, board_version, kind, title, content, size_bytes, created_at)
-          VALUES
-            (lower(hex(randomblob(16))), NEW.id, NEW.version, 'auto', '',
-             NEW.content, length(CAST(NEW.content AS BLOB)),
-             strftime('%Y-%m-%dT%H:%M:%fZ','now'));
-          DELETE FROM board_history WHERE id IN (
-            SELECT id FROM board_history
-             WHERE board_id=NEW.id AND kind='auto'
-             ORDER BY created_at DESC, rowid DESC
-             LIMIT -1 OFFSET {AUTO_KEEP_PER_BOARD}
-          );
-        END;
-        """)
+    from reconocimiento_local.cloud_database import enabled
+    if not enabled():
+        with db_connection() as db:
+            db.executescript(f"""
+            CREATE TABLE IF NOT EXISTS board_history (
+              id TEXT PRIMARY KEY,
+              board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+              board_version INTEGER NOT NULL,
+              kind TEXT NOT NULL CHECK(kind IN ('auto','manual','safety')),
+              title TEXT NOT NULL DEFAULT '',
+              content TEXT NOT NULL,
+              size_bytes INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_board_history_by_board
+              ON board_history(board_id, created_at DESC);
+            -- Reinstalar el trigger para actualizar instalaciones que usaban 5 minutos.
+            DROP TRIGGER IF EXISTS trg_board_history_on_content_change;
+            CREATE TRIGGER trg_board_history_on_content_change
+            AFTER UPDATE OF content ON boards
+            WHEN (CASE WHEN json_valid(NEW.content) AND json_valid(OLD.content)
+                THEN json_remove(NEW.content, '$.camera') != json_remove(OLD.content, '$.camera')
+                ELSE NEW.content != OLD.content END) AND (
+              NOT EXISTS (
+                SELECT 1 FROM board_history
+                  WHERE board_id = NEW.id AND kind='auto'
+              )
+              OR (julianday('now') - (
+                SELECT MAX(julianday(created_at)) FROM board_history
+                 WHERE board_id = NEW.id AND kind='auto'
+              )) * 1440 >= {AUTO_INTERVAL_MINUTES}
+            )
+            BEGIN
+              INSERT INTO board_history
+                (id, board_id, board_version, kind, title, content, size_bytes, created_at)
+              VALUES
+                (lower(hex(randomblob(16))), NEW.id, NEW.version, 'auto', '',
+                 NEW.content, length(CAST(NEW.content AS BLOB)),
+                 strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+              DELETE FROM board_history WHERE id IN (
+                SELECT id FROM board_history
+                 WHERE board_id=NEW.id AND kind='auto'
+                 ORDER BY created_at DESC, rowid DESC
+                 LIMIT -1 OFFSET {AUTO_KEEP_PER_BOARD}
+              );
+            END;
+            """)
 
     router = APIRouter(prefix='/api/boards/{board_id}/history', tags=['board-history'])
 
@@ -143,7 +145,7 @@ def attach_version_history(app, db_connection: Callable):
         return {**as_metadata(snapshot), 'content': content}
 
     @router.post('/{snapshot_id}/restore')
-    def restore_version(board_id: str, snapshot_id: str, item: RestoreVersionInput):
+    async def restore_version(board_id: str, snapshot_id: str, item: RestoreVersionInput):
         with db_connection() as db:
             board = get_board(db, board_id)
             check_version(board, item.expected_version)
@@ -152,9 +154,18 @@ def attach_version_history(app, db_connection: Callable):
             safety_id = create_snapshot(db, board_id, board['version'], board['content'],
                                         'safety', 'Antes de restaurar')
             version = board['version'] + 1
-            db.execute('''UPDATE boards SET content=?, version=?, updated_at=?
-              WHERE id=?''', (snapshot['content'], version,
-                             datetime.now(timezone.utc).isoformat(), board_id))
+            changed = db.execute('''UPDATE boards SET content=?, version=?, updated_at=?
+              WHERE id=? AND version=?''', (snapshot['content'], version,
+                             datetime.now(timezone.utc).isoformat(), board_id, board['version']))
+            if not changed.rowcount:
+                raise HTTPException(409, 'La pizarra cambio durante la restauracion.')
+            content=json.loads(snapshot['content'])
+            db.execute('DELETE FROM board_assets WHERE board_id=?',(board_id,))
+            for media in content.get('media',[]):
+                if isinstance(media,dict) and isinstance(media.get('assetId'),str):
+                    db.execute('INSERT OR IGNORE INTO board_assets VALUES (?,?)',(board_id,media['assetId']))
+        from reconocimiento_local.live_sync_api import notify_board_saved
+        await notify_board_saved(board_id,version,json.loads(board['content']),content)
         return {'ok': True, 'new_version': version, 'safety_snapshot_id': safety_id}
 
     @router.delete('/{snapshot_id}')

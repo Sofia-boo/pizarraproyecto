@@ -16,7 +16,8 @@ def readiness():
 
 app.add_middleware(CORSMiddleware,
     allow_origin_regex=r'^http://(localhost|127\.0\.0\.1|(?:[0-9]{1,3}\.){3}[0-9]{1,3}):517[3-9]$',
-    allow_methods=['GET','POST','PUT','DELETE'],allow_headers=['Content-Type'])
+    allow_methods=['GET','POST','PUT','DELETE'],allow_headers=['Content-Type','Range'],
+    expose_headers=['Content-Range'])
 
 # Biblioteca de pizarras: SQLite y recursos binarios en el equipo servidor.
 import sqlite3
@@ -27,6 +28,7 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import Response
 
 from reconocimiento_local.storage_paths import DATA_DIR
+from reconocimiento_local import cloud_database
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = DATA_DIR / 'pizarras.db'
 
@@ -39,6 +41,8 @@ class _ClosingConnection(sqlite3.Connection):
 
 
 def db_connection():
+    if cloud_database.enabled():
+        return cloud_database.connection()
     con = sqlite3.connect(DB_FILE, timeout=15, factory=_ClosingConnection)
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA journal_mode=WAL')
@@ -46,6 +50,11 @@ def db_connection():
     return con
 
 def init_library():
+    if cloud_database.enabled():
+        with db_connection() as db:
+            if not db.execute("SELECT 1 FROM pizarra_meta WHERE key='schema_version' AND value='1'").fetchone():
+                raise RuntimeError('Primero hay que migrar la base de datos; no se crea una biblioteca vacia en produccion.')
+        return
     with db_connection() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS folders (
@@ -154,9 +163,11 @@ async def save_board(board_id: str, item: BoardSave):
                                            if stroke.get('id') not in discarded]}
         validate_visual_content(content)
         new_version = item.version + 1
-        db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
+        saved = db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=? AND version=?',
                    (json.dumps(content, ensure_ascii=False), new_version,
-                    datetime.now(timezone.utc).isoformat(), board_id))
+                    datetime.now(timezone.utc).isoformat(), board_id, item.version))
+        if not saved.rowcount:
+            raise HTTPException(409, 'La pizarra cambio durante el guardado; se combinaran los cambios.')
         # Publish image permissions in the SAME transaction as the scene, before
         # notifying peers. Otherwise the first GET after a WS event returns 404.
         db.execute('DELETE FROM board_assets WHERE board_id=?', (board_id,))
@@ -196,17 +207,73 @@ async def put_asset(asset_id: str, request: HTTPRequest):
     mime = request.headers.get('content-type', 'image/png').split(';')[0]
     if mime not in ('image/png','image/jpeg','image/webp'):
         raise HTTPException(415, 'Formato no admitido')
+    upload_id = request.query_params.get('upload_id')
+    if upload_id:
+        import time
+        if not cloud_database.enabled() or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',upload_id):
+            raise HTTPException(400,'Carga dividida no disponible')
+        try:
+            offset=int(request.query_params.get('offset','-1'))
+            total=int(request.query_params.get('total','0'))
+        except ValueError:
+            raise HTTPException(400,'Parte de archivo invalida')
+        if not 0<total<=30_000_000 or not 0<=offset<total or not 0<len(data)<=1_000_000 or offset+len(data)>total:
+            raise HTTPException(413,'Parte de archivo demasiado grande')
+        uid=request.state.user_id
+        with db_connection() as db:
+            db.execute('SELECT pg_advisory_xact_lock(hashtextextended(?,0))',('asset:'+asset_id,))
+            row=db.execute('SELECT * FROM pizarra_asset_uploads WHERE asset_id=? AND user_id=? AND upload_id=?',
+                           (asset_id,uid,upload_id)).fetchone()
+            if row:
+                if row['total']!=total or row['mime']!=mime or offset!=row['next_offset']:
+                    raise HTTPException(409,'Reinicia la transferencia del archivo')
+                merged=bytes(row['data'])+data
+            elif offset==0:merged=data
+            else:raise HTTPException(409,'Falta la primera parte del archivo')
+            if len(merged)==total:
+                owner=db.execute('SELECT owner_user_id FROM assets WHERE id=?',(asset_id,)).fetchone()
+                if owner and owner['owner_user_id']!=uid:raise HTTPException(403,'Imagen de otro usuario')
+                written=db.execute('''INSERT INTO assets(id,data,mime,owner_user_id) VALUES(?,?,?,?)
+                  ON CONFLICT(id) DO UPDATE SET data=excluded.data,mime=excluded.mime
+                  WHERE assets.owner_user_id=excluded.owner_user_id''',(asset_id,merged,mime,uid))
+                if not written.rowcount:raise HTTPException(403,'Imagen de otro usuario')
+                db.execute('DELETE FROM pizarra_asset_uploads WHERE asset_id=? AND user_id=?',(asset_id,uid))
+            else:
+                db.execute('''INSERT INTO pizarra_asset_uploads VALUES(?,?,?,?,?,?,?,?)
+                  ON CONFLICT(asset_id,user_id,upload_id) DO UPDATE SET data=excluded.data,
+                  next_offset=excluded.next_offset,updated=excluded.updated''',
+                  (asset_id,uid,upload_id,mime,total,len(merged),merged,time.time()))
+        return {'ok':True,'complete':len(merged)==total}
     with db_connection() as db:
-        db.execute('''INSERT INTO assets (id,data,mime) VALUES (?,?,?)
-                      ON CONFLICT(id) DO UPDATE SET data=excluded.data,mime=excluded.mime''',
-                   (asset_id,data,mime))
+        written=db.execute('''INSERT INTO assets (id,data,mime,owner_user_id) VALUES (?,?,?,?)
+                      ON CONFLICT(id) DO UPDATE SET data=excluded.data,mime=excluded.mime
+                      WHERE assets.owner_user_id=excluded.owner_user_id''',
+                   (asset_id,data,mime,request.state.user_id))
+        if not written.rowcount:raise HTTPException(403,'Imagen de otro usuario')
     return {'ok': True}
 
 @app.get('/api/assets/{asset_id}')
-def get_asset(asset_id: str):
+def get_asset(asset_id: str, request: HTTPRequest):
+    requested=request.headers.get('range')
+    if requested:
+        match=re.fullmatch(r'bytes=(\d+)-(\d+)',requested)
+        if not match:raise HTTPException(416,'Rango invalido')
+        start,end=map(int,match.groups())
+        if end<start or end-start>=1_000_000:raise HTTPException(416,'Rango invalido')
+        with db_connection() as db:
+            row=db.execute('SELECT substr(data,?,?) AS data,length(data) AS total,mime FROM assets WHERE id=?',
+                           (start+1,end-start+1,asset_id)).fetchone()
+        if not row:raise HTTPException(404,'Imagen inexistente')
+        total=row['total']
+        if start>=total:raise HTTPException(416,'Rango invalido')
+        end=min(end,total-1)
+        return Response(content=bytes(row['data']),status_code=206,media_type=row['mime'],
+                        headers={'Content-Range':f'bytes {start}-{end}/{total}','Accept-Ranges':'bytes'})
     with db_connection() as db:
         row = db.execute('SELECT data,mime FROM assets WHERE id=?',(asset_id,)).fetchone()
     if not row: raise HTTPException(404, 'Imagen inexistente')
+    if cloud_database.enabled() and len(row['data'])>4_000_000:
+        raise HTTPException(413,'Actualiza la aplicacion para descargar este archivo grande')
     return Response(content=row['data'], media_type=row['mime'])
 
 

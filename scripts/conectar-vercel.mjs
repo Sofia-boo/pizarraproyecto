@@ -1,4 +1,9 @@
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+
+const current=JSON.parse(readFileSync(new URL('../vercel.json',import.meta.url),'utf8'))
+if(current.framework==='fastapi'&&!process.argv.includes('--usar-servidor-local')) {
+  throw new Error('La API ya funciona en Vercel con Neon. Este script volvería a hacerla depender de la PC. Para una reversión explícita usá --usar-servidor-local.')
+}
 
 const destination = new URL(process.argv[2] || '')
 const publicSite = new URL(process.argv[3] || 'https://pizarraproyecto.vercel.app')
