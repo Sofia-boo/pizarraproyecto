@@ -244,7 +244,7 @@ export async function loadBoard(): Promise<BoardContentWithExtras | undefined> {
   }
 }
 
-export async function saveBoard(content: BoardContentWithExtras) {
+export async function saveBoard(content: BoardContentWithExtras,discardedStrokes:string[]=[]) {
   const id = activeId
   const key = cacheKey(id)
   const confirmed=committed?.key===key?committed:null
@@ -277,10 +277,21 @@ export async function saveBoard(content: BoardContentWithExtras) {
   }
   // Persist first, so a disconnect or rejected save cannot discard the user's work.
   const draftBase=confirmed?{version:confirmed.version,content:confirmed.content}:previous.draftBase??{version:previous.version,content:previous.content}
-  await writeDeviceBoard({ ...previous, draft: content, draftBase })
+  const present=new Set(content.strokes.map(stroke=>stroke.id))
+  const discarded=[...new Set([...(previous.discardedStrokes??[]),...discardedStrokes])].filter(id=>!present.has(id))
+  const discardedSet=new Set(discarded)
+  const patchFor=(base:BoardContentWithExtras,next:BoardContentWithExtras)=>{
+    const patch=createScenePatch(base,next)
+    if(patch&&discarded.length){
+      const strokes=patch.strokes??{upsert:[],remove:[]}
+      patch.strokes={...strokes,remove:[...new Set([...strokes.remove,...discarded])]}
+    }
+    return patch
+  }
+  await writeDeviceBoard({ ...previous, draft: content, draftBase,discardedStrokes:discarded })
   try {
     if (!remoteEnabled) throw new Unavailable()
-    const uploads=removalsOnly(strokeIds(draftBase.content),createScenePatch(strokeIds(draftBase.content),content))?[]:[...new Set(content.media.map(media=>media.assetId))]
+    const uploads=removalsOnly(strokeIds(draftBase.content),patchFor(strokeIds(draftBase.content),content))?[]:[...new Set(content.media.map(media=>media.assetId))]
     await Promise.all(Array.from({length:Math.min(4,uploads.length)},async()=>{
       while(uploads.length)await uploadPendingAsset(uploads.shift()!)
     }))
@@ -290,17 +301,18 @@ export async function saveBoard(content: BoardContentWithExtras) {
     let result: {version:number;content?:BoardContentWithExtras} | undefined
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
-        const changes=createScenePatch(base,merged)
+        const changes=patchFor(base,merged)
         const compact=removalsOnly(base,changes)
         result = await request<{version:number;content?:BoardContentWithExtras}>(`/api/boards/${id}`, json('PUT', compact
-          ?{version,changes,camera:{x:merged.camera?.x,y:merged.camera?.y,zoom:merged.camera?.zoom}}
-          :{content:merged, version,...(changes?{changes}:{})}))
+          ?{version,changes,...(discarded.length?{discarded_strokes:discarded}:{}),camera:{x:merged.camera?.x,y:merged.camera?.y,zoom:merged.camera?.zoom}}
+          :{content:merged, version,...(changes?{changes}:{}),...(discarded.length?{discarded_strokes:discarded}:{})}))
         break
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 409) throw error
         const latest = await request<{version:number;content:BoardContentWithExtras}>(`/api/boards/${id}`)
         const remote = strokeIds({ ...emptyContent(), ...latest.content })
         merged = mergeBoard(base, merged, remote)
+        if(discarded.length)merged={...merged,strokes:merged.strokes.filter(stroke=>!discardedSet.has(stroke.id!))}
         base = remote
         version = latest.version
       }
@@ -308,7 +320,7 @@ export async function saveBoard(content: BoardContentWithExtras) {
     if (!result) throw new Unavailable('La pizarra sigue recibiendo cambios; se reintentará el envío.')
     if(result.content)merged=strokeIds({...emptyContent(),...result.content})
     if(cacheKey(id)===key)rememberCommitted(id,result.version,merged)
-    await writeDeviceBoard({ ...previous, content: merged, draft: undefined, draftBase: undefined, version: result.version, updated_at: new Date().toISOString() })
+    await writeDeviceBoard({ ...previous, content: merged, draft: undefined, draftBase: undefined,discardedStrokes:undefined, version: result.version, updated_at: new Date().toISOString() })
     announce('Compartida: guardada en el servidor y en este dispositivo.')
     return { pending: false, merged: merged === content ? undefined : merged }
   } catch (error) {

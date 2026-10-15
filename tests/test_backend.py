@@ -10,6 +10,29 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_never_saved_ink_deletions_are_confirmed_and_replayed_after_disconnect(self):
+        from unittest.mock import patch
+        from reconocimiento_local.live_sync_api import _ink_events
+        events=[]
+        async def broadcast(board_id,event,**_):
+            events.append(event)
+        with TestClient(self.app,base_url='https://testserver') as client:
+            client.post('/api/auth/guest',json={'name':'Discarded pen','password':'pen-password'})
+            board=client.post('/api/boards',json={'name':'Pen deletion fixture'}).json()['id']
+            with patch('reconocimiento_local.live_sync_api._broadcast',side_effect=broadcast):
+                # No live clients and no prior save containing these IDs.
+                result=client.put(f'/api/boards/{board}',json={'version':0,
+                    'changes':{'strokes':{'upsert':[],'remove':['never-saved-1','never-saved-2']}},
+                    'discarded_strokes':['never-saved-1','never-saved-2']})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(client.get(f'/api/boards/{board}').json()['content']['strokes'],[])
+            self.assertEqual(events[0]['deletions']['strokes'],['never-saved-1','never-saved-2'])
+            settled=next(event for event in events if event['type']=='ink_settled')
+            self.assertEqual(settled['removed'],['never-saved-1','never-saved-2'])
+            self.assertEqual(_ink_events(board),[settled])
+            bad=client.put(f'/api/boards/{board}',json={'version':1,'content':{},'discarded_strokes':['x'*81]})
+            self.assertEqual(bad.status_code,422)
+
     def test_shared_board_removal_is_personal_for_creator_editor_and_viewer(self):
         with TestClient(self.app,base_url='https://testserver') as owner,TestClient(self.app,base_url='https://testserver') as editor,TestClient(self.app,base_url='https://testserver') as viewer,TestClient(self.app,base_url='https://testserver') as outsider:
             for client,name in [(owner,'Hidden owner'),(editor,'Hidden editor'),(viewer,'Hidden viewer'),(outsider,'Hidden outsider')]:

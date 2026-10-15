@@ -4,6 +4,7 @@ import type { BoardContentWithExtras, BoardInfo, Folder } from '../biblioteca'
 export type DeviceBoard = BoardInfo & {
   key: string
   content: BoardContentWithExtras
+  discardedStrokes?:string[]
   draft?: BoardContentWithExtras
   draftBase?: {version:number;content:BoardContentWithExtras}
 }

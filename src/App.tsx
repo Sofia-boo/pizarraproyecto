@@ -929,6 +929,8 @@ function App() {
   const lastHtmlActivityRef=useRef(0)
   const drawFrameRef=useRef<number|null>(null),cursorFrameRef=useRef<number|null>(null)
   const liveStrokeProgressRef = useRef<{id:string;sent:number;lastSent:number}|null>(null)
+  // A live stroke can be erased before ever appearing in a server snapshot.
+  const unpublishedInkRef=useRef(new Set<string>())
 
   function sendLive(value: Record<string,unknown>) {
     const socket = liveSocketRef.current
@@ -994,6 +996,7 @@ function App() {
   function startLiveStroke(stroke: Stroke) {
     const id = stroke.id ?? createId()
     stroke.id = id
+    unpublishedInkRef.current.add(id)
     liveStrokeProgressRef.current = {id, sent:1, lastSent:performance.now()}
     sendLive({type:'stroke_start',stroke_id:id,point:stroke.points[0],color:stroke.color,width:stroke.width,highlighter:Boolean((stroke as Stroke & {highlighter?: boolean}).highlighter)})
   }
@@ -2149,7 +2152,13 @@ function App() {
       camera: { ...cameraRef.current, youtubeVideos: structuredClone(videosRef.current) },
     }
     try {
-      const result = await saveBoard(data)
+      const present=new Set(data.strokes.map(stroke=>stroke.id))
+      const discarded=[...unpublishedInkRef.current].filter(id=>!present.has(id)&&id!==activeStroke.current?.id)
+      const result = await saveBoard(data,discarded)
+      if(!result.pending){
+        for(const id of present)if(id)unpublishedInkRef.current.delete(id)
+        for(const id of discarded)unpublishedInkRef.current.delete(id)
+      }
       pendingReplicaRef.current = result.pending
       if (result.merged) {
         const selectedObjects=groupRef.current.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null)

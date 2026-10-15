@@ -503,8 +503,8 @@ def scene_patch(before: dict, after: dict):
     return patch if len(json.dumps(patch, ensure_ascii=False).encode('utf-8')) <= 512_000 else None
 
 
-async def notify_board_saved(board_id: str, version: int, before=None, after=None):
-    if board_id not in _clients and board_id not in _ink_resolutions:
+async def notify_board_saved(board_id: str, version: int, before=None, after=None, discarded_strokes=()):
+    if board_id not in _clients and board_id not in _ink_resolutions and not discarded_strokes:
         return
     event = {'type': 'board_version', 'board_id': board_id, 'version': version}
     settled = None
@@ -516,13 +516,18 @@ async def notify_board_saved(board_id: str, version: int, before=None, after=Non
             present={item.get('id') for item in current if isinstance(item,dict)}
             removed_ids=[item['id'] for item in previous if isinstance(item,dict) and isinstance(item.get('id'),str) and item['id'] not in present]
             if removed_ids:deletions[key]=removed_ids
+        if discarded_strokes:
+            deletions['strokes']=list(dict.fromkeys([*deletions.get('strokes', []), *discarded_strokes]))
         if deletions:event['deletions']=deletions
         old = {stroke['id']: stroke for stroke in before.get('strokes', [])
                if isinstance(stroke, dict) and isinstance(stroke.get('id'), str)}
         new = {stroke['id']: stroke for stroke in after.get('strokes', [])
                if isinstance(stroke, dict) and isinstance(stroke.get('id'), str)}
         saved = [identifier for identifier, stroke in new.items() if old.get(identifier) != stroke]
-        removed = [identifier for identifier in old if identifier not in new]
+        # Live ink may have been drawn and erased between two saves. The before
+        # and after snapshots alone cannot describe that removal to observers.
+        removed = list(dict.fromkeys([*[identifier for identifier in old if identifier not in new],
+                                      *discarded_strokes]))
         if saved or removed:
             _remember_ink(board_id, version, saved, removed)
             settled = {'type': 'ink_settled', 'board_id': board_id, 'version': version,

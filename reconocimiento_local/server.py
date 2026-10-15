@@ -3,7 +3,7 @@ import json
 import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app=FastAPI(title='Pizarra de estudio')
 
@@ -79,6 +79,7 @@ class BoardSave(BaseModel):
     version: int
     changes: dict | None = None
     camera: dict | None = None
+    discarded_strokes: list[str] = Field(default_factory=list, max_length=50000)
 
 @app.get('/api/library')
 def get_library():
@@ -132,6 +133,9 @@ def read_board(board_id: str):
 async def save_board(board_id: str, item: BoardSave):
     from reconocimiento_local.visual_objects import validate_visual_content
     from reconocimiento_local.live_sync_api import apply_scene_changes, apply_scene_removals
+    if any(not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', identifier) for identifier in item.discarded_strokes):
+        raise HTTPException(422, 'Identificador de trazo inválido.')
+    discarded = set(item.discarded_strokes)
     with db_connection() as db:
         row = db.execute('SELECT version,content FROM boards WHERE id=?', (board_id,)).fetchone()
         if not row: raise HTTPException(404, 'Pizarra inexistente')
@@ -142,6 +146,12 @@ async def save_board(board_id: str, item: BoardSave):
             content=apply_scene_removals(before,item.changes,item.camera)
         else:
             content = apply_scene_changes(before, item.content, item.changes) if item.changes is not None else item.content
+        if discarded:
+            strokes = content.get('strokes', [])
+            if not isinstance(strokes, list) or any(not isinstance(stroke, dict) for stroke in strokes):
+                raise HTTPException(422, 'La colección de trazos no es válida.')
+            content = {**content, 'strokes': [stroke for stroke in strokes
+                                           if stroke.get('id') not in discarded]}
         validate_visual_content(content)
         new_version = item.version + 1
         db.execute('UPDATE boards SET content=?, version=?, updated_at=? WHERE id=?',
@@ -155,7 +165,7 @@ async def save_board(board_id: str, item: BoardSave):
                 db.execute('INSERT OR IGNORE INTO board_assets VALUES (?,?)',
                            (board_id, media['assetId']))
     from reconocimiento_local.live_sync_api import notify_board_saved
-    await notify_board_saved(board_id, new_version, before, content)
+    await notify_board_saved(board_id, new_version, before, content, item.discarded_strokes)
     return {'version': new_version, **({'content': content} if item.content is not None and content != item.content else {})}
 
 @app.put('/api/boards/{board_id}/info')

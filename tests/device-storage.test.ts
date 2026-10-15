@@ -196,6 +196,42 @@ describe('private boards and shared device replicas',()=>{
     const addition={id:'new',x:1,y:1,text:'New',color:'#000',fontSize:12}
     expect(mergeBoard(base,{...local,texts:[...local.texts,addition]},remote).texts).toEqual([addition])
   })
+  it('persists deletion of never-saved ink offline and replays it after reopen',async()=>{
+    server()
+    const original=(await library.loadBoard())!
+    library.setStorageSession(owner,false)
+    expect(await library.saveBoard(original,['never-saved-pen'])).toEqual({pending:true})
+    expect((await device.readDeviceBoard(`${owner}:${remoteId}`))?.discardedStrokes).toEqual(['never-saved-pen'])
+    library.setStorageSession(owner)
+    await library.loadBoard()
+    fetched.mockReset().mockResolvedValue(Response.json({version:5}))
+    await library.saveBoard(original)
+    const body=JSON.parse(fetched.mock.calls[0][1].body)
+    expect(body.content).toBeUndefined()
+    expect(body.discarded_strokes).toEqual(['never-saved-pen'])
+    expect(body.changes.strokes.remove).toEqual(['never-saved-pen'])
+    expect((await device.readDeviceBoard(`${owner}:${remoteId}`))?.discardedStrokes).toBeUndefined()
+  })
+  it('keeps a never-saved deletion through a conflict but allows an explicit undo',async()=>{
+    server()
+    const original=(await library.loadBoard())!
+    const ink={id:'never-saved-pen',points:[{x:1,y:1},{x:4,y:4}],width:3,color:'#000000'}
+    let writes=0
+    fetched.mockImplementation(async(_url:string,init?:RequestInit)=>{
+      if(init?.method!=='PUT')return Response.json({version:5,content:{...original,strokes:[ink]}})
+      const body=JSON.parse(init.body as string)
+      if(++writes===1)return Response.json({detail:'Conflict'},{status:409})
+      expect(body.changes.strokes.remove).toContain(ink.id)
+      return Response.json({version:6})
+    })
+    expect((await library.saveBoard(original,[ink.id])).merged?.strokes).toEqual([])
+    library.setStorageSession(owner,false)
+    await library.saveBoard(original,[ink.id])
+    library.setStorageSession(owner)
+    fetched.mockReset().mockResolvedValue(Response.json({version:7}))
+    await library.saveBoard({...original,strokes:[ink]})
+    expect(JSON.parse(fetched.mock.calls[0][1].body).discarded_strokes).toBeUndefined()
+  })
   it('persists personal matrices and review history, isolates accounts and rejects stale writes',async()=>{
     const {readPersonal,writePersonal}=await import('../src/study/personalStore')
     const {newFlashcard,reviewCard}=await import('../src/study/flashcards')
