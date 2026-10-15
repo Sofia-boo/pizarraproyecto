@@ -28,6 +28,8 @@ import type {ImageCrop} from './canvas/imageCrop'
 import {cartesianHandles,resizeCartesian} from './canvas/cartesianResize'
 import type {CartesianHandle} from './canvas/cartesianResize'
 import {TRANSCRIPTION_PROMPT} from './assistant/transcription'
+import {plainAssistantText} from './assistant/messageFormat'
+import {fitTranscription} from './assistant/fitTranscription'
 import {beforeAppUpdate} from './pwa'
 import StudyCheckIn from './components/StudyCheckIn'
 import {fitFollowCamera,followCycle} from './collaborationCamera'
@@ -1085,6 +1087,8 @@ function App() {
   const selectionDestinationRef=useRef<'assistant'|'transcription'>('assistant')
   const [controlNavigation,setControlNavigation]=useState(false)
   const [selectionError,setSelectionError]=useState('')
+  const [transcribingInk,setTranscribingInk]=useState(false)
+  const transcriptionPendingRef=useRef(false)
   const [imageCrop,setImageCrop]=useState<{boardId:string;itemId:string;assetId:string;blob:Blob;name:string}|null>(null)
   const [openMenu, setOpenMenu] = useState<'add' | 'pen' | 'text' | 'ai' | 'shapes' | 'academic' | 'calendar' | null>(null)
   const [visualEditor,setVisualEditor] = useState<string|null>(null)
@@ -3803,6 +3807,7 @@ function App() {
 
   function onCanvasDoubleClick(e:ReactMouseEvent<HTMLCanvasElement>) {
     const point=toWorld(e.clientX,e.clientY)
+    if(findText(point)){selectTool('text');startText(point);return}
     const visual=hitShapeAt(point)
     if(visual && (visual.visualType || visual.label!==undefined)) {
       selectElement({kind:'shape',id:visual.id});setVisualEditor(visual.symbol==='cartesian'?null:visual.id);return
@@ -4415,11 +4420,17 @@ function App() {
   }
 
   async function openGeminiSelection(destination:'assistant'|'transcription'=selectionDestinationRef.current,crop?:Bounds) {
+    if(destination==='transcription'&&transcriptionPendingRef.current)return
     setOpenMenu(null)
     const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
     if(!boxes.length){startGeminiSelection(destination);return}
+    const strokeSources=new Map(selected.flatMap(sel=>sel.kind==='stroke'&&strokesRef.current[Number(sel.id)]?[[Number(sel.id),structuredClone(strokesRef.current[Number(sel.id)])] as const]:[]))
+    const sourceStrokes=[...strokeSources.values()]
+    const sourceMedia=selected.flatMap(sel=>sel.kind==='media'?mediaRef.current.filter(item=>item.id===sel.id).map(item=>structuredClone(item)):[])
+    const sourceBounds=crop??{x:Math.min(...boxes.map(b=>b.x)),y:Math.min(...boxes.map(b=>b.y)),
+      width:Math.max(...boxes.map(b=>b.x+b.width))-Math.min(...boxes.map(b=>b.x)),height:Math.max(...boxes.map(b=>b.y+b.height))-Math.min(...boxes.map(b=>b.y))}
     const left=crop?.x??Math.min(...boxes.map(b=>b.x))-16,top=crop?.y??Math.min(...boxes.map(b=>b.y))-16
     const width=crop?.width??Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=crop?.height??Math.max(...boxes.map(b=>b.y+b.height))-top+16
     if(width<=0||height<=0)return
@@ -4427,13 +4438,14 @@ function App() {
     const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale)
     const ctx=canvas.getContext('2d')!
     ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.scale(scale,scale);ctx.translate(-left,-top)
+    if(destination==='transcription'){transcriptionPendingRef.current=true;setTranscribingInk(true);setSelectionError('')}
     try {
       const depth=(sel:Selection)=>sel.kind==='media'
         ? (mediaRef.current.find(m=>m.id===sel.id) as {zIndex?:number}|undefined)?.zIndex??-300000
         : (strokesRef.current[Number(sel.id)] as {zIndex?:number}|undefined)?.zIndex??-100000
       for(const sel of [...selected].sort((a,b)=>depth(a)-depth(b))){
         if(sel.kind==='media'){
-          const item=mediaRef.current.find(m=>m.id===sel.id)
+          const item=sourceMedia.find(m=>m.id===sel.id)
           if(!item)continue
           const blob=await loadAsset(item.assetId)
           if(!blob)throw new Error('No se pudo descargar la imagen seleccionada.')
@@ -4442,7 +4454,7 @@ function App() {
           ctx.rotate(item.rotation??0)
           ctx.drawImage(image,-item.width/2,-item.height/2,item.width,item.height);ctx.restore()
         }else{
-          const stroke=strokesRef.current[Number(sel.id)]
+          const stroke=strokeSources.get(Number(sel.id))
           if(!stroke?.points.length)continue
           ctx.strokeStyle='#000';ctx.fillStyle='#000';ctx.lineWidth=stroke.width;ctx.lineCap='round';ctx.lineJoin='round'
           ctx.beginPath();stroke.points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()
@@ -4452,8 +4464,33 @@ function App() {
       const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la selección.')),'image/png'))
       if(boardId!==getActiveBoardId())return
       const file=new File([blob],crop?'recorte-de-la-pizarra.png':'seleccion-de-la-pizarra.png',{type:'image/png'})
-      setStudyAssistant({boardId,file,...(destination==='transcription'?{question:TRANSCRIPTION_PROMPT,transcription:{id:crypto.randomUUID(),position:{x:left+16,y:top+height+8}}}:{})})
-    }catch(e){setSelectionError(e instanceof Error?e.message:'No se pudo preparar el recorte.')}
+      if(destination==='assistant'){setStudyAssistant({boardId,file});return}
+      if(file.size>3000000)throw new Error('El recorte supera 3 MB. Seleccioná un área más pequeña.')
+      const payload=new FormData();payload.set('prompt',TRANSCRIPTION_PROMPT);payload.append('files',file)
+      const response=await fetch(`${API_BASE}/api/study-ai/consult`,{method:'POST',credentials:'include',body:payload,signal:AbortSignal.timeout(100000)})
+      const answer=await response.json().catch(()=>({}))
+      if(!response.ok)throw new Error(typeof answer.detail==='string'?answer.detail:'No se pudo transcribir. El manuscrito se conserva.')
+      const text=typeof answer.text==='string'?plainAssistantText(answer.text).trim():''
+      if(!text||answer.truncated)throw new Error('La transcripción llegó vacía o incompleta. El manuscrito se conserva; seleccioná una parte más pequeña.')
+      if(boardId!==getActiveBoardId())return
+      const unchanged=sourceStrokes.every(source=>source.id&&!hiddenRemote('stroke',source.id)&&JSON.stringify(strokesRef.current.find(item=>item.id===source.id))===JSON.stringify(source))&&
+        sourceMedia.every(source=>!hiddenRemote('media',source.id)&&JSON.stringify(mediaRef.current.find(item=>item.id===source.id))===JSON.stringify(source))
+      if(!unchanged)throw new Error('El manuscrito cambió mientras se transcribía. Volvé a seleccionarlo para convertir la versión actual.')
+      const fitted=fitTranscription(text,sourceBounds,(value,size)=>{ctx.font=`${size}px system-ui, sans-serif`;return ctx.measureText(value).width})
+      const inkIds=new Set(sourceStrokes.map(item=>item.id).filter((id):id is string=>Boolean(id)))
+      // A cropped PDF/image remains intact; replacing a full image removes
+      // only that selected object, never other pages or attached files.
+      const mediaIds=new Set(crop?[]:sourceMedia.map(item=>item.id))
+      const deleted=new Set([...inkIds].map(id=>refKey({kind:'stroke',id})).concat([...mediaIds].map(id=>refKey({kind:'media',id}))))
+      rememberChange()
+      shapesRef.current=detachTargets(shapesRef.current,deleted,resolveObject)
+      strokesRef.current=strokesRef.current.filter(item=>!item.id||!inkIds.has(item.id))
+      mediaRef.current=mediaRef.current.filter(item=>!mediaIds.has(item.id))
+      const item:TextItem={id:createId(),...fitted,color:sourceStrokes[0]?.color??'#111827'}
+      textsRef.current.push(item)
+      selectTool('select');selectElement({kind:'text',id:item.id});redraw();scheduleSave(true)
+    }catch(e){if(boardId===getActiveBoardId())setSelectionError(e instanceof Error?e.message:'No se pudo preparar el recorte.')}
+    finally{if(destination==='transcription'){transcriptionPendingRef.current=false;setTranscribingInk(false)}}
   }
 
   async function addSelectionToCalendar() {
@@ -5235,8 +5272,8 @@ function App() {
           <button className={tool === 'select' ? 'active' : ''} title="Seleccionar área (V)" aria-label="Seleccionar área" onClick={() => { selectTool('select'); setOpenMenu(null) }}><ToolbarSelectorIcon /></button>
         </div>
         <div className="toolbar-popover-anchor">
-          <button className={openMenu === 'ai' ? 'active' : ''} title="IA: asistente de estudio y reconocimiento" aria-label="IA: opciones de reconocimiento" aria-expanded={openMenu === 'ai'} aria-haspopup="menu" disabled={recognizing} onClick={() => { if (openMenu !== 'ai') selectTool('select'); setOpenMenu(openMenu === 'ai' ? null : 'ai') }}>
-            {recognizing ? '⏳' : '✦'} IA
+          <button className={openMenu === 'ai' ? 'active' : ''} title="IA: asistente de estudio y reconocimiento" aria-label="IA: opciones de reconocimiento" aria-expanded={openMenu === 'ai'} aria-haspopup="menu" disabled={recognizing||transcribingInk} onClick={() => { if (openMenu !== 'ai') selectTool('select'); setOpenMenu(openMenu === 'ai' ? null : 'ai') }}>
+            {recognizing||transcribingInk ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
             <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con Gemini</span><small>Preguntas, fotos y PDF desde la pizarra. Requiere internet.</small></button>
@@ -5378,6 +5415,7 @@ function App() {
       {importStatus && <div className="importing">{importStatus}</div>}
       {tool==='connector'&&<div className="connector-instruction">Arrastrá desde un objeto hasta otro. Después podés editar el recorrido y las puntas.</div>}
       {selectionPicking&&<div className="chatgpt-selection-instruction" role="status">Marcá el área del manuscrito, imagen o PDF que querés enviar.<button onClick={()=>setSelectionPicking(false)}>Cancelar selección</button></div>}
+      {transcribingInk&&<div className="chatgpt-selection-instruction" role="status">Transcribiendo manuscrito… Se reemplazará cuando llegue el texto.</div>}
       {!imageCrop&&!studyAssistant&&!libraryOpen&&!openMenu&&groupRef.current.length===1&&groupRef.current[0].kind==='media'&&<TouchButton type="button" className="visual-edit-button" onPress={()=>void openImageCrop()}>Recortar imagen</TouchButton>}
       {printPreview&&<A4PrintPreview value={printPreview} onClose={()=>{printRequestRef.current++;setPrintPreview(null)}}/>}
       {!visualEditor&&!openMenu&&groupRef.current.some(sel=>sel.kind==='shape'&&shapesRef.current.some(s=>s.id===sel.id&&s.visualType==='page'))&&<button type="button" className="visual-edit-button" onClick={()=>void printA4(true)}>Imprimir hojas A4 seleccionadas</button>}

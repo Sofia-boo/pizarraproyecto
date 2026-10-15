@@ -68,7 +68,7 @@ test('selected handwriting can change color from its context menu',async({page})
   await expect.poll(async()=>(await content(page)).strokes[0].color).toBe('#2563eb')
 })
 
-test('handwriting selection is sent as an image and transcription is inserted automatically',async({page})=>{
+test('handwriting is replaced in place without chat history and can be edited by double click',async({page})=>{
   await open(page)
   await page.route('**/api/study-ai/status',route=>route.fulfill({json:{configured:true}}))
   let body=''
@@ -81,7 +81,52 @@ test('handwriting selection is sent as an image and transcription is inserted au
   await page.getByRole('menuitem',{name:'Transcribir manuscrito con Gemini',exact:true}).click()
   await expect.poll(async()=>(await content(page))?.texts[0]?.text).toBe('Hay un teorema')
   expect(body).toContain('seleccion-de-la-pizarra.png')
-  await expect(page.getByRole('dialog',{name:'Gemini'}).getByRole('status')).toContainText('Transcripción insertada')
+  await expect(page.getByRole('dialog',{name:'Gemini'})).toHaveCount(0)
+  await expect.poll(async()=>(await content(page)).strokes.length).toBe(0)
+  const fitted=(await content(page)).texts[0]
+  expect(fitted.x).toBeGreaterThanOrEqual(175);expect(fitted.x).toBeLessThanOrEqual(185)
+  expect(fitted.y).toBeGreaterThanOrEqual(375);expect(fitted.y).toBeLessThanOrEqual(385)
+  expect(await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    const keys=await new Promise(resolve=>{const r=db.transaction('meta').objectStore('meta').getAllKeys();r.onsuccess=()=>resolve(r.result)})
+    db.close();return keys.filter(key=>String(key).includes('gemini-chats'))
+  })).toEqual([])
+  await page.getByRole('button',{name:'Deshacer',exact:true}).click()
+  await expect.poll(async()=>(await content(page)).strokes.length).toBe(1)
+  await expect.poll(async()=>(await content(page)).texts.length).toBe(0)
+  await page.getByRole('button',{name:'Rehacer',exact:true}).click()
+  await expect.poll(async()=>(await content(page)).texts.length).toBe(1)
+  await page.mouse.dblclick(fitted.x+10,fitted.y+fitted.fontSize/2)
+  await expect(page.locator('.text-editor')).toBeVisible()
+  await page.locator('.text-editor').fill('Hay otro teorema')
+  await page.locator('.text-editor').press('Control+Enter')
+  await expect.poll(async()=>(await content(page)).texts[0].text).toBe('Hay otro teorema')
+})
+
+for(const scenario of ['provider-error','source-removed'])test(`direct transcription preserves edits when ${scenario}`,async({page})=>{
+  await open(page)
+  let release,received=false
+  await page.route('**/api/study-ai/consult',async route=>{
+    received=true;await new Promise(resolve=>{release=resolve})
+    await route.fulfill(scenario==='provider-error'?{status:503,json:{detail:'Gemini está saturado (503).'}}:{json:{text:'Transcripción tardía',truncated:false}})
+  })
+  await page.getByRole('button',{name:'Opciones del lápiz',exact:true}).click()
+  await page.mouse.move(180,380);await page.mouse.down();await page.mouse.move(320,380,{steps:10});await page.mouse.up()
+  await expect.poll(async()=>(await content(page))?.strokes.length).toBe(1)
+  await page.getByRole('button',{name:'Seleccionar área',exact:true}).click();await page.mouse.click(230,380)
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento'}).click()
+  await page.getByRole('menuitem',{name:'Transcribir manuscrito con Gemini',exact:true}).click()
+  await expect.poll(()=>received).toBe(true)
+  await expect(page.getByRole('dialog',{name:'Gemini'})).toHaveCount(0)
+  if(scenario==='source-removed'){
+    await page.mouse.click(230,380,{button:'right'})
+    await page.getByRole('menuitem',{name:/Eliminar selección/}).click()
+    await expect.poll(async()=>(await content(page)).strokes.length).toBe(0)
+  }
+  release()
+  await expect(page.getByRole('alert')).toContainText(scenario==='provider-error'?'503':'cambió mientras')
+  await expect.poll(async()=>(await content(page)).texts.length).toBe(0)
+  await expect.poll(async()=>(await content(page)).strokes.length).toBe(scenario==='provider-error'?1:0)
 })
 
 test('failed HTML consultation keeps its prompt and attaches a complete reply as an inactive HTML widget',async({page})=>{
