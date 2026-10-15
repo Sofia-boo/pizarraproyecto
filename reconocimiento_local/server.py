@@ -555,6 +555,8 @@ from reconocimiento_local.judge0_api import attach_judge0
 attach_judge0(app, DATA_DIR)
 from reconocimiento_local.chatgpt_browser import attach_chatgpt_browser
 attach_chatgpt_browser(app)
+from reconocimiento_local.study_ai import attach_study_ai
+attach_study_ai(app)
 
 @app.middleware('http')
 async def private_response_cache(request, call_next):

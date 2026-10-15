@@ -20,15 +20,14 @@ import {HTML_PRESENCE_EVENT} from './components/htmlActivity'
 import type {HtmlActivity,HtmlNavigation} from './components/htmlActivity'
 import {clearHtmlViews,receiveHtmlSignal} from './components/htmlShared'
 import type {HtmlSignal} from './components/htmlShared'
-import ChatGPTConsultation from './components/ChatGPTConsultation'
+import GeminiConsultation from './components/GeminiConsultation'
 import ImageCropDialog from './components/ImageCropDialog'
 import TouchButton from './components/TouchButton'
 import {croppedGeometry} from './canvas/imageCrop'
 import type {ImageCrop} from './canvas/imageCrop'
 import {cartesianHandles,resizeCartesian} from './canvas/cartesianResize'
 import type {CartesianHandle} from './canvas/cartesianResize'
-import {TRANSCRIPTION_PROMPT,transcriptionKey} from './assistant/transcription'
-import {deviceDB} from './storage/device'
+import {TRANSCRIPTION_PROMPT} from './assistant/transcription'
 import {beforeAppUpdate} from './pwa'
 import StudyCheckIn from './components/StudyCheckIn'
 import {fitFollowCamera,followCycle} from './collaborationCamera'
@@ -2674,6 +2673,18 @@ function App() {
     redraw()
   }
 
+  function recolorText(next: string) {
+    setColor(next)
+    if(editingRef.current)setEditor({...editingRef.current,color:next})
+    const ids=new Set(groupRef.current.filter(item=>item.kind==='text').map(item=>item.id))
+    const ink=new Set(groupRef.current.filter(item=>item.kind==='stroke').map(item=>Number(item.id)))
+    if(!textsRef.current.some(item=>ids.has(item.id)&&item.color!==next)&&!strokesRef.current.some((item,index)=>ink.has(index)&&item.color!==next))return
+    rememberChange()
+    textsRef.current=textsRef.current.map(item=>ids.has(item.id)?{...item,color:next}:item)
+    strokesRef.current=strokesRef.current.map((item,index)=>ink.has(index)?{...item,color:next}:item)
+    redraw();scheduleSave()
+  }
+
   function commitText() {
     const current = editingRef.current
     if (!current) return
@@ -3355,7 +3366,7 @@ function App() {
     lastPointerRef.current = null
     redraw()
     if(selectionPicking&&groupRef.current.some(s=>s.kind==='stroke'||s.kind==='media')){
-      setSelectionPicking(false);void openChatGPTSelection(selectionDestinationRef.current,selectionCrop)
+      setSelectionPicking(false);void openGeminiSelection(selectionDestinationRef.current,selectionCrop)
     }
   }
 
@@ -4390,33 +4401,25 @@ function App() {
       const shape=shapesRef.current.find(item=>item.id===sel.id)
       if(shape){const cells=matrixCells(shape);const text=cells?matrixLabel(cells):shape.note?.text??shape.label;if(text)texts.push(text)}
     }
-    if (!texts.length && selected.some(item=>item.kind==='stroke')) throw new Error('Transcribí primero el manuscrito con ChatGPT y seleccioná el texto resultante.')
+    if (!texts.length && selected.some(item=>item.kind==='stroke')) throw new Error('Transcribí primero el manuscrito con Gemini y seleccioná el texto resultante.')
     return texts.join('\n')
   }
 
-  function startChatGPTSelection(destination:'assistant'|'transcription'='assistant') {
+  function startGeminiSelection(destination:'assistant'|'transcription'='assistant') {
     selectionDestinationRef.current=destination
     setStudyAssistant(null);setSelectionError('');setOpenMenu(null);selectTool('select');selectElement(null);setSelectionPicking(true)
   }
 
   async function transcribeSelection() {
-    const boardId=getActiveBoardId()
-    try {
-      const saved=await(await deviceDB).get('meta',transcriptionKey(boardId))
-      if(boardId!==getActiveBoardId())return
-      if(saved?.target&&(saved.job||(saved.result&&!saved.result.inserted))){
-        setOpenMenu(null);setStudyAssistant({boardId,transcription:saved.target});return
-      }
-    }catch{setSelectionError('No se pudo recuperar la transcripción pendiente.');return}
-    await openChatGPTSelection('transcription')
+    await openGeminiSelection('transcription')
   }
 
-  async function openChatGPTSelection(destination:'assistant'|'transcription'=selectionDestinationRef.current,crop?:Bounds) {
+  async function openGeminiSelection(destination:'assistant'|'transcription'=selectionDestinationRef.current,crop?:Bounds) {
     setOpenMenu(null)
     const boardId=getActiveBoardId()
     const selected=groupRef.current.filter(s=>s.kind==='stroke'||s.kind==='media')
     const boxes=selected.map(s=>selectionBounds(s)).filter((b):b is Bounds=>Boolean(b))
-    if(!boxes.length){startChatGPTSelection(destination);return}
+    if(!boxes.length){startGeminiSelection(destination);return}
     const left=crop?.x??Math.min(...boxes.map(b=>b.x))-16,top=crop?.y??Math.min(...boxes.map(b=>b.y))-16
     const width=crop?.width??Math.max(...boxes.map(b=>b.x+b.width))-left+16,height=crop?.height??Math.max(...boxes.map(b=>b.y+b.height))-top+16
     if(width<=0||height<=0)return
@@ -4455,7 +4458,7 @@ function App() {
 
   async function addSelectionToCalendar() {
     const text=groupRef.current.filter(item=>item.kind==='text').map(item=>textsRef.current.find(t=>t.id===item.id)?.text??'').filter(Boolean).join('\n')
-    if(!text.trim()){setHandwrittenError('Seleccioná un texto editable. Si es manuscrito, transcribilo primero con ChatGPT.');return}
+    if(!text.trim()){setHandwrittenError('Seleccioná un texto editable. Si es manuscrito, transcribilo primero con Gemini.');return}
     setRecognizing(true);setHandwrittenError('')
     try {
       const response=await fetch(`${API_BASE}/api/calendar/parse-handwriting`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})
@@ -4841,6 +4844,7 @@ function App() {
         onPointerUp={tabletPointerUp} onPointerCancel={tabletPointerCancel} onLostPointerCapture={tabletPointerCancel} onDoubleClick={onCanvasDoubleClick} onContextMenu={onBoardContextMenu} />
       {contextMenu&&<><div className="board-context-dismiss" onClick={()=>setContextMenu(null)} onContextMenu={e=>{e.preventDefault();setContextMenu(null)}} />
         <div className="board-context-menu" role="menu" aria-label="Acciones sobre elementos" style={{left:contextMenu.x,top:contextMenu.y,maxHeight:Math.max(80,window.innerHeight-contextMenu.y-8),overflowY:'auto'}}>
+          {groupRef.current.some(item=>item.kind==='text'||item.kind==='stroke')&&<div className="selected-text-colors" role="group" aria-label="Color del texto seleccionado"><span>Color de la selección</span><ToolColorPalette value={color} custom={customColor} onPick={recolorText} onCustom={c=>{setCustomColor(c);recolorText(c)}}/></div>}
           {groupRef.current.length===1&&groupRef.current[0].kind==='media'&&<TouchButton role="menuitem" onPress={()=>void openImageCrop()}>Recortar imagen</TouchButton>}
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{copySelected();setContextMenu(null)}}>Copiar <small>Ctrl+C</small></button>
           <button role="menuitem" onClick={()=>{void pasteFromBoardMenu()}}>Pegar <small>Ctrl+V</small></button>
@@ -5211,10 +5215,10 @@ function App() {
           </div>
           <div className="toolbar-popover-anchor">
             <button className={tool === 'text' ? 'active' : ''} title="Texto (T)" aria-label="Opciones de texto" aria-expanded={openMenu === 'text'}
-              onClick={() => { selectTool('text'); setOpenMenu(openMenu === 'text' ? null : 'text') }}>T</button>
+              onClick={() => { if(!groupRef.current.some(item=>item.kind==='text'||item.kind==='stroke'))selectTool('text'); setOpenMenu(openMenu === 'text' ? null : 'text') }}>T</button>
             {openMenu === 'text' && <div className="toolbar-popover tool-settings-popover" role="group" aria-label="Configuración de texto">
-              <ToolColorPalette value={color} custom={customColor} onPick={c=>{setColor(c);if(editingRef.current)setEditor({...editingRef.current,color:c})}}
-                onCustom={c=>{setCustomColor(c);setColor(c);if(editingRef.current)setEditor({...editingRef.current,color:c})}} />
+              <ToolColorPalette value={color} custom={customColor} onPick={recolorText}
+                onCustom={c=>{setCustomColor(c);recolorText(c)}} />
               <div className="tool-text-size" aria-label="Tamaño del texto">
                 <button type="button" aria-label="Disminuir tamaño de letra" onClick={()=>{
                   const next=Math.max(8,fontSize-2);setFontSize(next);if(editingRef.current)setEditor({...editingRef.current,fontSize:next})
@@ -5235,8 +5239,8 @@ function App() {
             {recognizing ? '⏳' : '✦'} IA
           </button>
           {openMenu === 'ai' && <div className="toolbar-popover ai-popover" role="menu" aria-label="Reconocimiento con IA">
-            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con ChatGPT</span><small>Abrí ChatGPT en este dispositivo y llevá tu ejercicio, sin depender de la PC.</small></button>
-            <button className="assistant-menu-entry" role="menuitem" aria-label="Transcribir manuscrito con ChatGPT" onClick={()=>void transcribeSelection()}><span>Transcribir manuscrito con ChatGPT</span><small>Prepará la selección para convertirla en texto editable.</small></button>
+            <button className="assistant-menu-entry" role="menuitem" onClick={()=>{setOpenMenu(null);setStudyAssistant({boardId:getActiveBoardId()})}}><span>Consultar con Gemini</span><small>Preguntas, fotos y PDF desde la pizarra. Requiere internet.</small></button>
+            <button className="assistant-menu-entry" role="menuitem" aria-label="Transcribir manuscrito con Gemini" onClick={()=>void transcribeSelection()}><span>Transcribir manuscrito con Gemini</span><small>Convertí la selección en texto editable.</small></button>
           </div>}
         </div>
         <span className="separator" />
@@ -5320,7 +5324,7 @@ function App() {
       {(handwrittenEvent || handwrittenError) && <div className="recognition-overlay" onPointerDown={e => { if (e.target === e.currentTarget && !handwrittenBusy) { setHandwrittenEvent(null); setHandwrittenError('') } }}>
         <div className="recognition-dialog handwriting-calendar-dialog" role="dialog" aria-modal="true" aria-label="Revisar evento reconocido">
           <h3>Agregar al calendario</h3>
-          <p>Se usa el texto editable seleccionado. Para manuscritos, transcribí primero con ChatGPT. Revisá la fecha antes de guardar.</p>
+          <p>Se usa el texto editable seleccionado. Para manuscritos, transcribí primero con Gemini. Revisá la fecha antes de guardar.</p>
           {handwrittenError && <p className="recognition-error">{handwrittenError}</p>}
           {handwrittenEvent && <form onSubmit={e => { e.preventDefault(); void saveHandwrittenEvent() }}>
             <label>Texto seleccionado (editable)
@@ -5345,7 +5349,7 @@ function App() {
         </div>
       </div>}
       {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(imageCrop||studyAssistant||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
-      {studyAssistant&&<ChatGPTConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
+      {studyAssistant&&<GeminiConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
         beforeOpen={flushBoardForHistory}
         onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
         onInsertEditable={async text=>{
@@ -5359,7 +5363,7 @@ function App() {
           const first=response.shapes[0]??response.texts[0]
           selectElement({kind:response.shapes.length?'shape':'text',id:first.id});redraw();scheduleSave();await flushBoardForHistory()
         }}
-        onSelectImage={()=>startChatGPTSelection(studyAssistant.transcription?'transcription':'assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async (text,insertion)=>{
+        onSelectImage={()=>startGeminiSelection(studyAssistant.transcription?'transcription':'assistant')} onClose={()=>setStudyAssistant(null)} onInsertText={async (text,insertion)=>{
         if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
         // A completed transcription can be resumed after a reload. Its stable
         // ID prevents inserting it twice if saving the chat was interrupted.

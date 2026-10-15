@@ -10,6 +10,14 @@ from fastapi.testclient import TestClient
 
 
 class BackendTest(unittest.TestCase):
+    def test_study_ai_routes_require_session_and_do_not_expose_key(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {'GEMINI_API_KEY': ''}), TestClient(self.app,base_url='https://testserver') as client:
+            self.assertEqual(client.get('/api/study-ai/status').status_code,401)
+            self.assertEqual(client.post('/api/auth/guest',json={'name':'Study AI test','password':'study-test-password'}).status_code,200)
+            self.assertEqual(client.get('/api/study-ai/status').json(),{'configured':False,'provider':'Gemini'})
+            self.assertEqual(client.post('/api/study-ai/consult',data={'prompt':'1+1'}).status_code,503)
+
     def test_never_saved_ink_deletions_are_confirmed_and_replayed_after_disconnect(self):
         from unittest.mock import patch
         from reconocimiento_local.live_sync_api import _ink_events

@@ -804,7 +804,7 @@ def attach_anonymous_users(app, db_connection, data_dir):
                         return JSONResponse({'detail':'Calendario ajeno'},status_code=403)
             # Los otros endpoints /api y /recognize requieren sesión; por defecto no
             # exponer futuras rutas nuevas que puedan saltarse el control de permisos.
-            allowed = (separate_permissions or path=='/api/calendar/events' or path.startswith('/api/chatgpt/') or path == '/api/code/run' or path.startswith('/api/code/results/') or
+            allowed = (separate_permissions or path=='/api/calendar/events' or path.startswith('/api/chatgpt/') or path.startswith('/api/study-ai/') or path == '/api/code/run' or path.startswith('/api/code/results/') or
                        path == '/health' or path.startswith('/api/excel/') or
                        path.startswith('/api/calendar/parse-handwriting') or path.startswith('/api/boards/') or
                        path.startswith('/api/folders/') or path.startswith('/api/assets/') or
