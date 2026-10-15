@@ -111,6 +111,8 @@ test('ink survives socket interruptions and reconciles a deletion missed during 
   send({type:'stroke_interrupted',stroke_id:'interrupted-ink'})
   await page.clock.fastForward(60000)
   await expect.poll(inkVisible).toBe(true)
+  // Keep a local stroke open: reconnect deletions must not wait for mouse-up.
+  await page.mouse.move(100,600);await page.mouse.down();await page.mouse.move(200,600,{steps:5})
   // The writer saved and then erased it while this peer missed both versions.
   version=2
   send({type:'ink_settled',version,saved:[],removed:['interrupted-ink']})

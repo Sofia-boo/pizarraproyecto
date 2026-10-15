@@ -13,13 +13,12 @@ describe('live ink acknowledgements',()=>{
     expect(retireLiveInk(pending,[stroke],101,resolved)).toBe(true)
     expect(pending.size).toBe(0)
   })
-  it('does not retire a saved or erased stroke before that version is on screen',()=>{
-    for(const removed of [false,true]){
-      const pending=previews(),resolved=new Map<string,InkResolution>()
-      resolveLiveInk(resolved,[stroke.id],12,removed)
-      expect(retireLiveInk(pending,[],11,resolved)).toBe(false)
-      expect(retireLiveInk(pending,[],12,resolved)).toBe(true)
-    }
+  it('waits for saved geometry, but retires confirmed deletions during local gestures',()=>{
+    const pending=previews(),resolved=new Map<string,InkResolution>()
+    resolveLiveInk(resolved,[stroke.id],12,false)
+    expect(retireLiveInk(pending,[],11,resolved)).toBe(false)
+    resolveLiveInk(resolved,[stroke.id],13,true)
+    expect(retireLiveInk(pending,[],11,resolved)).toBe(true)
   })
   it('handles a commit followed by deletion while disconnected without resurrecting its preview',()=>{
     const pending=previews(),resolved=new Map<string,InkResolution>()
@@ -52,5 +51,18 @@ describe('confirmed remote removals',()=>{
     expect(removed.acknowledge(12)).toBe(true)
     expect(removed.has('stroke','ink')).toBe(false)
     expect(removed.record({strokes:['ink']},11,12)).toBe(false)
+  })
+})
+
+
+import {transformExisting} from '../src/storage/sceneEdits'
+describe('collaborative gestures',()=>{
+  it('transforms stable IDs without restoring deleted objects or overwriting remote edits',()=>{
+    const initial=[{id:'erased',x:0,note:{text:'old',fontSize:12}},{id:'selected',x:20,note:{text:'old',fontSize:12}}]
+    const remote=[{id:'selected',x:20,note:{text:'remote',fontSize:12}},{id:'new',x:90,note:{text:'new',fontSize:16}}]
+    const steps=new Map<string,unknown>()
+    const moved=transformExisting(remote,initial,(item,index)=>index===1?{...item,x:60}:item,steps)
+    expect(moved).toEqual([{...remote[0],x:60},remote[1]])
+    expect(transformExisting(moved,initial,(item,index)=>index===1?{...item,x:20}:item,steps)).toEqual(remote)
   })
 })

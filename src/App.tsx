@@ -1,4 +1,5 @@
 import { mergeBoard } from './storage/merge'
+import {transformExisting} from './storage/sceneEdits'
 import { applyScenePatch,RemoteDeletions } from './storage/livePatch'
 import {retireLiveInk,resolveLiveInk,resolvedLiveInk} from './storage/liveInk'
 import type {RemoteLiveStroke,InkResolution} from './storage/liveInk'
@@ -393,7 +394,7 @@ type BoardClipboard = Snapshot
 type Selection = { kind: 'media' | 'text' | 'stroke' | 'shape' | 'table' | 'graph' | 'video'; id: string | number }
 type Marquee = { start: Point; end: Point }
 type ScreenMarquee = { startX: number; startY: number; endX: number; endY: number }
-type Transform = { mode: 'move' | 'resize' | 'rotate'; start: Point; bounds: Bounds; initial: Snapshot; group: Selection[]; changed?:boolean }
+type Transform = { mode: 'move' | 'resize' | 'rotate'; start: Point; bounds: Bounds; initial: Snapshot; group: Selection[]; changed?:boolean; steps?:Map<string,unknown> }
 
 const BOARD_COLORS = ['#64748b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']
 const LEGACY_ICONS = ['📄', '📘', '📕', '📗', '📙', '📐', '🧮', '✏️', '📝', '💡', '🔬', '💻', '⭐']
@@ -913,6 +914,16 @@ function App() {
   const remoteDeletionsRef=useRef(new RemoteDeletions())
   function hiddenRemote(kind:string,id?:string){return remoteDeletionsRef.current.has(kind,id)}
   function refreshRemoteDeletions(){setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1);redraw()}
+  function hideConfirmedDeletions(deletions:unknown,version:number){
+    if(!remoteDeletionsRef.current.record(deletions,version,displayedVersionRef.current))return
+    if(groupRef.current.some(selection=>{const ref=objectReference(selection);return ref&&hiddenRemote(ref.kind,ref.id)})){
+      transformRef.current=null;cartesianDragRef.current=null;selectElement(null);setTableEditorId(null)
+    }
+    if(visualEditorRef.current&&hiddenRemote('shape',visualEditorRef.current))setVisualEditor(null)
+    if(editingRef.current&&hiddenRemote('text',editingRef.current.id))setEditor(null)
+    refreshRemoteDeletions()
+  }
+
   const remoteCursorsRef = useRef<Map<string, LiveCursor>>(new Map())
   const lastCursorSentRef = useRef(0)
   const lastHtmlActivityRef=useRef(0)
@@ -1952,8 +1963,9 @@ function App() {
   }
 
   function transformSelection(t: Transform, point: Point) {
+    t.steps??=new Map()
     if(point.x!==t.start.x||point.y!==t.start.y)t.changed=true
-    const selectedObjects=new Set(t.group.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null).map(refKey))
+    const selectedObjects=new Set(t.group.map(selection=>selection.kind==='stroke'?{kind:'stroke' as const,id:t.initial.strokes[Number(selection.id)]?.id}: {kind:selection.kind,id:String(selection.id)}).filter((ref):ref is ObjectRef=>Boolean(ref.id)).map(refKey))
     if (t.mode === 'rotate') {
       const pivot = {x:t.bounds.x+t.bounds.width/2,y:t.bounds.y+t.bounds.height/2}
       const startAngle=Math.atan2(t.start.y-pivot.y,t.start.x-pivot.x)
@@ -1973,28 +1985,28 @@ function App() {
         const rotated=rotateAround(center,pivot,angle)
         return {...item,x:rotated.x-item.width/2,y:rotated.y-item.height/2,rotation:(item.rotation||0)+angle}
       }
-      graphsRef.current=t.initial.graphs.map(item=>graphIds.has(item.id)?rotateObject(item):item)
+      graphsRef.current=transformExisting(graphsRef.current,t.initial.graphs,item=>graphIds.has(item.id)?rotateObject(item):item,t.steps,'graphs')
       if(graphIds.size)setGraphs([...graphsRef.current])
-      shapesRef.current=t.initial.shapes.map(item=>!shapeIds.has(item.id)?item:isConnector(item)
-        ?transformVisual(item,p=>rotateAround(p,pivot,angle),selectedObjects,ref=>resolveObject(ref,t.initial)):rotateObject(item))
-      tablesRef.current=t.initial.tables.map(item=>{
+      shapesRef.current=transformExisting(shapesRef.current,t.initial.shapes,item=>!shapeIds.has(item.id)?item:isConnector(item)
+        ?transformVisual(item,p=>rotateAround(p,pivot,angle),selectedObjects,ref=>resolveObject(ref,t.initial)):rotateObject(item),t.steps,'shapes')
+      tablesRef.current=transformExisting(tablesRef.current,t.initial.tables,item=>{
         if(!tableIds.has(item.id))return item
         const bounds=tableSize(item)
         const center={x:item.x+bounds.width/2,y:item.y+bounds.height/2}
         const rotated=rotateAround(center,pivot,angle)
         return {...item,x:rotated.x-bounds.width/2,y:rotated.y-bounds.height/2,rotation:(item.rotation||0)+angle}
-      })
-      mediaRef.current=t.initial.media.map(item=>mediaIds.has(item.id)?rotateObject(item):item)
-      textsRef.current=t.initial.texts.map(item=>{
+      },t.steps,'tables')
+      mediaRef.current=transformExisting(mediaRef.current,t.initial.media,item=>mediaIds.has(item.id)?rotateObject(item):item,t.steps,'media')
+      textsRef.current=transformExisting(textsRef.current,t.initial.texts,item=>{
         if(!textIds.has(item.id))return item
         const bounds=selectionBoundsForText(item)
         const center={x:item.x+bounds.width/2,y:item.y+bounds.height/2}
         const rotated=rotateAround(center,pivot,angle)
         return {...item,x:rotated.x-bounds.width/2,y:rotated.y-bounds.height/2,rotation:(item.rotation||0)+angle}
-      })
-      strokesRef.current=t.initial.strokes.map((stroke,index)=>strokeIds.has(index)?{
+      },t.steps,'texts')
+      strokesRef.current=transformExisting(strokesRef.current,t.initial.strokes,(stroke,index)=>strokeIds.has(index)?{
         ...stroke,points:stroke.points.map(p=>({...p,...rotateAround(p,pivot,angle)}))
-      }:stroke)
+      }:stroke,t.steps,'strokes')
       // Mantener el marco de selección centrado, sin reconstruir un rectángulo rotado tras cada frame.
       redraw()
       return
@@ -2013,39 +2025,39 @@ function App() {
       : { x: t.bounds.x + (x - t.bounds.x) * factor, y: t.bounds.y + (y - t.bounds.y) * factor }
     const videoIds = new Set(t.group.filter(s => s.kind === 'video').map(s => s.id))
     if(videoIds.size){
-      videosRef.current=t.initial.videos.map(item=>videoIds.has(item.id)?{...item,...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor}:item)
+      videosRef.current=transformExisting(videosRef.current,t.initial.videos,item=>videoIds.has(item.id)?{...item,...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor}:item,t.steps,'videos')
       setVideos([...videosRef.current])
     }
     const graphIds = new Set(t.group.filter(s => s.kind === 'graph').map(s => s.id))
     if(graphIds.size){
-      graphsRef.current=t.initial.graphs.map(item=>graphIds.has(item.id)?{
+      graphsRef.current=transformExisting(graphsRef.current,t.initial.graphs,item=>graphIds.has(item.id)?{
         ...item,...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor
-      }:item)
+      }:item,t.steps,'graphs')
       setGraphs([...graphsRef.current])
     }
     const shapeIds = new Set(t.group.filter(s => s.kind === 'shape').map(s => s.id))
     const tableIds = new Set(t.group.filter(s => s.kind === 'table').map(s => s.id))
-    shapesRef.current = t.initial.shapes.map(item => !shapeIds.has(item.id)?item:isConnector(item)
+    shapesRef.current = transformExisting(shapesRef.current,t.initial.shapes,item => !shapeIds.has(item.id)?item:isConnector(item)
       ?{...transformVisual(item,p=>mapPoint(p.x,p.y),selectedObjects,ref=>resolveObject(ref,t.initial)),strokeWidth:item.strokeWidth*factor}
       :{...item,...mapPoint(item.x,item.y),width:item.width*factor,height:item.height*factor,strokeWidth:item.strokeWidth*factor,
-        note:item.note?{...item.note,fontSize:item.note.fontSize*factor}:undefined,labelFontSize:(item.labelFontSize??16)*factor})
-    tablesRef.current = t.initial.tables.map(item => tableIds.has(item.id) ? {...item,...mapPoint(item.x,item.y),cellWidth:item.cellWidth*factor,cellHeight:item.cellHeight*factor}:item)
+        note:item.note?{...item.note,fontSize:item.note.fontSize*factor}:undefined,labelFontSize:(item.labelFontSize??16)*factor},t.steps,'shapes')
+    tablesRef.current = transformExisting(tablesRef.current,t.initial.tables,item => tableIds.has(item.id) ? {...item,...mapPoint(item.x,item.y),cellWidth:item.cellWidth*factor,cellHeight:item.cellHeight*factor}:item,t.steps,'tables')
     const mediaIds = new Set(t.group.filter(s => s.kind === 'media').map(s => s.id))
     const textIds = new Set(t.group.filter(s => s.kind === 'text').map(s => s.id))
     const strokeIds = new Set(t.group.filter(s => s.kind === 'stroke').map(s => Number(s.id)))
-    mediaRef.current = t.initial.media.map(item => {
+    mediaRef.current = transformExisting(mediaRef.current,t.initial.media,item => {
       if (!mediaIds.has(item.id)) return item
       return { ...item, ...mapPoint(item.x, item.y), width: item.width * factor, height: item.height * factor }
-    })
-    textsRef.current = t.initial.texts.map(item => {
+    },t.steps,'media')
+    textsRef.current = transformExisting(textsRef.current,t.initial.texts,item => {
       if (!textIds.has(item.id)) return item
       return { ...item, ...mapPoint(item.x, item.y), fontSize: item.fontSize * factor }
-    })
-    strokesRef.current = t.initial.strokes.map((stroke, index) => {
+    },t.steps,'texts')
+    strokesRef.current = transformExisting(strokesRef.current,t.initial.strokes,(stroke, index) => {
       if (!strokeIds.has(index)) return stroke
       return { ...stroke, width: stroke.width * factor,
         points: stroke.points.map(p => ({ ...p, ...mapPoint(p.x, p.y) })) }
-    })
+    },t.steps,'strokes')
     redraw()
   }
 
@@ -2140,11 +2152,17 @@ function App() {
       const result = await saveBoard(data)
       pendingReplicaRef.current = result.pending
       if (result.merged) {
+        const selectedObjects=groupRef.current.map(objectReference).filter((ref):ref is ObjectRef=>ref!==null)
+        const primarySelection=selectedRef.current?objectReference(selectedRef.current):null
         const merged = mergeBoard(data, {
           ...data, strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
           shapes:shapesRef.current,tables:tablesRef.current,graphs:graphsRef.current,
           videos:videosRef.current,camera:cameraRef.current,
         }, result.merged)
+        // Only remote differences are rebased into history. Undo must not
+        // restore a peer's deleted objects or erase their concurrent additions.
+        undoRef.current=undoRef.current.map(state=>mergeBoard(data,{...data,...state},result.merged!) as Snapshot)
+        redoRef.current=redoRef.current.map(state=>mergeBoard(data,{...data,...state},result.merged!) as Snapshot)
         strokesRef.current=merged.strokes
         textsRef.current=merged.texts
         mediaRef.current=merged.media
@@ -2152,6 +2170,7 @@ function App() {
         tablesRef.current=merged.tables as SheetItem[]
         graphsRef.current=merged.graphs as BoardGraphItem[]
         videosRef.current=merged.videos as YouTubeItem[]
+        restoreSelectionObjects(selectedObjects,primarySelection)
         setVideos([...videosRef.current]);setGraphs([...graphsRef.current]);refreshTables(n=>n+1)
         redraw();hydrateMedia(mediaRef.current)
       }
@@ -2430,13 +2449,7 @@ function App() {
               deletions?:unknown
             }
             if (msg.board_id !== boardId) return
-            if(msg.type==='board_version'&&typeof msg.version==='number'&&remoteDeletionsRef.current.record(msg.deletions,msg.version,displayedVersionRef.current)){
-              if(groupRef.current.some(selection=>{const ref=objectReference(selection);return ref&&hiddenRemote(ref.kind,ref.id)})){
-                transformRef.current=null;selectElement(null);setVisualEditor(null);setTableEditorId(null)
-              }
-              if(editingRef.current&&hiddenRemote('text',editingRef.current.id))setEditor(null)
-              refreshRemoteDeletions()
-            }
+            if(msg.type==='board_version'&&typeof msg.version==='number')hideConfirmedDeletions(msg.deletions,msg.version)
             if(msg.type?.startsWith('html_')){
               if(!receiveHtmlSignal(msg as HtmlSignal)&&msg.html_id)sendLive({type:'html_request',html_id:msg.html_id})
               return
@@ -2444,6 +2457,13 @@ function App() {
             if(msg.type==='ink_settled'&&typeof msg.version==='number'){
               resolveLiveInk(inkResolutionsRef.current,msg.saved,msg.version,false)
               resolveLiveInk(inkResolutionsRef.current,msg.removed,msg.version,true)
+              // Reconnect replays ink resolutions without the original board
+              // event. Hide those deletions even during a local gesture.
+              const removed=Array.isArray(msg.removed)?msg.removed.filter(id=>{
+                const resolution=inkResolutionsRef.current.get(id)
+                return resolution?.removed&&resolution.version===msg.version
+              }):[]
+              hideConfirmedDeletions({strokes:removed},msg.version)
               receivedVersion(msg.version)
               if(retireCommittedPreviews())redraw()
               return
@@ -2745,6 +2765,22 @@ function App() {
   function objectReference(selection:Selection):ObjectRef|null {
     const id=selection.kind==='stroke'?strokesRef.current[Number(selection.id)]?.id:String(selection.id)
     return id?{kind:selection.kind,id}:null
+  }
+
+  function restoreSelectionObjects(objects:ObjectRef[],primary:ObjectRef|null) {
+    groupRef.current=objects.flatMap(ref=>{
+      if(hiddenRemote(ref.kind,ref.id))return []
+      if(ref.kind==='stroke'){
+        const index=strokesRef.current.findIndex(item=>item.id===ref.id)
+        return index<0?[]:[{kind:'stroke' as const,id:index}]
+      }
+      const items=ref.kind==='shape'?shapesRef.current:ref.kind==='text'?textsRef.current:ref.kind==='media'?mediaRef.current:
+        ref.kind==='table'?tablesRef.current:ref.kind==='graph'?graphsRef.current:videosRef.current
+      return items.some(item=>item.id===ref.id)?[{kind:ref.kind,id:ref.id} as Selection]:[]
+    })
+    selectedRef.current=groupRef.current.find(selection=>{const ref=objectReference(selection);return ref&&ref.kind===primary?.kind&&ref.id===primary.id})??null
+    if(!groupRef.current.length)transformRef.current=null
+    setSelection(selectedRef.current);refreshSelection(n=>n+1)
   }
 
   function resolveObject(ref:ObjectRef,state?:Snapshot): TargetGeometry|null {
