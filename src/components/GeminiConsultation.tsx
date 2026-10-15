@@ -29,6 +29,7 @@ export default function GeminiConsultation(props:Props){
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[menu,setMenu]=useState(false),[confirmDelete,setConfirmDelete]=useState(false)
   const online=useOnline(),shell=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),bottom=useRef<HTMLDivElement>(null),answers=useRef(new Map<string,HTMLDivElement>()),started=useRef(false),sending=useRef(false)
   const current=chats.find(chat=>chat.id===active)??chats[0]
+  const latestHtml=!transcription?[...current.messages].reverse().find(message=>message.role==='assistant'&&!message.truncated&&interactiveHtml(message.text)):undefined
   const state=useRef({chats,active});state.current={chats,active}
   function update(patch:Partial<Chat>){setChats(old=>old.map(chat=>chat.id===current.id?{...chat,...patch}:chat))}
   async function save(){await(await deviceDB).put('meta',state.current,key)}
@@ -81,7 +82,7 @@ export default function GeminiConsultation(props:Props){
     setBusy(true);setError('');setNotice('')
     try{
       await onInsertFile(new File([html],'interactivo-gemini.html',{type:'text/html'}))
-      setNotice('HTML insertado. Cerrá el asistente y tocá Activar HTML en el elemento para interactuar.')
+      await save();onClose()
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function send(){
@@ -129,11 +130,12 @@ export default function GeminiConsultation(props:Props){
       {confirmDelete&&<div className="chatgpt-delete-confirm" role="alertdialog" aria-label="Eliminar chat"><p>¿Eliminar esta conversación? Lo insertado en la pizarra se conserva.</p><TouchButton onPress={()=>setConfirmDelete(false)}>Cancelar</TouchButton><TouchButton onPress={()=>{const remaining=chats.filter(chat=>chat.id!==current.id),next=remaining.length?remaining:[fresh()];setChats(next);setActive(next[0].id);setConfirmDelete(false)}}>Sí, eliminar</TouchButton></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!current.messages.length&&<p>Enviá una pregunta, una foto o una selección de la pizarra.</p>}
-        {current.messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}><div className="chatgpt-response-preview" ref={element=>{if(element)answers.current.set(message.id,element);else answers.current.delete(message.id)}}><AssistantMessageText text={message.text}/></div>{message.files?.map((file,i)=><small key={i}>{file}</small>)}{message.role==='assistant'&&<div className="chatgpt-message-actions">{!transcription&&!message.truncated&&interactiveHtml(message.text)&&<TouchButton disabled={busy} onPress={()=>void insertHtml(message)}>Insertar HTML interactivo</TouchButton>}<TouchButton disabled={busy} onPress={()=>void insert(message)}>Insertar editable</TouchButton><TouchButton disabled={busy} onPress={()=>void insert(message,true)}>Insertar como imagen</TouchButton></div>}</article>)}
+        {current.messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}>{message.role==='assistant'&&!transcription&&!message.truncated&&interactiveHtml(message.text)&&<div className="gemini-html-actions"><TouchButton disabled={busy} onPress={()=>void insertHtml(message)}>Insertar este HTML</TouchButton></div>}<div className="chatgpt-response-preview" ref={element=>{if(element)answers.current.set(message.id,element);else answers.current.delete(message.id)}}><AssistantMessageText text={message.text}/></div>{message.files?.map((file,i)=><small key={i}>{file}</small>)}{message.role==='assistant'&&<div className="chatgpt-message-actions"><TouchButton disabled={busy} onPress={()=>void insert(message)}>Insertar editable</TouchButton><TouchButton disabled={busy} onPress={()=>void insert(message,true)}>Insertar como imagen</TouchButton></div>}</article>)}
         {busy&&<p role="status">Procesando…</p>}<div ref={bottom}/>
       </div>
       {error&&<p className="chatgpt-error" role="alert">{error}</p>}{notice&&<p className="chatgpt-notice" role="status">{notice}</p>}
       <footer>
+        {latestHtml&&<TouchButton className="gemini-insert-html" disabled={busy} onPress={()=>void insertHtml(latestHtml)}>Insertar HTML en la pizarra</TouchButton>}
         {current.files.length>0&&<div className="chatgpt-files">{current.files.map((file,i)=><span key={i}>{file.name}<TouchButton aria-label={'Quitar '+file.name} disabled={busy} onPress={()=>update({files:current.files.filter((_,index)=>index!==i)})}>×</TouchButton></span>)}</div>}
         <textarea aria-label="Consulta para Gemini" placeholder="Escribí tu consulta…" maxLength={12000} rows={3} value={current.question} disabled={!loaded||busy} onChange={e=>update({question:e.target.value})}/>
         <div className="chatgpt-composer-actions"><div className="chatgpt-attach"><TouchButton disabled={busy||!loaded} aria-expanded={menu} onPress={()=>setMenu(!menu)}>Adjuntar ▾</TouchButton>{menu&&<div role="menu" aria-label="Adjuntar a Gemini"><TouchButton role="menuitem" onPress={()=>{setMenu(false);input.current?.click()}}>Archivo o imagen</TouchButton><TouchButton role="menuitem" onPress={()=>{setMenu(false);void select()}}>Selección de la pizarra</TouchButton></div>}</div><TouchButton aria-label="Descargar conversación" disabled={!current.messages.length||busy} onPress={()=>void download()}>Descargar</TouchButton><TouchButton className="chatgpt-send" disabled={!loaded||busy||!online||!configured||(!current.question.trim()&&!current.files.length)} onPress={()=>void send()}>Enviar</TouchButton></div>
