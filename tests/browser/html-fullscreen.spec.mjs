@@ -1,0 +1,50 @@
+import {test,expect} from '@playwright/test'
+test.use({serviceWorkers:'block'})
+
+async function content(page){return page.evaluate(async()=>{
+  const id=localStorage.getItem('pizarra_activa');if(!id)return undefined
+  const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+  const row=await new Promise(resolve=>{const r=db.transaction('boards').objectStore('boards').get(id);r.onsuccess=()=>resolve(r.result)})
+  db.close();return row?.content
+})}
+for(const native of [true,false])test(`HTML fullscreen ${native?'native':'tablet fallback'} zooms without restarting its activity or changing board geometry`,async({page})=>{
+  if(!native){
+    await page.setViewportSize({width:1280,height:800})
+    await page.addInitScript(()=>Object.defineProperty(Element.prototype,'requestFullscreen',{value:undefined,configurable:true}))
+  }
+  await page.route('**/api/**',route=>route.fulfill({status:401,json:{}}))
+  await page.goto('/');await page.getByRole('button',{name:'Abrir privadas y copias de este dispositivo',exact:true}).click()
+  await expect.poll(async()=>(await content(page))?.camera).toBeDefined()
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+  await page.locator('input[accept="text/html,.html,.htm"]').setInputFiles({name:'fullscreen.html',mimeType:'text/html',buffer:Buffer.from('<!doctype html><html><body><label>Notas <input id="notes"></label><button onclick="this.textContent=\'Listo\'">Usar</button><p>Contenido interactivo</p></body></html>')})
+  await expect.poll(async()=>(await content(page))?.shapes.length).toBe(1)
+  const before=await content(page)
+  await page.getByRole('button',{name:'Activar HTML fullscreen.html',exact:true}).click()
+  const frame=page.frameLocator('.board-html-widget iframe')
+  await frame.getByLabel('Notas').fill('Conservar esta nota')
+  await frame.getByRole('button',{name:'Usar',exact:true}).click()
+  await page.getByRole('button',{name:'Pantalla completa HTML fullscreen.html',exact:true}).click()
+  const widget=page.locator('.board-html-widget.html-fullscreen')
+  await expect(widget).toBeVisible()
+  const rect=await widget.boundingBox(),viewport=page.viewportSize()
+  expect(rect.x).toBe(0);expect(rect.y).toBe(0)
+  expect(rect.width).toBe(viewport.width);expect(rect.height).toBe(viewport.height)
+  if(native)expect(await page.evaluate(()=>document.fullscreenElement?.classList.contains('board-html-widget'))).toBe(true)
+  await page.getByRole('button',{name:'Acercar HTML',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Restablecer zoom HTML',exact:true})).toHaveText('120%')
+  await expect(frame.getByLabel('Notas')).toHaveValue('Conservar esta nota')
+  await frame.locator('body').evaluate(element=>element.dispatchEvent(new WheelEvent('wheel',{ctrlKey:true,deltaY:-100,bubbles:true,cancelable:true})))
+  await expect(page.getByRole('button',{name:'Restablecer zoom HTML',exact:true})).not.toHaveText('120%')
+  await page.getByRole('button',{name:'Alejar HTML',exact:true}).click()
+  await page.getByRole('button',{name:'Restablecer zoom HTML',exact:true}).click()
+  await expect(page.getByRole('button',{name:'Restablecer zoom HTML',exact:true})).toHaveText('100%')
+  await page.getByRole('button',{name:'Salir de pantalla completa HTML fullscreen.html',exact:true}).click()
+  await expect(page.locator('.html-fullscreen')).toHaveCount(0)
+  await expect(frame.getByRole('button',{name:'Listo',exact:true})).toBeVisible()
+  await expect(frame.getByLabel('Notas')).toHaveValue('Conservar esta nota')
+  expect((await content(page)).camera).toEqual(before.camera)
+  expect((await content(page)).shapes).toEqual(before.shapes)
+  await page.getByRole('button',{name:'Pantalla completa HTML fullscreen.html',exact:true}).click()
+  await frame.getByLabel('Notas').press('Escape')
+  await expect(page.locator('.html-fullscreen')).toHaveCount(0)
+})

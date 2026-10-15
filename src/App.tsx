@@ -2924,6 +2924,9 @@ function App() {
 
   function captureScenePointerDown(e:ReactPointerEvent<HTMLDivElement>) {
     const target=e.target as HTMLElement
+    // Fullscreen HTML uses viewport coordinates, not the board camera. Let
+    // its controls receive clicks without routing them into canvas selection.
+    if(target.closest('.board-html-widget.html-fullscreen'))return
     const scene=target.closest('.board-scene')
     if(!scene&&!target.closest('.sheet-inline-anchor'))return
     const navigation=e.pointerType==='mouse'&&(e.button===1||(e.button===0&&(e.ctrlKey||e.metaKey)))

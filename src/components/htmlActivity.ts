@@ -16,7 +16,7 @@ export function instrumentHtml(source:string,token:string,extra=''){
       e.preventDefault();e.stopImmediatePropagation();
       parent.postMessage({type:'pizarra-html-navigation',token,action:'zoom',...point(e),deltaY:e.deltaY,deltaMode:e.deltaMode},'*');
     },{capture:true,passive:false});
-    addEventListener('keydown',e=>modifiers(e.ctrlKey||e.metaKey),true);
+    addEventListener('keydown',e=>{modifiers(e.ctrlKey||e.metaKey);if(e.key==='Escape')parent.postMessage({type:'pizarra-html-navigation',token,action:'exit-fullscreen'},'*')},true);
     addEventListener('keyup',e=>modifiers(e.ctrlKey||e.metaKey),true);
     addEventListener('pointermove',e=>{inside=true;const p=point(e);x=p.x;y=p.y;send('pointer')},true);
     addEventListener('pointerdown',()=>{inside=true;send('interact')},true);

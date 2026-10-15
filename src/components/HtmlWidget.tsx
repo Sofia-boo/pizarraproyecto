@@ -10,6 +10,41 @@ import './htmlWidget.css'
 
 export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelect,onBegin,onChange,onEnd,onDelete,onContextMenu,onActivity,onNavigate}:{item:ShapeItem;shared:boolean;connected:boolean;onSync:(value:Record<string,unknown>)=>void;getZoom:()=>number;onSelect:()=>void;onBegin:()=>void;onChange:(geometry:Partial<ShapeItem>)=>void;onEnd:()=>void;onDelete:()=>void;onContextMenu:(event:MouseEvent<HTMLElement>)=>void;onActivity:(activity:HtmlActivity)=>void;onNavigate:(navigation:HtmlNavigation)=>void}){
   const [active,setActive]=useState(false),[presence,setPresence]=useState<HtmlPresence[]>([])
+  const [expanded,setExpanded]=useState(false),[contentZoom,setContentZoom]=useState(1)
+  const shell=useRef<HTMLElement>(null),nativeFull=useRef(false),expandedRef=useRef(false)
+  expandedRef.current=expanded
+  const zoomContent=(factor:number)=>setContentZoom(value=>Math.max(.25,Math.min(3,Math.round(value*factor*100)/100)))
+  function closeFullScreen(){
+    if(document.fullscreenElement===shell.current)void document.exitFullscreen().catch(()=>setExpanded(false))
+    else setExpanded(false)
+  }
+  function openFullScreen(){
+    if(!active&&!mirrored)start();else onSelect()
+    setContentZoom(1);setExpanded(true);onNavigate({action:'modifiers',pressed:false})
+    // Keep the same iframe and session. The CSS expansion also works when a
+    // browser or Android host does not expose the native Fullscreen API.
+    const element=shell.current
+    if(element?.requestFullscreen)void element.requestFullscreen().catch(()=>{})
+  }
+  useEffect(()=>{
+    const change=()=>{
+      const own=document.fullscreenElement===shell.current
+      if(own)setExpanded(true)
+      else if(nativeFull.current)setExpanded(false)
+      nativeFull.current=own
+    }
+    document.addEventListener('fullscreenchange',change)
+    return()=>document.removeEventListener('fullscreenchange',change)
+  },[])
+  useEffect(()=>{
+    const element=shell.current;if(!expanded||!element)return
+    const wheel=(event:WheelEvent)=>{
+      event.stopPropagation()
+      if(event.ctrlKey||event.metaKey){event.preventDefault();zoomContent(Math.exp(-event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?element.clientHeight:1)*.002))}
+    }
+    element.addEventListener('wheel',wheel,{passive:false})
+    return()=>element.removeEventListener('wheel',wheel)
+  },[expanded])
   const [remote,setRemote]=useState<HtmlSignal|undefined>(()=>htmlView(item.id)),[error,setError]=useState('')
   const remoteView=useRef(remote),session=useRef<string|null>(null),pending=useRef<string|null>(null)
   const sent=useRef({document:'',revision:0}),snapshot=useRef('')
@@ -113,10 +148,17 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
       if(!element||event.source!==element.contentWindow||event.origin!=='null'||!data||data.token!==frameDocument!.token)return
       const framePoint=(x:number,y:number)=>{
         const shape=latest.current.item,widget=element.offsetParent as HTMLElement|null
+        if(expandedRef.current)return rotate({x:shape.x+x*shape.width,y:shape.y+36+y*Math.max(0,shape.height-36)},
+          {x:shape.x+shape.width/2,y:shape.y+shape.height/2},shape.rotation??0)
         const point={x:shape.x+element.offsetLeft+(widget?.clientLeft??0)+x*element.clientWidth,y:shape.y+element.offsetTop+(widget?.clientTop??0)+y*element.clientHeight}
         return rotate(point,{x:shape.x+shape.width/2,y:shape.y+shape.height/2},shape.rotation??0)
       }
       if(data.type==='pizarra-html-navigation'){
+        if(expandedRef.current){
+          if(data.action==='exit-fullscreen')closeFullScreen()
+          if(data.action==='zoom'&&Number.isFinite(data.deltaY)&&Math.abs(data.deltaY)<=100000&&[0,1,2].includes(data.deltaMode))zoomContent(Math.exp(-data.deltaY*(data.deltaMode===1?16:data.deltaMode===2?element.clientHeight:1)*.002))
+          return
+        }
         if(data.action==='modifiers'&&typeof data.pressed==='boolean')latest.current.onNavigate({action:'modifiers',pressed:data.pressed})
         if(data.action==='zoom'&&Number.isFinite(data.x)&&Number.isFinite(data.y)&&data.x>=0&&data.x<=1&&data.y>=0&&data.y<=1&&Number.isFinite(data.deltaY)&&Math.abs(data.deltaY)<=100000&&[0,1,2].includes(data.deltaMode)){
           latest.current.onNavigate({action:'zoom',point:framePoint(data.x,data.y),deltaY:data.deltaY,deltaMode:data.deltaMode})
@@ -157,6 +199,7 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
   },[presence.length])
   const drag=useRef<{pointer:number;x:number;y:number;initial:ShapeItem;resize:boolean;started:boolean}|null>(null)
   function down(event:PointerEvent<HTMLElement>,resize=false){
+    if(expandedRef.current)return
     if(event.button!==0)return
     event.preventDefault();event.stopPropagation();onSelect()
     drag.current={pointer:event.pointerId,x:event.clientX,y:event.clientY,initial:item,resize,started:false}
@@ -178,16 +221,22 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)
     if(current.started)onEnd()
   }
-  return <section className="board-html-widget" data-html-id={item.id} onContextMenu={onContextMenu} style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??150000)*2,transform:`rotate(${item.rotation??0}rad)`}}>
+  return <section ref={shell} className={`board-html-widget${expanded?' html-fullscreen':''}`} data-html-id={item.id} onContextMenu={event=>{if(expanded){event.preventDefault();event.stopPropagation()}else onContextMenu(event)}} onKeyDownCapture={event=>{if(expanded){event.stopPropagation();if(event.key==='Escape')closeFullScreen()}}} style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:(item.zIndex??150000)*2,transform:`rotate(${item.rotation??0}rad)`}}>
     <header aria-label={`Mover HTML ${item.html!.name}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <span title={`${item.html!.name} · Usá el selector para interactuar`}>↔ {item.html!.name}</span>
+      {expanded&&<div className="html-zoom-controls" role="group" aria-label="Zoom del HTML" onPointerDown={event=>event.stopPropagation()}>
+        <button type="button" aria-label="Alejar HTML" disabled={contentZoom<=.25} onClick={()=>zoomContent(1/1.2)}>−</button>
+        <button type="button" aria-label="Restablecer zoom HTML" title="Restablecer al 100%" onClick={()=>setContentZoom(1)}>{Math.round(contentZoom*100)}%</button>
+        <button type="button" aria-label="Acercar HTML" disabled={contentZoom>=3} onClick={()=>zoomContent(1.2)}>+</button>
+      </div>}
+      <button type="button" className="html-fullscreen-button" aria-label={`${expanded?'Salir de pantalla completa HTML':'Pantalla completa HTML'} ${item.html!.name}`} onPointerDown={event=>event.stopPropagation()} onClick={expanded?closeFullScreen:openFullScreen}>{expanded?'Volver a la pizarra':'Pantalla completa'}</button>
       {(active||remote?.running)&&<button type="button" className="html-stop" aria-label={`Detener HTML ${item.html!.name}`} title="Detener y liberar memoria; al activarlo se reinicia" onPointerDown={event=>event.stopPropagation()} onClick={stop}>Detener</button>}
       <button type="button" aria-label={`Eliminar HTML ${item.html!.name}`} onPointerDown={event=>event.stopPropagation()} onClick={onDelete}>×</button>
     </header>
     {presence.length>0&&<div className="html-presence" role="status">{presence.map(user=><span key={user.clientId} style={{borderColor:user.color}}>{user.emoji} {user.name} está usando este HTML</span>)}</div>}
     {error&&<div className="html-sync-status" role="alert">{error}</div>}
     {(mirrored||remote?.running===false)&&<div className="html-sync-status">{mirrored?'Vista compartida · podés interactuar':'HTML detenido'}</div>}
-    {frameDocument?<iframe ref={frame} title={`HTML: ${item.html!.name}`} onLoad={()=>{const document=frameDocumentRef.current;if(document)frame.current?.contentWindow?.postMessage(remoteView.current?.document&&!active?{token:document.token,kind:'render',document:remoteView.current.document}:{token:document.token,kind:'capture'},'*')}} srcDoc={frameDocument.source} sandbox={mirrored?'allow-scripts':'allow-scripts allow-forms allow-downloads'} referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"/>:<button type="button" className="html-activate" aria-label={`Activar HTML ${item.html!.name}`} onClick={start}><strong>Activar HTML</strong><span>Tocá para cargar e interactuar</span></button>}
+    <div className="html-viewport">{frameDocument?<iframe ref={frame} style={expanded?{width:`${100/contentZoom}%`,height:`${100/contentZoom}%`,transform:`scale(${contentZoom})`}:undefined} title={`HTML: ${item.html!.name}`} onLoad={()=>{const document=frameDocumentRef.current;if(document)frame.current?.contentWindow?.postMessage(remoteView.current?.document&&!active?{token:document.token,kind:'render',document:remoteView.current.document}:{token:document.token,kind:'capture'},'*')}} srcDoc={frameDocument.source} sandbox={mirrored?'allow-scripts':'allow-scripts allow-forms allow-downloads'} referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"/>:<button type="button" className="html-activate" aria-label={`Activar HTML ${item.html!.name}`} onClick={start}><strong>Activar HTML</strong><span>Tocá para cargar e interactuar</span></button>}</div>
     <div className="html-resize" role="button" tabIndex={0} aria-label={`Cambiar tamaño HTML ${item.html!.name}`} onPointerDown={event=>down(event,true)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();onBegin();onChange({width:Math.max(240,item.width+(event.key==='ArrowRight'?20:event.key==='ArrowLeft'?-20:0)),height:Math.max(160,item.height+(event.key==='ArrowDown'?20:event.key==='ArrowUp'?-20:0))});onEnd()}}>↘</div>
   </section>
