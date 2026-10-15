@@ -36,6 +36,9 @@ def migrate(source, url):
             if not ready:raise RuntimeError('Hay referencias circulares en el esquema.')
             for table in ready:
                 definition=re.sub(r'\bBLOB\b','BYTEA',schema[table],flags=re.I)
+                # SQLite REAL/FLOAT values are 64-bit; PostgreSQL REAL is
+                # 32-bit and would silently round timestamps and other data.
+                definition=re.sub(r'\b(?:REAL|FLOAT)\b','DOUBLE PRECISION',definition,flags=re.I)
                 cloud.execute(definition)
                 if table in ('calendars','board_history'):
                     cloud.execute(sql.SQL('ALTER TABLE {} ADD COLUMN pizarra_seq BIGSERIAL').format(sql.Identifier(table)))
@@ -64,7 +67,9 @@ def migrate(source, url):
             # Compare every value (including files and password hashes), not just
             # row counts. No user content or credential appears in the output.
             if len(actual)!=expected or set(actual)!=set(original):
-                raise RuntimeError('La verificacion completa fallo; se revierte la transaccion.')
+                different=[name for index,name in enumerate(columns)
+                           if {row[index] for row in actual}!={row[index] for row in original}]
+                raise RuntimeError(f'La verificacion completa fallo en {table} ({", ".join(different)}); se revierte la transaccion.')
         print(json.dumps({'migrated':True,'counts':counts,'all_values_verified':True,'source_preserved':True}))
 
 

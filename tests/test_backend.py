@@ -275,6 +275,10 @@ class BackendTest(unittest.TestCase):
                 raise RuntimeError('Cloud tests require an isolated local PostgreSQL server.')
             if os.name=='nt':asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
             subprocess.run([sys.executable,'-c','from reconocimiento_local.server import app'],check=True,env={k:v for k,v in os.environ.items() if k not in ('VERCEL','DATABASE_URL','PIZARRA_DATABASE_URL')})
+            import sqlite3
+            with sqlite3.connect(Path(cls.storage.name)/'pizarras.db') as seed:
+                seed.execute('CREATE TABLE migration_precision(id TEXT PRIMARY KEY, created REAL, data BLOB)')
+                seed.execute('INSERT INTO migration_precision VALUES (?,?,?)',('fixture',1792071448.313789,b'precision-fixture'))
             cls.cloud_schema='pizarra_test_'+uuid.uuid4().hex
             with psycopg.connect(target,autocommit=True) as db:
                 db.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(cls.cloud_schema)))
