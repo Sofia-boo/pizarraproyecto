@@ -16,7 +16,7 @@ import AcademicLibrary from './components/AcademicLibrary'
 import CodeWorkspace from './components/CodeWorkspace'
 import HtmlWidget from './components/HtmlWidget'
 import {HTML_PRESENCE_EVENT} from './components/htmlActivity'
-import type {HtmlActivity} from './components/htmlActivity'
+import type {HtmlActivity,HtmlNavigation} from './components/htmlActivity'
 import {clearHtmlViews,receiveHtmlSignal} from './components/htmlShared'
 import type {HtmlSignal} from './components/htmlShared'
 import ChatGPTConsultation from './components/ChatGPTConsultation'
@@ -3349,11 +3349,20 @@ function App() {
     scheduleSave()
   }
 
+  function navigateFromHtml(navigation:HtmlNavigation){
+    if(navigation.action==='modifiers'){setControlNavigation(navigation.pressed);return}
+    const canvas=canvasRef.current
+    if(!canvas||!loadedRef.current)return
+    stopFollowing()
+    const camera=cameraRef.current,scale=navigation.deltaMode===1?16:navigation.deltaMode===2?canvas.getBoundingClientRect().height:1
+    changeZoom(Math.exp(-navigation.deltaY*scale*.004),navigation.point.x*camera.zoom+camera.x,navigation.point.y*camera.zoom+camera.y)
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     function onWheel(e: WheelEvent) {
-      if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer,.sheet-inline-anchor')) return
+      if (!(e.target instanceof Element) || !e.target.closest('canvas,.board-video-layer,.board-graph-layer,.sheet-static-layer,.sheet-inline-anchor,.board-html-widget')) return
       if(e.target.closest('input,textarea,select,[contenteditable="true"]')) return
       e.preventDefault()
       finishPendingPen()
@@ -3361,7 +3370,7 @@ function App() {
       stopFollowing()
       const rect = canvas!.getBoundingClientRect()
       const scale = e.deltaMode===1 ? 16 : e.deltaMode===2 ? rect.height : 1
-      if(e.ctrlKey) changeZoom(Math.exp(-e.deltaY * scale * 0.004), e.clientX - rect.left, e.clientY - rect.top)
+      if(e.ctrlKey||e.metaKey) changeZoom(Math.exp(-e.deltaY * scale * 0.004), e.clientX - rect.left, e.clientY - rect.top)
       else {
         cameraRef.current.x-=e.deltaX*scale
         cameraRef.current.y-=e.deltaY*scale
@@ -4764,7 +4773,7 @@ function App() {
           <button role="menuitem" disabled={!groupRef.current.length} onClick={()=>{deleteSelected();setContextMenu(null)}}>Eliminar selección <small>Supr</small></button>
         </div></>}
       <div className="board-scene" ref={sceneRef} style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
-      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} shared={Boolean(liveBoardId&&!privateBoard(liveBoardId))} connected={liveConnected} onSync={sendLive} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>{if(tool!=='select')selectTool('select');selectElement({kind:'shape',id:item.id})}} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu} onActivity={activity=>sendHtmlActivity(item.id,activity)}/>)}
+      {htmlItems.map(item=><HtmlWidget key={item.id} item={item} shared={Boolean(liveBoardId&&!privateBoard(liveBoardId))} connected={liveConnected} onSync={sendLive} getZoom={()=>Math.max(.01,cameraRef.current.zoom)} onSelect={()=>{if(tool!=='select')selectTool('select');selectElement({kind:'shape',id:item.id})}} onBegin={rememberChange} onChange={patch=>updateHtml(item.id,patch)} onEnd={scheduleSave} onDelete={()=>deleteHtml(item.id)} onContextMenu={onBoardContextMenu} onActivity={activity=>sendHtmlActivity(item.id,activity)} onNavigate={navigateFromHtml}/>)}
       <div className="sheet-static-layer" ref={staticTableLayerRef} data-version={tableRevision} onContextMenu={onBoardContextMenu}
         style={{transform:`translate(${cameraRef.current.x}px, ${cameraRef.current.y}px) scale(${cameraRef.current.zoom})`}}>
         {tablesRef.current.filter(table =>

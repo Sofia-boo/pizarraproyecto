@@ -3,20 +3,20 @@ import type {PointerEvent,MouseEvent} from 'react'
 import type {ShapeItem} from '../canvas/visualObjects'
 import {rotate} from '../canvas/visualObjects'
 import {HTML_PRESENCE_EVENT,instrumentHtml} from './htmlActivity'
-import type {HtmlActivity,HtmlPresence} from './htmlActivity'
+import type {HtmlActivity,HtmlPresence,HtmlNavigation} from './htmlActivity'
 import {HTML_SYNC_EVENT,htmlView,htmlDifference,mirrorDocument,sharedHtmlHook} from './htmlShared'
 import type {HtmlSignal} from './htmlShared'
 import './htmlWidget.css'
 
-export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelect,onBegin,onChange,onEnd,onDelete,onContextMenu,onActivity}:{item:ShapeItem;shared:boolean;connected:boolean;onSync:(value:Record<string,unknown>)=>void;getZoom:()=>number;onSelect:()=>void;onBegin:()=>void;onChange:(geometry:Partial<ShapeItem>)=>void;onEnd:()=>void;onDelete:()=>void;onContextMenu:(event:MouseEvent<HTMLElement>)=>void;onActivity:(activity:HtmlActivity)=>void}){
+export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelect,onBegin,onChange,onEnd,onDelete,onContextMenu,onActivity,onNavigate}:{item:ShapeItem;shared:boolean;connected:boolean;onSync:(value:Record<string,unknown>)=>void;getZoom:()=>number;onSelect:()=>void;onBegin:()=>void;onChange:(geometry:Partial<ShapeItem>)=>void;onEnd:()=>void;onDelete:()=>void;onContextMenu:(event:MouseEvent<HTMLElement>)=>void;onActivity:(activity:HtmlActivity)=>void;onNavigate:(navigation:HtmlNavigation)=>void}){
   const [active,setActive]=useState(false),[presence,setPresence]=useState<HtmlPresence[]>([])
   const [remote,setRemote]=useState<HtmlSignal|undefined>(()=>htmlView(item.id)),[error,setError]=useState('')
   const remoteView=useRef(remote),session=useRef<string|null>(null),pending=useRef<string|null>(null)
   const sent=useRef({document:'',revision:0}),snapshot=useRef('')
   const retry=useRef<ReturnType<typeof setTimeout>|null>(null),attempts=useRef(0)
-  const frame=useRef<HTMLIFrameElement>(null),latest=useRef({item,onActivity,onSync,active,shared,connected})
+  const frame=useRef<HTMLIFrameElement>(null),latest=useRef({item,onActivity,onSync,onNavigate,active,shared,connected})
   const activityAt=useRef(0)
-  useLayoutEffect(()=>{latest.current={item,onActivity,onSync,active,shared,connected}},[item,onActivity,onSync,active,shared,connected])
+  useLayoutEffect(()=>{latest.current={item,onActivity,onSync,onNavigate,active,shared,connected}},[item,onActivity,onSync,onNavigate,active,shared,connected])
   const source=item.html!.source
   const mirrored=Boolean(!active&&remote?.document)
   const frameDocument=useMemo(()=>{
@@ -95,6 +95,19 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
     if(!frameDocument)return
     function receive(event:MessageEvent){
       const data=event.data,element=frame.current
+      if(!element||event.source!==element.contentWindow||event.origin!=='null'||!data||data.token!==frameDocument!.token)return
+      const framePoint=(x:number,y:number)=>{
+        const shape=latest.current.item,widget=element.offsetParent as HTMLElement|null
+        const point={x:shape.x+element.offsetLeft+(widget?.clientLeft??0)+x*element.clientWidth,y:shape.y+element.offsetTop+(widget?.clientTop??0)+y*element.clientHeight}
+        return rotate(point,{x:shape.x+shape.width/2,y:shape.y+shape.height/2},shape.rotation??0)
+      }
+      if(data.type==='pizarra-html-navigation'){
+        if(data.action==='modifiers'&&typeof data.pressed==='boolean')latest.current.onNavigate({action:'modifiers',pressed:data.pressed})
+        if(data.action==='zoom'&&Number.isFinite(data.x)&&Number.isFinite(data.y)&&data.x>=0&&data.x<=1&&data.y>=0&&data.y<=1&&Number.isFinite(data.deltaY)&&Math.abs(data.deltaY)<=100000&&[0,1,2].includes(data.deltaMode)){
+          latest.current.onNavigate({action:'zoom',point:framePoint(data.x,data.y),deltaY:data.deltaY,deltaMode:data.deltaMode})
+        }
+        return
+      }
       if(element&&event.source===element.contentWindow&&event.origin==='null'&&data?.type==='pizarra-html-sync'&&data.token===frameDocument!.token){
         if(data.kind==='snapshot'&&latest.current.active&&typeof data.document==='string'&&data.document.length<=500000)sendSnapshot(data.document)
         if(data.kind==='error')setError(String(data.error).slice(0,200))
@@ -104,8 +117,7 @@ export default function HtmlWidget({item,shared,connected,onSync,getZoom,onSelec
       }
       if(!element||event.source!==element.contentWindow||event.origin!=='null'||!data||data.type!=='pizarra-html-activity'||data.token!==frameDocument!.token||!['pointer','interact','leave'].includes(data.action)||!Number.isFinite(data.x)||!Number.isFinite(data.y)||data.x<0||data.x>1||data.y<0||data.y>1)return
       const now=performance.now();if(now-activityAt.current<32)return;activityAt.current=now
-      const shape=latest.current.item,point={x:shape.x+element.offsetLeft+data.x*element.clientWidth,y:shape.y+element.offsetTop+data.y*element.clientHeight}
-      latest.current.onActivity({point:rotate(point,{x:shape.x+shape.width/2,y:shape.y+shape.height/2},shape.rotation??0),action:data.action})
+      latest.current.onActivity({point:framePoint(data.x,data.y),action:data.action})
     }
     window.addEventListener('message',receive)
     return()=>window.removeEventListener('message',receive)
