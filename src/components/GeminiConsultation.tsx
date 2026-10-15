@@ -4,14 +4,15 @@ import {personalStorageScope} from '../biblioteca'
 import {useOnline} from '../connectivity'
 import {plainAssistantText} from '../assistant/messageFormat'
 import {responseImage} from '../assistant/responseImage'
+import {interactiveHtml} from '../assistant/interactiveHtml'
 import type {TranscriptionTarget,TextInsertion} from '../assistant/transcription'
 import AssistantMessageText from './AssistantMessageText'
 import TouchButton from './TouchButton'
 import './chatgptConsultation.css'
 
-type Message={id:string;role:'user'|'assistant';text:string;files?:string[]}
+type Message={id:string;role:'user'|'assistant';text:string;files?:string[];truncated?:boolean}
 type Chat={id:string;name:string;messages:Message[];question:string;files:File[]}
-type Props={boardId:string;initialImage?:File;initialQuestion?:string;transcription?:TranscriptionTarget;beforeOpen:()=>Promise<void>;onSelectImage:()=>void;onClose:()=>void;onInsertImage:(file:File)=>Promise<void>;onInsertText:(text:string,insertion?:TextInsertion)=>Promise<void>;onInsertEditable:(text:string)=>Promise<void>}
+type Props={boardId:string;initialImage?:File;initialQuestion?:string;transcription?:TranscriptionTarget;beforeOpen:()=>Promise<void>;onSelectImage:()=>void;onClose:()=>void;onInsertFile:(file:File)=>Promise<void>;onInsertText:(text:string,insertion?:TextInsertion)=>Promise<void>;onInsertEditable:(text:string)=>Promise<void>}
 const fresh=():Chat=>({id:crypto.randomUUID(),name:'Chat 1',messages:[],question:'',files:[]})
 async function request<T>(path:string,init?:RequestInit):Promise<T>{
   const root=import.meta.env.DEV?`${location.protocol}//${location.hostname}:8765`:location.origin
@@ -21,7 +22,7 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
   return data as T
 }
 export default function GeminiConsultation(props:Props){
-  const {boardId,initialImage,initialQuestion,transcription,beforeOpen,onSelectImage,onClose,onInsertImage,onInsertText,onInsertEditable}=props
+  const {boardId,initialImage,initialQuestion,transcription,beforeOpen,onSelectImage,onClose,onInsertFile,onInsertText,onInsertEditable}=props
   const key=`gemini-chats:${personalStorageScope()}:${boardId}${transcription?':transcription':''}`
   const [chats,setChats]=useState<Chat[]>([fresh()]),[active,setActive]=useState('')
   const [loaded,setLoaded]=useState(false),[configured,setConfigured]=useState(false),[checking,setChecking]=useState(true)
@@ -69,9 +70,18 @@ export default function GeminiConsultation(props:Props){
     setBusy(true);setError('')
     try{
       if(transcription)await onInsertText(plainAssistantText(message.text),{id:`gemini-transcription-${transcription.id}`,position:transcription.position})
-      else if(image){const element=answers.current.get(message.id);if(!element)throw new Error('No se pudo preparar la imagen.');await onInsertImage(await responseImage(element))}
+      else if(image){const element=answers.current.get(message.id);if(!element)throw new Error('No se pudo preparar la imagen.');await onInsertFile(await responseImage(element))}
       else await onInsertEditable(message.text)
       setNotice('Respuesta insertada en la pizarra.')
+    }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
+  }
+  async function insertHtml(message:Message){
+    const html=!message.truncated&&interactiveHtml(message.text)
+    if(busy||!html)return
+    setBusy(true);setError('');setNotice('')
+    try{
+      await onInsertFile(new File([html],'interactivo-gemini.html',{type:'text/html'}))
+      setNotice('HTML insertado. Cerrá el asistente y tocá Activar HTML en el elemento para interactuar.')
     }catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}
   }
   async function send(){
@@ -85,7 +95,7 @@ export default function GeminiConsultation(props:Props){
       payload.set('history',JSON.stringify(chat.messages.slice(-8).map(({role,text})=>({role,text:text.slice(0,6000)}))))
       chat.files.forEach(file=>payload.append('files',file))
       const answer=await request<{text:string;truncated:boolean}>('consult',{method:'POST',body:payload})
-      const message:Message={id:crypto.randomUUID(),role:'assistant',text:answer.text}
+      const message:Message={id:crypto.randomUUID(),role:'assistant',text:answer.text,truncated:answer.truncated}
       const next={chats:state.current.chats.map(item=>item.id===chat.id?{...item,question:'',files:[],messages:[...item.messages,{id:crypto.randomUUID(),role:'user' as const,text:prompt,files:chat.files.map(file=>file.name)},message]}:item),active:state.current.active}
       state.current=next;setChats(next.chats)
       await(await deviceDB).put('meta',next,key)
@@ -119,7 +129,7 @@ export default function GeminiConsultation(props:Props){
       {confirmDelete&&<div className="chatgpt-delete-confirm" role="alertdialog" aria-label="Eliminar chat"><p>¿Eliminar esta conversación? Lo insertado en la pizarra se conserva.</p><TouchButton onPress={()=>setConfirmDelete(false)}>Cancelar</TouchButton><TouchButton onPress={()=>{const remaining=chats.filter(chat=>chat.id!==current.id),next=remaining.length?remaining:[fresh()];setChats(next);setActive(next[0].id);setConfirmDelete(false)}}>Sí, eliminar</TouchButton></div>}
       <div className="chatgpt-messages" aria-live="polite">
         {!current.messages.length&&<p>Enviá una pregunta, una foto o una selección de la pizarra.</p>}
-        {current.messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}><div className="chatgpt-response-preview" ref={element=>{if(element)answers.current.set(message.id,element);else answers.current.delete(message.id)}}><AssistantMessageText text={message.text}/></div>{message.files?.map((file,i)=><small key={i}>{file}</small>)}{message.role==='assistant'&&<div className="chatgpt-message-actions"><TouchButton disabled={busy} onPress={()=>void insert(message)}>Insertar editable</TouchButton><TouchButton disabled={busy} onPress={()=>void insert(message,true)}>Insertar como imagen</TouchButton></div>}</article>)}
+        {current.messages.map(message=><article key={message.id} className={'chatgpt-message '+message.role}><div className="chatgpt-response-preview" ref={element=>{if(element)answers.current.set(message.id,element);else answers.current.delete(message.id)}}><AssistantMessageText text={message.text}/></div>{message.files?.map((file,i)=><small key={i}>{file}</small>)}{message.role==='assistant'&&<div className="chatgpt-message-actions">{!transcription&&!message.truncated&&interactiveHtml(message.text)&&<TouchButton disabled={busy} onPress={()=>void insertHtml(message)}>Insertar HTML interactivo</TouchButton>}<TouchButton disabled={busy} onPress={()=>void insert(message)}>Insertar editable</TouchButton><TouchButton disabled={busy} onPress={()=>void insert(message,true)}>Insertar como imagen</TouchButton></div>}</article>)}
         {busy&&<p role="status">Procesando…</p>}<div ref={bottom}/>
       </div>
       {error&&<p className="chatgpt-error" role="alert">{error}</p>}{notice&&<p className="chatgpt-notice" role="status">{notice}</p>}

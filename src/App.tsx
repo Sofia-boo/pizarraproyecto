@@ -5351,7 +5351,7 @@ function App() {
       {liveBoardId&&<StudyCheckIn boardId={liveBoardId} hidden={Boolean(imageCrop||studyAssistant||libraryOpen||historyTarget)} onHelp={question=>setStudyAssistant({boardId:getActiveBoardId(),question})}/>}
       {studyAssistant&&<GeminiConsultation key={studyAssistant.boardId+(studyAssistant.transcription?':transcription':'')} boardId={studyAssistant.boardId} initialImage={studyAssistant.file} initialQuestion={studyAssistant.question} transcription={studyAssistant.transcription}
         beforeOpen={flushBoardForHistory}
-        onInsertImage={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
+        onInsertFile={async file=>{if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.');await importFiles([file]);await flushBoardForHistory()}}
         onInsertEditable={async text=>{
           if(studyAssistant.boardId!==getActiveBoardId())throw new Error('Cambiaste de pizarra.')
           const measurement=document.createElement('canvas').getContext('2d')!

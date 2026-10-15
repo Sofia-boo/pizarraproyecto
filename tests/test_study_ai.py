@@ -1,7 +1,7 @@
 import json
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi import FastAPI
@@ -45,7 +45,7 @@ class StudyAITest(unittest.TestCase):
         self.assertEqual(payload['contents'][-1]['parts'][1]['inline_data']['mime_type'], 'image/png')
         self.assertEqual(payload['contents'][-1]['parts'][2]['inline_data']['mime_type'], 'application/pdf')
 
-    def test_limits_and_provider_errors_do_not_retry_or_expose_provider_body(self):
+    def test_limits_and_provider_errors_do_not_expose_provider_body(self):
         with patch.dict(os.environ, {'GEMINI_API_KEY': 'private-test-key'}):
             invalid = self.client.post('/api/study-ai/consult', headers=self.headers, data={'prompt': 'x', 'history': '{}'})
             self.assertEqual(invalid.status_code, 422)
@@ -57,11 +57,29 @@ class StudyAITest(unittest.TestCase):
                 def provider(request):
                     calls.append(request)
                     return httpx.Response(code, text='secret provider detail')
-                with patch('reconocimiento_local.study_ai.httpx.AsyncClient', side_effect=lambda **kwargs: original(transport=httpx.MockTransport(provider), **kwargs)):
+                with patch('reconocimiento_local.study_ai.httpx.AsyncClient', side_effect=lambda **kwargs: original(transport=httpx.MockTransport(provider), **kwargs)), patch('reconocimiento_local.study_ai.asyncio.sleep',new_callable=AsyncMock):
                     response = self.client.post('/api/study-ai/consult', headers=self.headers, data={'prompt': 'x'})
-                self.assertEqual(response.status_code, 429 if code == 429 else 502)
-                self.assertEqual(len(calls), 1)
+                self.assertEqual(response.status_code, code if code in (429,503) else 502)
+                self.assertEqual(len(calls), 2 if code == 503 else 1)
                 self.assertNotIn('secret provider detail', response.text)
+
+    def test_overloaded_model_uses_second_free_model_and_preserves_payload(self):
+        calls = []
+        def provider(request):
+            calls.append(request)
+            if len(calls) == 1:
+                return httpx.Response(503, json={'error': {'status': 'UNAVAILABLE'}})
+            return httpx.Response(200, json={'candidates': [{'content': {'parts': [{'text': 'Respuesta completa'}]}}]})
+        original = httpx.AsyncClient
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'private-test-key'}), patch('reconocimiento_local.study_ai.httpx.AsyncClient',side_effect=lambda **kwargs: original(transport=httpx.MockTransport(provider), **kwargs)), patch('reconocimiento_local.study_ai.asyncio.sleep',new_callable=AsyncMock) as delay:
+            response = self.client.post('/api/study-ai/consult',headers=self.headers,data={'prompt':'Generá un HTML'},files={'files':('exercise.png',b'image','image/png')})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['text'],'Respuesta completa')
+        self.assertEqual(len(calls),2)
+        self.assertIn('gemini-3.1-flash-lite',str(calls[0].url))
+        self.assertIn('gemini-3.5-flash-lite',str(calls[1].url))
+        self.assertEqual(calls[0].content,calls[1].content)
+        delay.assert_awaited_once()
 
 if __name__ == '__main__':
     unittest.main()

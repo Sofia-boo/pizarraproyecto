@@ -83,3 +83,31 @@ test('handwriting selection is sent as an image and transcription is inserted au
   expect(body).toContain('seleccion-de-la-pizarra.png')
   await expect(page.getByRole('dialog',{name:'Gemini'}).getByRole('status')).toContainText('Transcripción insertada')
 })
+
+test('failed HTML consultation keeps its prompt and attaches a complete reply as an inactive HTML widget',async({page})=>{
+  await open(page)
+  await page.route('**/api/study-ai/status',route=>route.fulfill({json:{configured:true}}))
+  let calls=0
+  const html='<!doctype html><html><body><button id="move" onclick="this.textContent=\'Moviendo\'">Mover</button></body></html>'
+  await page.route('**/api/study-ai/consult',route=>{
+    calls++
+    return route.fulfill(calls===1?{status:503,json:{detail:'Gemini está saturado (503). Tu consulta se conserva.'}}:{json:{text:'```html\n'+html+'\n```',truncated:false}})
+  })
+  await page.getByRole('button',{name:'IA: opciones de reconocimiento'}).click()
+  await page.getByRole('menuitem',{name:'Consultar con Gemini'}).click()
+  const dialog=page.getByRole('dialog',{name:'Gemini',exact:true}),question=dialog.getByRole('textbox',{name:'Consulta para Gemini'})
+  await question.fill('Generá un HTML interactivo de velocidad tiempo y distancia')
+  await dialog.getByRole('button',{name:'Enviar',exact:true}).click()
+  await expect(dialog.getByRole('alert')).toContainText('503')
+  await expect(question).toHaveValue('Generá un HTML interactivo de velocidad tiempo y distancia')
+  await expect(dialog.locator('.chatgpt-message')).toHaveCount(0)
+  await dialog.getByRole('button',{name:'Enviar',exact:true}).click()
+  await dialog.getByRole('button',{name:'Insertar HTML interactivo',exact:true}).click()
+  await expect.poll(async()=>(await content(page)).shapes.find(shape=>shape.visualType==='html')?.html.source).toBe(html)
+  await expect(page.locator('.board-html-widget iframe')).toHaveCount(0)
+  await dialog.getByRole('button',{name:'Cerrar asistente'}).click()
+  await page.getByRole('button',{name:'Activar HTML interactivo-gemini.html',exact:true}).click()
+  const frame=page.frameLocator('.board-html-widget iframe')
+  await frame.getByRole('button',{name:'Mover',exact:true}).click()
+  await expect(frame.getByRole('button',{name:'Moviendo',exact:true})).toBeVisible()
+})

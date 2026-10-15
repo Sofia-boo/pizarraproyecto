@@ -1,6 +1,8 @@
 # Consultas con Gemini
 
-El menú IA usa Gemini 3.1 Flash-Lite desde el servidor. Permite preguntas, imágenes, recortes de la pizarra y PDF, con respuestas que se pueden insertar como elementos editables o como imagen. Funciona en PC y tablet con internet, sin Chrome automatizado ni permisos de accesibilidad.
+El menú IA usa Gemini 3.1 Flash-Lite desde el servidor. Si devuelve un error temporal 500, 502, 503 o 504, espera brevemente y hace un único intento con Gemini 3.5 Flash-Lite, que también ofrece nivel gratuito. No reintenta cuotas agotadas, errores de credenciales ni conexiones interrumpidas cuya respuesta se desconoce. Si ambos fallan, conserva la consulta y explica el error.
+
+Permite preguntas, imágenes, recortes de la pizarra y PDF, con respuestas que se pueden insertar como elementos editables o como imagen. Un documento HTML completo generado tiene un botón «Insertar HTML interactivo»; los documentos incompletos no se ofrecen para insertar. El HTML se importa en el contenedor aislado existente y queda detenido hasta que el usuario lo inicia. Funciona en PC y tablet con internet, sin Chrome automatizado ni permisos de accesibilidad.
 
 Crear una clave en https://aistudio.google.com/apikey para un proyecto sin facturación. Guardarla como secreto `GEMINI_API_KEY` en las variables de entorno de producción del proyecto Vercel y volver a desplegar. Nunca usar un nombre `VITE_` ni guardar la clave en el repositorio, la app o el navegador.
 

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "vitest run tests/device-storage.test.ts tests/visual-objects.test.ts tests/study-tools.test.ts tests/trees-and-pen.test.ts tests/ode.test.ts tests/assistant.test.ts tests/image-crop.test.ts tests/cartesian-resize.test.ts tests/live-ink.test.ts",
+    "test": "vitest run tests/device-storage.test.ts tests/visual-objects.test.ts tests/study-tools.test.ts tests/trees-and-pen.test.ts tests/ode.test.ts tests/assistant.test.ts tests/image-crop.test.ts tests/cartesian-resize.test.ts tests/live-ink.test.ts tests/interactive-html.test.ts",
     "test:browser": "playwright test",
     "dev": "vite",
     "build": "tsc -b && vite build",
