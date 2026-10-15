@@ -80,12 +80,21 @@ def state_save(board,kind,value):
 
 
 def remember_ink(board,version,saved,removed):
+    # One round trip for the entire acknowledgement. A query per stroke made
+    # erasing a paragraph take seconds before peers received its deletion.
+    resolutions={}
+    for identifiers,deleted in ((saved,False),(removed,True)):
+        for identifier in identifiers:
+            resolutions[identifier]={'stroke_id':identifier,'removed':deleted,'updated':time.time()}
+    if not resolutions:return
     with database.connection() as db:
-        for identifiers,deleted in ((saved,False),(removed,True)):
-            for identifier in identifiers:
-                db.execute('''INSERT INTO pizarra_live_ink VALUES(?,?,?,?,?) ON CONFLICT(board_id,stroke_id)
-                  DO UPDATE SET version=excluded.version,removed=excluded.removed,updated=excluded.updated
-                  WHERE pizarra_live_ink.version<=excluded.version''',(board,identifier,version,deleted,time.time()))
+        db.execute('''INSERT INTO pizarra_live_ink(board_id,stroke_id,version,removed,updated)
+          SELECT ?,stroke_id,?,removed,updated FROM jsonb_to_recordset(?::jsonb)
+            AS resolution(stroke_id TEXT,removed BOOLEAN,updated DOUBLE PRECISION) WHERE TRUE
+          ON CONFLICT(board_id,stroke_id) DO UPDATE
+            SET version=excluded.version,removed=excluded.removed,updated=excluded.updated
+          WHERE pizarra_live_ink.version<=excluded.version''',
+          (board,version,json.dumps(list(resolutions.values()))))
         db.execute('''DELETE FROM pizarra_live_ink WHERE board_id=? AND stroke_id IN
           (SELECT stroke_id FROM pizarra_live_ink WHERE board_id=? ORDER BY updated DESC OFFSET 4096)''',(board,board))
 

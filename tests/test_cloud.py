@@ -76,6 +76,33 @@ class CloudIntegration(unittest.TestCase):
             self.assertTrue(restored.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='ux_anon_login'").fetchone())
         finally:restored.close()
 
+    def test_bulk_ink_acknowledgements_use_bounded_queries_and_do_not_revive_deletions(self):
+        import uuid
+        from unittest.mock import patch
+        from reconocimiento_local import cloud_live, cloud_database
+        board='bulk-'+uuid.uuid4().hex
+        identifiers=[f'bulk-{index}' for index in range(400)]
+        queries=[]
+        execute=cloud_database.Connection.execute
+        def measured(connection,statement,params=()):
+            queries.append(statement)
+            return execute(connection,statement,params)
+        with patch.object(cloud_database.Connection,'execute',measured):
+            cloud_live.remember_ink(board,5,identifiers,[identifiers[-1]])
+        # Network round trips must stay bounded as the paragraph grows.
+        self.assertLessEqual(len(queries),3)
+        event=cloud_live.ink_events(board)[0]
+        self.assertEqual(set(event['saved']),set(identifiers[:-1]))
+        self.assertEqual(event['removed'],[identifiers[-1]])
+        cloud_live.remember_ink(board,4,[identifiers[-1]],[])
+        self.assertEqual(cloud_live.ink_events(board)[0]['removed'],[identifiers[-1]])
+        cloud_live.remember_ink(board,6,[],identifiers)
+        events=cloud_live.ink_events(board)
+        self.assertEqual(len(events),1)
+        self.assertEqual(events[0]['version'],6)
+        self.assertEqual(set(events[0]['removed']),set(identifiers))
+        self.assertEqual(events[0]['saved'],[])
+
     def test_two_nodes_share_tickets_draw_delete_html_and_large_assets(self):
         with httpx.Client(base_url=self.urls[0],timeout=20) as a, httpx.Client(base_url=self.urls[1],timeout=20) as b:
             self.assertEqual(a.post('/api/auth/guest',json={'name':'Cloud owner','password':'cloud-password'}).status_code,200)

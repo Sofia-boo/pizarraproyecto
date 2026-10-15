@@ -125,7 +125,7 @@ async def _presence(board_id: str, publish=True):
     peers = _clients.get(board_id, {})
     # Una misma identidad abierta en dos pestañas se presenta una sola vez.
     by_user = {}
-    participants=cloud_live.peers(board_id) if cloud_live.enabled() else peers.values()
+    participants=list(cloud_live.peers(board_id) if cloud_live.enabled() else peers.values())
     for participant in participants:
         previous = by_user.get(participant['uid'], {})
         by_user[participant['uid']] = {
@@ -133,7 +133,7 @@ async def _presence(board_id: str, publish=True):
             'name': participant['name'],
             'color': participant['color'],
             'emoji': participant['emoji'],
-            'view': _active_view(board_id, participant['uid']),
+            'view': _active_view(board_id, participant['uid'], participants),
             'client_ids': previous.get('client_ids', []) + [participant['client_id']],
         }
     users = sorted(by_user.values(), key=lambda item: item['name'].casefold())
@@ -144,8 +144,9 @@ async def _presence(board_id: str, publish=True):
         await cloud_live.publish(board_id,{'type':'_presence_changed'})
 
 
-def _active_view(board_id, uid):
-    participants=cloud_live.peers(board_id) if cloud_live.enabled() else _clients.get(board_id,{}).values()
+def _active_view(board_id, uid, participants=None):
+    if participants is None:
+        participants=cloud_live.peers(board_id) if cloud_live.enabled() else _clients.get(board_id,{}).values()
     candidates = [p for p in participants if p['uid'] == uid and p.get('view')]
     return max(candidates, key=lambda p: p.get('view_changed', 0))['view'] if candidates else None
 
@@ -570,7 +571,10 @@ async def notify_board_saved(board_id: str, version: int, before=None, after=Non
         removed = list(dict.fromkeys([*[identifier for identifier in old if identifier not in new],
                                       *discarded_strokes]))
         if saved or removed:
-            _remember_ink(board_id, version, saved, removed)
+            if cloud_live.enabled():
+                await asyncio.to_thread(_remember_ink,board_id,version,saved,removed)
+            else:
+                _remember_ink(board_id, version, saved, removed)
             settled = {'type': 'ink_settled', 'board_id': board_id, 'version': version,
                        'saved': saved, 'removed': removed}
         patch = scene_patch(before, after)
