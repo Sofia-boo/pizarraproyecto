@@ -1,5 +1,6 @@
 import { mergeBoard } from './storage/merge'
 import {transformExisting} from './storage/sceneEdits'
+import {renewUndoObjects} from './storage/undoRestore'
 import { applyScenePatch,RemoteDeletions } from './storage/livePatch'
 import {retireLiveInk,resolveLiveInk,resolvedLiveInk} from './storage/liveInk'
 import type {RemoteLiveStroke,InkResolution} from './storage/liveInk'
@@ -48,7 +49,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   loadBoard, saveBoard, saveAsset, loadAsset, getLibrary, fetchBoardForLiveSync, acceptBoardLiveVersion, getActiveBoardVersion, getCommittedBoardContent, addFolder, addBoard, renameBoard, removeBoard, removeFolder, selectBoard, getActiveBoardId,
   privateBoard, storageNotice, hasPendingShared, duplicateAsPrivate, publishPrivateCopy, exportBoardBackup, importBoardBackup, canUseServer,
-  liveSocketUrl, prepareBoardOffline,
+  liveSocketUrl, prepareBoardOffline, createBoardHistory,
   usingOfflineCopy,
 } from './biblioteca'
 import type { Point, Stroke, TextItem, MediaItem, Folder, BoardInfo } from './biblioteca'
@@ -2113,6 +2114,10 @@ function App() {
   }
 
   function applySnapshot(state: Snapshot) {
+    const restored=renewUndoObjects(state,snapshot(),createId)
+    state=restored.state
+    undoRef.current=undoRef.current.map(restored.remap)
+    redoRef.current=redoRef.current.map(restored.remap)
     setTreePanel(null)
     setVisualEditor(null)
     strokesRef.current = state.strokes
@@ -2129,7 +2134,7 @@ function App() {
     selectElement(null)
     hydrateMedia(state.media)
     redraw()
-    scheduleSave()
+    scheduleSave(true)
   }
 
   function undo() {
@@ -2367,6 +2372,12 @@ function App() {
 
     async function showCommitted(snapshot: Awaited<ReturnType<typeof fetchBoardForLiveSync>>) {
         const content = snapshot.content || ({} as typeof snapshot.content)
+        const before={strokes:strokesRef.current,texts:textsRef.current,media:mediaRef.current,
+          shapes:shapesRef.current,tables:tablesRef.current,graphs:graphsRef.current,videos:videosRef.current}
+        // Incorporate a peer's edits without discarding local undo/redo. A
+        // remote removal of an existing item still wins during this rebase.
+        undoRef.current=undoRef.current.map(state=>mergeBoard(before,state,content as Snapshot))
+        redoRef.current=redoRef.current.map(state=>mergeBoard(before,state,content as Snapshot))
         strokesRef.current = content.strokes ?? []
         textsRef.current = content.texts ?? []
         mediaRef.current = content.media ?? []
@@ -2384,8 +2395,6 @@ function App() {
         retireCommittedPreviews(snapshot.version)
         redraw()
         hydrateMedia(mediaRef.current)
-        undoRef.current = []
-        redoRef.current = []
         // An open inspector is a local draft, not a reason to freeze incoming
         // objects. Preserve it and its selection until the user applies it.
         if (!editingRef.current && !visualEditorRef.current && !tableEditorBusyRef.current) selectElement(null)
@@ -4466,6 +4475,11 @@ function App() {
       const file=new File([blob],crop?'recorte-de-la-pizarra.png':'seleccion-de-la-pizarra.png',{type:'image/png'})
       if(destination==='assistant'){setStudyAssistant({boardId,file});return}
       if(file.size>3000000)throw new Error('El recorte supera 3 MB. Seleccioná un área más pequeña.')
+      // Keep the original in persistent history before any destructive
+      // replacement. A failed backup must leave the handwriting untouched.
+      await flushBoardForHistory()
+      if(boardId!==getActiveBoardId())return
+      await createBoardHistory(boardId,'Antes de transcribir manuscrito',getActiveBoardVersion())
       const payload=new FormData();payload.set('prompt',TRANSCRIPTION_PROMPT);payload.append('files',file)
       const response=await fetch(`${API_BASE}/api/study-ai/consult`,{method:'POST',credentials:'include',body:payload,signal:AbortSignal.timeout(100000)})
       const answer=await response.json().catch(()=>({}))

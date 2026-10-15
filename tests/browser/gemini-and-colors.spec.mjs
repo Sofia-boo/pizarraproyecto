@@ -91,6 +91,11 @@ test('handwriting is replaced in place without chat history and can be edited by
     const keys=await new Promise(resolve=>{const r=db.transaction('meta').objectStore('meta').getAllKeys();r.onsuccess=()=>resolve(r.result)})
     db.close();return keys.filter(key=>String(key).includes('gemini-chats'))
   })).toEqual([])
+  expect(await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('pizarra-dispositivo',1);r.onsuccess=()=>resolve(r.result)})
+    const versions=await new Promise(resolve=>{const r=db.transaction('history').objectStore('history').getAll();r.onsuccess=()=>resolve(r.result)})
+    db.close();return versions.some(version=>version.title==='Antes de transcribir manuscrito'&&version.content.strokes.length===1&&version.content.texts.length===0)
+  })).toBe(true)
   await page.getByRole('button',{name:'Deshacer',exact:true}).click()
   await expect.poll(async()=>(await content(page)).strokes.length).toBe(1)
   await expect.poll(async()=>(await content(page)).texts.length).toBe(0)
