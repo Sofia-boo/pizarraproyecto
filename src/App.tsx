@@ -927,7 +927,7 @@ function App() {
   const remoteCursorsRef = useRef<Map<string, LiveCursor>>(new Map())
   const lastCursorSentRef = useRef(0)
   const lastHtmlActivityRef=useRef(0)
-  const drawFrameRef=useRef<number|null>(null),cursorFrameRef=useRef<number|null>(null)
+  const drawFrameRef=useRef<number|null>(null),inkFrameRef=useRef<number|null>(null),cursorFrameRef=useRef<number|null>(null)
   const liveStrokeProgressRef = useRef<{id:string;sent:number;lastSent:number}|null>(null)
   // A live stroke can be erased before ever appearing in a server snapshot.
   const unpublishedInkRef=useRef(new Set<string>())
@@ -1627,6 +1627,10 @@ function App() {
     if(drawFrameRef.current!==null)return
     drawFrameRef.current=requestAnimationFrame(()=>{drawFrameRef.current=null;paintBoard()})
   }
+  function redrawInk(){
+    if(inkFrameRef.current!==null)return
+    inkFrameRef.current=requestAnimationFrame(()=>{inkFrameRef.current=null;paintForeground()})
+  }
   function redrawCursors(){
     if(cursorFrameRef.current!==null)return
     cursorFrameRef.current=requestAnimationFrame(()=>{cursorFrameRef.current=null;paintCursors()})
@@ -1687,21 +1691,12 @@ function App() {
     }
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
-    const foreground = foregroundCanvasRef.current
-    const foregroundCtx = foreground?.getContext('2d')
     if (!canvas || !ctx) return
     const dpr = window.devicePixelRatio || 1
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const cam = cameraRef.current
-    if (foreground && foregroundCtx) {
-      foregroundCtx.setTransform(1, 0, 0, 1, 0, 0)
-      foregroundCtx.clearRect(0, 0, foreground.width, foreground.height)
-      foregroundCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      foregroundCtx.translate(cam.x, cam.y)
-      foregroundCtx.scale(cam.zoom, cam.zoom)
-    }
 
     // Cuadrícula de puntos estilo FigJam/Figma, anclada al mundo de la pizarra.
     // Se desplaza con la cámara y se adapta al zoom sin tapar los trazos.
@@ -1805,14 +1800,32 @@ function App() {
     for(const [band,layer] of contentCanvasesRef.current)if(!surfaces.has(band)){
       layer.remove();contentCanvasesRef.current.delete(band)
     }
-    // Los avances del lápiz y los marcadores de selección no son contenido
-    // persistido y deben estar visibles sobre los objetos interactivos.
-    const uiCtx = foregroundCtx ?? ctx
+    paintForeground()
+    paintCursors()
+  }
+
+  function paintForeground(){
+    const canvas=foregroundCanvasRef.current,uiCtx=canvas?.getContext('2d')
+    if(!canvas||!uiCtx)return
+    const cam=cameraRef.current,dpr=window.devicePixelRatio||1
+    uiCtx.setTransform(1,0,0,1,0,0)
+    uiCtx.clearRect(0,0,canvas.width,canvas.height)
+    uiCtx.setTransform(dpr,0,0,dpr,0,0)
+    uiCtx.translate(cam.x,cam.y);uiCtx.scale(cam.zoom,cam.zoom)
+    // Ink changes only this lightweight surface while the pen is down. The
+    // grid, documents and existing strokes keep their already-painted pixels.
     for (const remote of remoteStrokesRef.current.values()) {
       if(hiddenRemote('stroke',remote.stroke.id))continue
       if (remote.stroke.points.length) drawStroke(uiCtx, remote.stroke)
     }
     if (activeStroke.current) drawStroke(uiCtx, activeStroke.current)
+    const hold=penHoldRef.current
+    if(!activeStroke.current&&tool==='pen'&&hold?.lastMove&&!hold.fired){
+      // Show even tiny movements while distinguishing a stationary long press
+      // from a stroke. This preview is never saved or added to undo history.
+      drawStroke(uiCtx,{points:[toWorld(hold.event.clientX,hold.event.clientY),toWorld(hold.lastMove.clientX,hold.lastMove.clientY)],
+        color,width:brushMode==='highlighter'?highlightWidth:width,highlighter:brushMode==='highlighter'} as Stroke)
+    }
     if (activeShape.current) drawShape(uiCtx,activeShape.current)
 
     // Recuadro de selección con control de escala en la esquina inferior derecha.
@@ -1862,7 +1875,6 @@ function App() {
       uiCtx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height)
       uiCtx.setLineDash([])
     }
-    paintCursors()
   }
 
   function paintCursors(){
@@ -2311,6 +2323,7 @@ function App() {
         viewportFrameRef.current = null // Permite remontar el efecto en React StrictMode.
       }
       if(drawFrameRef.current!==null){cancelAnimationFrame(drawFrameRef.current);drawFrameRef.current=null}
+      if(inkFrameRef.current!==null){cancelAnimationFrame(inkFrameRef.current);inkFrameRef.current=null}
       if(cursorFrameRef.current!==null){cancelAnimationFrame(cursorFrameRef.current);cursorFrameRef.current=null}
     }
   }, [])
@@ -2557,7 +2570,7 @@ function App() {
                 remoteStrokesRef.current.delete(key)
                 resolveLiveInk(inkResolutionsRef.current,[msg.stroke_id],getActiveBoardVersion(),true)
               }
-              redraw()
+              redrawInk()
             }
           } catch { /* Ignorar mensajes invalidos */ }
         }
@@ -2985,6 +2998,7 @@ function App() {
     const hold=penHoldRef.current
     if(hold)clearTimeout(hold.timer)
     penHoldRef.current=null
+    if(hold?.lastMove&&!hold.fired)redrawInk()
     return hold
   }
   function tabletPointerDown(e:ReactPointerEvent<HTMLCanvasElement>){
@@ -3000,6 +3014,7 @@ function App() {
     const hold={event:saved,fired:false,timer:setTimeout(()=>{
       if(penHoldRef.current!==hold)return
       hold.fired=true
+      redrawInk()
       openBoardContextMenu(saved.clientX,saved.clientY)
     },3000)}
     penHoldRef.current=hold
@@ -3011,6 +3026,7 @@ function App() {
       if(hold.fired)return
       if(Math.hypot(e.clientX-hold.event.clientX,e.clientY-hold.event.clientY)<=4){
         hold.lastMove={...e,currentTarget:e.currentTarget} as ReactPointerEvent<HTMLCanvasElement>
+        redrawInk()
         return
       }
       clearPenHold();pointerDown(hold.event)
@@ -3069,7 +3085,7 @@ function App() {
         pointerRef.current=e.pointerId
         e.currentTarget.setPointerCapture(e.pointerId)
         activeStroke.current.points.push(point)
-        flushLiveStroke();redraw();return
+        flushLiveStroke();redrawInk();return
       }
       finishPendingPen()
     }
@@ -3167,7 +3183,7 @@ function App() {
     rememberChange()
     activeStroke.current = { id: createId(), points: [point], color, width: brushMode === 'highlighter' ? highlightWidth : width, highlighter: brushMode === 'highlighter' } as Stroke
     startLiveStroke(activeStroke.current)
-    redraw()
+    redrawInk()
   }
 
   function pointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
@@ -3282,7 +3298,7 @@ function App() {
       }
     } else activeStroke.current.points.push(point)
     flushLiveStroke()
-    redraw()
+    redrawInk()
   }
 
   function pointerUp(e: ReactPointerEvent<HTMLCanvasElement>) {
